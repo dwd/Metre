@@ -15,17 +15,166 @@ typedef enum {
 	COMP
 } SESSION_TYPE;
 
+namespace std {
+	template<typename T>
+	class optional {
+		char m_void[sizeof(T)];
+		bool m_engaged;
+	private:
+		void doset(T const & t) {
+			new(m_void) T(t);
+			m_engaged = true;
+		}
+		T * real() {
+			if (!m_engaged) throw std::runtime_error("Deref when unengaged");
+			return reinterpret_cast<T *>(&m_void);
+		}
+		T const * real() const {
+			if (!m_engaged) throw std::runtime_error("Deref when unengaged");
+			return reinterpret_cast<T const *>(&m_void);
+		}
+	public:
+		optional(T const & t) : m_engaged(false) {
+			doset(t);
+		}
+		optional() : m_engaged(false) {
+		}
+		void emplace() {
+			if (m_engaged) throw std::runtime_error("Emplace when engaged");
+			new(m_void) T;
+		}
+		T & operator * () {
+			return *real();
+		}
+		T * operator -> () {
+			return real();
+		}
+		T & value() {
+			return *real();
+		}
+		T const & operator * () const {
+			return *real();
+		}
+		T const * operator -> () const {
+			return real();
+		}
+		T const & value() const {
+			return *real();
+		}
+		operator bool () const {
+			return m_engaged;
+		}
+	};
+}
+
+
+class Jid {
+	std::optional<std::string> m_local;
+	std::string m_domain;
+	std::optional<std::string> m_resource;
+	
+	mutable std::optional<std::string> m_full;
+	mutable std::optional<std::string> m_bare;
+public:
+	Jid(std::string const & jid) {
+		// TODO : Parse out //
+	}
+	Jid(std::string const & local, std::string const & domain)
+		: m_local(local), m_domain(domain) {
+	}
+	std::string const & full() const {
+		if (!m_full) {
+			m_full.emplace();
+			if (m_local) {
+				*m_full += *m_local;
+				*m_full += "@";
+			}
+			*m_full += m_domain;
+			if (m_resource) {
+				*m_full += "/";
+				*m_full += *m_resource;
+			}
+		}
+		return *m_full;
+	}
+	std::string const & bare() const {
+		if (!m_bare) {
+			m_bare.emplace();
+			if (m_local) {
+				*m_bare += *m_local;
+				*m_bare += "@";
+			}
+			m_bare.value() += m_domain;
+		}
+		return *m_bare;
+	}
+};
+
+
+class Account {
+	Jid m_jid;
+public:
+	Account(Jid const & jid) : m_jid(jid) {}
+	bool test_password(std::string const & password) {
+		return password == "yes"; // TODO : Maybe make this more secure? //
+	}
+};
+
+
+class Domain {
+	std::string m_domain;
+	std::map<std::string, Account *> m_accounts;
+public:
+	Domain(std::string const & domain) : m_domain(domain) {}
+	Account & account(Jid const & jid) {
+		auto acciter = m_accounts.find(jid.bare());
+		if (acciter != m_accounts.end()) {
+			return *acciter->second;
+		}
+		if (jid.bare() != "dave@jekyll.dave.cridland.net") {
+			throw std::runtime_error("No such account");
+		}
+		auto acc = m_accounts[jid.bare()] = new Account(jid);
+		return *acc;
+	}
+};
+
+
+class Server {
+	std::map<std::string, Domain *> m_domains;
+public:
+	Server() {}
+	Domain & domain(std::string const & domain) {
+		auto domiter = m_domains.find(domain);
+		if (domiter != m_domains.end()) {
+			return *domiter->second;
+		}
+		if (domain != "jekyll.dave.cridland.net") {
+			throw std::runtime_error("No such domain");
+		}
+		auto dom = m_domains[domain] = new Domain(domain);
+		return *dom;
+	}
+};
+
+
 class NetSession {
 	std::string m_buf;
 	int m_fd;
 	static const size_t buflen = 4096;
 	std::string m_stream_buf;
 	rapidxml::xml_document<> m_stream;
-	rapidxml::xml_document<> m_stanza; // Not, in fact, always a stanza per-se.
+	rapidxml::xml_document<> m_stanza; // Not, in fact, always a stanza per-se. //
 	SESSION_TYPE m_type;
+	Server * m_server;
 public:
-	NetSession(int fd, SESSION_TYPE type) : m_fd(fd), m_type(type) {}
+	NetSession(int fd, SESSION_TYPE type, Server * server) : m_fd(fd), m_type(type), m_server(server) {}
 	void drain() {
+		// This is a phenomenally cool way of reading data from a socket to
+		// a std::string. Extend string, read direct to buffer, resize string to
+		// read-length.
+		// Downside is that when std::string extends, we might cause an alloc,
+		// but this should - I think - be rare.
 		while (true) {
 			auto oldsz = m_buf.length();
 			m_buf.resize(oldsz + buflen);
@@ -35,7 +184,7 @@ public:
 					m_buf.resize(oldsz);
 					break;
 				} else {
-					// Some more serious thing.
+					// Some more serious error.
 					::close(m_fd);
 					m_fd = -1;
 					m_buf.resize(oldsz);
@@ -100,11 +249,15 @@ public:
 				std::cout << "Unidentified connection." << std::endl;
 			}
 		}
-		auto domain = stream->first_attribute("to");
-		if (domain && domain->value()) {
-			std::string to_domain(domain->value(), domain->value_size());
-			std::cout << "Requested contact domain {" << to_domain << "}" << std::endl;
+		auto domainat = stream->first_attribute("to");
+		std::string domainname;
+		if (domainat && domainat->value()) {
+			domainname.assign(domainat->value(), domainat->value_size());
+			std::cout << "Requested contact domain {" << domainname << "}" << std::endl;
+		} else {
+			domainname = "jekyll.dave.cridland.net"; // TODO : Default //
 		}
+		auto domain = m_server->domain(domainname);
 		if (!stream->xmlns()) {
 			std::cout << "Ooops! No xmlns for stream?" << std::endl;
 		}
@@ -134,6 +287,7 @@ int  main(int argc, char *argv[]) {
 	pollitem.events = ZMQ_POLLIN;
 	pollitems.push_back(pollitem);
 	std::map<int, NetSession *> sockets;
+	Server server;
 	while (true) {
 		zmq::poll(&pollitems[0], pollitems.size());
 		if (pollitems[0].revents & ZMQ_POLLIN) {
@@ -145,7 +299,7 @@ int  main(int argc, char *argv[]) {
 			pollitem.fd = sock;
 			pollitem.events = ZMQ_POLLIN;
 			pollitems.push_back(pollitem);
-			sockets[sock] = new NetSession(sock, C2S);
+			sockets[sock] = new NetSession(sock, C2S, &server);
 		}
 		for (auto pollitem : pollitems) {
 			if (pollitem.fd == lsock) continue;
