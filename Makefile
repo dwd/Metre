@@ -1,18 +1,18 @@
 #!/usr/bin/make -f
 
-all: eloquence-test eloquence
+all: metre-test metre
 	@echo Done.
 
 OBJS:=$(patsubst src/%.cpp,build/src/%.o,$(wildcard src/*.cpp))
 TESTOBJS:=$(patsubst tests/%.cpp,build/tests/%.o,$(wildcard tests/*.cpp))
 ETOBJS:=$(filter-out build/src/mainloop.o,$(OBJS))
 
-eloquence-test: $(TESTOBJS) $(ETOBJS)
+metre-test: $(TESTOBJS) $(ETOBJS)
 	@echo [LINK] $+ '=>' $@
 	@g++ --std=c++11 -lzmq -o $@ $+
 	@./$@
 
-eloquence: $(OBJS)
+metre: $(OBJS)
 	@echo [LINK] $< '=>' $@
 	@g++ --std=c++11 -lzmq -o $@ $+
 

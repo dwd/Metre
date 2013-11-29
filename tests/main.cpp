@@ -1,23 +1,23 @@
 #include "tests.hpp"
 #include <iostream>
 
-elq::Test::Test(std::string const & name) : m_name(name) {
-	elq::Test::add(this);
+Metre::Test::Test(std::string const & name) : m_name(name) {
+	Metre::Test::add(this);
 }
-elq::Test::~Test() {}
-std::string const & elq::Test::name() const { return m_name; }
-std::list<elq::Test*> & elq::Test::tests() {
+Metre::Test::~Test() {}
+std::string const & Metre::Test::name() const { return m_name; }
+std::list<Metre::Test*> & Metre::Test::tests() {
 	static std::list<Test*> s_list;
 	return s_list;
 }
-void elq::Test::add(elq::Test * t) {
-	elq::Test::tests().push_back(t);
+void Metre::Test::add(Metre::Test * t) {
+	Metre::Test::tests().push_back(t);
 }
 
 int main(int argc, char *argv[]) {
 	try {
 		int r = 0;
-		for (auto t : elq::Test::tests()) {
+		for (auto t : Metre::Test::tests()) {
 			try {
 				std::cout << "[" << t->name() << "] ";
 				if (!t->run()) {

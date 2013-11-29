@@ -1,7 +1,7 @@
 #include "jid.hpp"
 #include "tests.hpp"
 
-using namespace elq;
+using namespace Metre;
 
 class JidTest : public Test {
 public:

@@ -4,7 +4,7 @@
 #include <string>
 #include <optional>
 
-namespace elq {
+namespace Metre {
 	class Jid {
 		std::optional<std::string> m_local;
 		std::string m_domain;

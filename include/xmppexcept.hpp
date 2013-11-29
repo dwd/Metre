@@ -3,7 +3,7 @@
 
 #include <exception>
 
-namespace elq {
+namespace Metre {
 	namespace base {
 		class xmpp_exception : public std::runtime_error {
 		private:
@@ -19,7 +19,7 @@ namespace elq {
 	}
 	
 	// Following macro generates exception classes.
-#   define ELQ_XMPP_EXCEPT(clsname, def_text, elname) \
+#   define METRE_XMPP_EXCEPT(clsname, def_text, elname) \
 	class clsname : public base::xmpp_exception {  \
 	public:  \
 		clsname() : base::xmpp_exception(def_text, elname) {}  \
@@ -27,10 +27,12 @@ namespace elq {
 		clsname(const char * w) : base::xmpp_exception(w, elname) {}  \
 	}
 
-	ELQ_XMPP_EXCEPT(bad_format, "Sorry, I cannot process that XML", "bad-format");
-	ELQ_XMPP_EXCEPT(bad_namespace_prefix, "Required prefix missing", "bad-namespace-prefix");
-	ELQ_XMPP_EXCEPT(host_unknown, "FQDN not serviced by this entity", "host-unknown");
-	ELQ_XMPP_EXCEPT(undefined_condition, "Very sorry - unhandled internal error", "undefined-condition");
+	METRE_XMPP_EXCEPT(bad_format, "Sorry, I cannot process that XML", "bad-format");
+	METRE_XMPP_EXCEPT(bad_namespace_prefix, "Required prefix missing", "bad-namespace-prefix");
+	METRE_XMPP_EXCEPT(host_unknown, "FQDN not serviced by this entity", "host-unknown");
+	METRE_XMPP_EXCEPT(not_authorized, "Not authorized to perform that action", "not-authorized");
+	METRE_XMPP_EXCEPT(unsupported_stanza_type, "Couldn't understand that element", "unsupported-stanza-type");
+	METRE_XMPP_EXCEPT(undefined_condition, "Very sorry - unhandled internal error", "undefined-condition");
 }
 
 #endif

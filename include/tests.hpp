@@ -5,7 +5,7 @@
 #include <string>
 #include <stdexcept>
 
-namespace elq {
+namespace Metre {
 	namespace assert {
 		template <typename T1, typename T2>
 		void equal(T1 const & t1, T2 const & t2, const char * c) {

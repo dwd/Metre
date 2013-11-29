@@ -1,6 +1,6 @@
 #include "jid.hpp"
 
-using namespace elq;
+using namespace Metre;
 
 std::string const & Jid::full() const {
 	if (!m_full) {
