@@ -1,0 +1,15 @@
+Metre :: An XMPP Server
+
+  |  There once was a server called Metre,
+  |  Which talked by a method by Peter,
+  |  Saint-Andre and others:
+  |  The XSF Brothers!
+  |  Much more than a stanza repeater.
+
+Metre (check that spelling) is an XMPP Server.
+
+It's written in C++11 (ie, modern C++), and aims to include all the
+bells and whistles that a modern server requires. It's is a "Post RFC
+6120" server - that is, it wasn't started until well after 6120 was
+published, and so has little or not legacy code, or support for,
+ancient clients.

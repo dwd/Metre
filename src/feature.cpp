@@ -30,4 +30,5 @@ Feature * Feature::feature(std::string const & xmlns, XMLStream & stream) {
 			return f->instantiate(stream);
 		}
 	}
+	return 0;
 }

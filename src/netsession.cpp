@@ -12,8 +12,8 @@
 
 using namespace Metre;
 
-NetSession::NetSession(int fd, SESSION_TYPE type, Server * server)
-	: m_fd(fd), m_xml_stream(new XMLStream(this, server, type)), m_server(server) {}
+NetSession::NetSession(int fd, SESSION_DIRECTION dir, SESSION_TYPE type, Server * server)
+	: m_fd(fd), m_xml_stream(new XMLStream(this, server, dir, type)), m_server(server) {}
 
 bool NetSession::drain() {
 	// This is a phenomenally cool way of reading data from a socket to
@@ -61,6 +61,7 @@ bool NetSession::push() {
 	std::size_t ptr = 0;
 	while (remain > 0) {
 		auto count = ::write(m_fd, &m_outbuf[ptr], remain);
+		std::cout << "Writing buffer: <<" << m_outbuf << ">> " << m_fd << std::endl;
 		if (count < 0) {
 			if (errno == EWOULDBLOCK || errno == EAGAIN) {
 				break;

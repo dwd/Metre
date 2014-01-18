@@ -9,8 +9,8 @@
 
 using namespace Metre;
 
-XMLStream::XMLStream(NetSession * n, Server * s, SESSION_TYPE t)
-	: m_session(n), m_server(s), m_type(t) {
+XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t)
+	: m_session(n), m_server(s), m_dir(dir), m_type(t) {
 }
 
 void XMLStream::process(std::string & buf) {
@@ -123,6 +123,10 @@ void XMLStream::stream_open() {
 	} else {
 		domainname = "jekyll.dave.cridland.net"; // TODO : Default //
 	}
+	std::string from;
+	if (auto fromat = stream->first_attribute("from")) {
+		from.assign(fromat->value(), fromat->value_size());
+	}
 	auto domain = this->m_server->domain(domainname);
 	if (!stream->xmlns()) {
 		throw Metre::bad_format("Missing namespace for stream");
@@ -140,8 +144,12 @@ void XMLStream::stream_open() {
 	if (m_type == C2S) {
 		m_session->send("jabber:client' from='");
 	} else {
-		m_session->send("jabber:server' xmlns:db='jabber:server:dialback' to='");
-		m_session->send("'from='");
+		m_session->send("jabber:server' xmlns:db='jabber:server:dialback");
+		if (from != "") {
+			m_session->send("' to='");
+			m_session->send(from);
+		}
+		m_session->send("' from='");
 	}
 	m_session->send(domain.domain() + "' id='");
 	m_session->send("id-goes-here");
@@ -178,7 +186,7 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 		f = (*fit).second;
 	} else {
 		f = Feature::feature(xmlns, *this);
-		m_features[xmlns] = f;
+		if (f) m_features[xmlns] = f;
 	}
 	
 	bool handled = false;

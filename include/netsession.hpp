@@ -17,13 +17,20 @@ namespace Metre {
 		XMLStream * m_xml_stream;
 		Server * m_server;
 	public:
-		NetSession(int fd, SESSION_TYPE type, Server * server);
+		NetSession(int fd, SESSION_DIRECTION dir, SESSION_TYPE type, Server * server);
 		bool drain();
 		bool need_push();
 		bool push();
 		void send(rapidxml::xml_document<> & d);
 		void send(std::string const & s);
 		void send(const char * p);
+		
+		XMLStream & xml_stream() {
+			return *m_xml_stream;
+		}
+		
+		void * loop_read;
+		void * loop_write;
 	};
 }
 

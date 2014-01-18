@@ -13,6 +13,10 @@ namespace std {
 			new(m_void) T(t);
 			m_engaged = true;
 		}
+		void dounset() {
+			reinterpret_cast<T *>(&m_void)->~T();
+			m_engaged = false;
+		}
 		T * real() {
 			if (!m_engaged) throw std::runtime_error("Deref when unengaged");
 			return reinterpret_cast<T *>(&m_void);
@@ -27,9 +31,12 @@ namespace std {
 		}
 		optional() : m_engaged(false) {
 		}
-		void emplace() {
-			if (m_engaged) throw std::runtime_error("Emplace when engaged");
-			new(m_void) T;
+		template<class... Args>
+		void emplace(Args&&... args) {
+			if (m_engaged) {
+				dounset();
+			}
+			new(m_void) T(args...);
 			m_engaged = true;
 		}
 		T & operator * () {

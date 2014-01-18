@@ -7,14 +7,14 @@ using namespace Metre;
 using namespace rapidxml;
 
 namespace {
-	const std::string sasl_ns = "jabber:client";
+	const std::string sasl_ns = "jabber:server";
 
-	class Client : public Feature {
+	class JabberServer : public Feature {
 	public:
-		Client(XMLStream & s) : Feature(s) {}
-		class Description : public Feature::Description<Client> {
+		JabberServer(XMLStream & s) : Feature(s) {}
+		class Description : public Feature::Description<JabberServer> {
 		public:
-			Description() : Feature::Description<Client>(sasl_ns) {};
+			Description() : Feature::Description<JabberServer>(sasl_ns) {};
 			virtual void offer(xml_node<> *, XMLStream &) {
 				// No feature advertised.
 			}
@@ -43,6 +43,6 @@ namespace {
 		}
 	};
 	
-	bool declared = Feature::declare<Client>(C2S);
+	bool declared = Feature::declare<JabberServer>(S2S);
 }
 
