@@ -17,12 +17,12 @@ FINCDIRS=$(INCDIRS:%=-I%)
 
 metre-test: $(TESTOBJS) $(ETOBJS)
 	@echo [LINK] $+ '=>' $@
-	@g++ --std=c++11 $(LINKLIBDIRS) $(LINKLIBS) -o $@ $+
+	@g++ --std=c++11 -o $@ $+ $(LINKLIBDIRS) $(LINKLIBS)
 	@./$@
 
 metre: $(OBJS)
 	@echo [LINK] $< '=>' $@
-	@g++ --std=c++11 $(LINKLIBDIRS) $(LINKLIBS) -o $@ $+
+	g++ --std=c++11 -o $@ $+ $(LINKLIBDIRS) $(LINKLIBS)
 
 build/%.o: %.cpp
 	@echo [C++] $< '=>' $@

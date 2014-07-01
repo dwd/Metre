@@ -12,8 +12,11 @@
 
 using namespace Metre;
 
-NetSession::NetSession(int fd, SESSION_DIRECTION dir, SESSION_TYPE type, Server * server)
-	: m_fd(fd), m_xml_stream(new XMLStream(this, server, dir, type)), m_server(server) {}
+NetSession::NetSession(int fd, SESSION_TYPE type, Server * server)
+	: m_fd(fd), m_xml_stream(new XMLStream(this, server, INBOUND, type)), m_server(server) {}
+
+NetSession::NetSession(std::string const & domain, Server * server)
+	: m_fd(-1), m_xml_stream(new XMLStream(this, server, OUTBOUND, S2S)), m_server(server) {}
 
 bool NetSession::drain() {
 	// This is a phenomenally cool way of reading data from a socket to
@@ -101,4 +104,31 @@ void NetSession::send(std::string const & s) {
 }
 void NetSession::send(const char * p) {
 	m_outbuf += p;
+}
+
+/**
+ * Connection/lookup
+ */
+
+void NetSession::new_srv(std::string const & domain, short prio, short weight, short port, std::string const & hostname, bool secure) {
+	assert(m_domain == domain);
+	if (m_fd >= 0) {
+		return;
+	}
+	// Crappy: Just consider the last one.
+	m_port = port;
+	m_hostname = hostname;
+	m_secure = true;
+}
+
+void NetSession::srv_done() {
+	// Connect to the last one.
+	/// Router::lookup_address(m_hostname, this);
+}
+
+void NetSession::new_addr(std::string const & hostname, void * addr) {
+	if (m_hostname != hostname) {
+		return;
+	}
+	/// m_fd = Router::connect(this, addr, m_port);
 }

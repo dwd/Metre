@@ -24,7 +24,8 @@ namespace Metre {
 		struct event * m_listen;
 		Server & m_server;
 		std::map<evutil_socket_t, std::shared_ptr<NetSession>> m_sessions;
-		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_bydomain;
+		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_vrfy;
+		std::map<std::string, std::shared_ptr<NetSession>> m_sessions_outbound;
 		struct ub_ctx * m_ub_ctx;
 		struct event * m_ub_event;
 	public:
@@ -99,7 +100,7 @@ namespace Metre {
 			auto sock = accept(lsock, NULL, NULL);
 			int fl = O_NONBLOCK;
 			fcntl(sock, F_SETFL, fl); 
-			std::shared_ptr<NetSession> session(new NetSession(sock, INBOUND, S2S, &m_server));
+			std::shared_ptr<NetSession> session(new NetSession(sock, S2S, &m_server));
 			auto it = m_sessions.find(sock);
 			if (it != m_sessions.end()) {
 				// We already have one for this socket. This seems unlikely to be safe.
@@ -123,19 +124,21 @@ namespace Metre {
 		}
 		
 		void srv_lookup_done(int err, struct ub_result * result) {
-			try {
-				std::cout << "Done SRV lookup" << std::endl;
-				if (err != 0) {
-					std::cout << "Resolve error for SRV: " << ub_strerror(err) << std::endl;
-					return;
-				} else if (!result->havedata) {
-					std::cout << "No SRV records." << std::endl;
-				} else if (result->bogus) {
-					std::cout << "Forged result; ignoring." << std::endl;
-				} else {
-					if (result->secure) {
-						std::cout << "DNSSEC secured; add reference names" << std::endl;
-					}
+			std::cout << "Done SRV lookup" << std::endl;
+			if (err != 0) {
+				std::cout << "Resolve error for SRV: " << ub_strerror(err) << std::endl;
+				return;
+			} else if (!result->havedata) {
+				std::cout << "No SRV records." << std::endl;
+			} else if (result->bogus) {
+				std::cout << "Forged result; ignoring." << std::endl;
+			} else {
+				if (result->secure) {
+					std::cout << "DNSSEC secured; add reference names" << std::endl;
+				}
+				std::string domain = result->qname;
+				auto it = m_sessions_outbound.find(domain);
+				if (it != m_sessions_outbound.end()) {
 					for (int i = 0; result->data[i]; ++i) {
 						short priority = ntohs(*reinterpret_cast<short*>(result->data[i]));
 						short weight = ntohs(*reinterpret_cast<short*>(result->data[i]+2));
@@ -150,16 +153,25 @@ namespace Metre {
 							<< weight << ":"
 							<< port << "::"
 							<< hostname << std::endl;
+						(*it).second->new_srv(domain, priority, weight, port, hostname, result->secure);
 					}
+					/// (*it).second->srv_complete(domain);
+				} else {
+					std::cout << "No outbound session in operation for " << domain << std::endl;
 				}
-				ub_resolve_free(result);
-			} catch(...) {
-				ub_resolve_free(result);
-				throw;
 			}
 		}
 		
+		class UBResult {
+			/* Quick guard class. */
+		public:
+			struct ub_result * result;
+			UBResult(struct ub_result * r) : result(r) {}
+			~UBResult() { ub_resolve_free(result); }
+		};
+		
 		static void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
+			UBResult r(result);
 			reinterpret_cast<Mainloop *>(x)->srv_lookup_done(err, result);
 		}
 		
@@ -187,8 +199,34 @@ namespace Metre {
 		}
 		
 		std::shared_ptr<NetSession> session_vrfy(std::string const & domain) {
+			auto it = m_sessions_vrfy.find(domain);
+			try {
+				if (it != m_sessions_vrfy.end()) {
+					std::shared_ptr<NetSession> session((*it).second);
+					return session;
+				}
+			} catch(...) {
+				// Ooops, weak ptr. Clean out the stale entry.
+				m_sessions_vrfy.erase(it);
+			}
+			auto it2 = m_sessions_outbound.find(domain);
+			if (it2 != m_sessions_outbound.end()) {
+				m_sessions_vrfy[domain] = (*it2).second;
+				return (*it2).second;
+			}
+			// Need to setup a new session //
+			std::shared_ptr<NetSession> session(new NetSession(domain, &m_server));
 			srv_lookup(domain);
-			return 0;
+			m_sessions_outbound[domain] = session;
+			m_sessions_vrfy[domain] = session;
+			/*
+			struct event * ev = event_new(m_event_base, sock, EV_READ|EV_PERSIST, event_callback, &*session);
+			session->loop_read = ev;
+			event_add(ev, NULL);
+			ev = event_new(m_event_base, sock, EV_WRITE, event_callback, &*session);
+			session->loop_write = ev;
+			*/
+			return session;
 		}
 	};
 
