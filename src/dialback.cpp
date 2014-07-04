@@ -25,11 +25,11 @@ namespace {
 				node->append_node(feature);
 			}
 		};
-		
+
 		/**
 		 * Inbound handling.
 		 */
-		
+
 		void result(rapidxml::xml_node<> * node) {
 			/*
 			 * This is a request to authenticate, using the current key.
@@ -47,34 +47,34 @@ namespace {
 				throw Metre::unsupported_stanza_type("Missing mandatory attributes");
 			}
 			// With syntax done, we should send the key:
-			Router::session_vrfy(from->value());
+			//Router::session_vrfy(from->value());
 			throw std::runtime_error("Unimplemented");
 		}
-		
+
 		void result_valid(rapidxml::xml_node<> * node) {
 			throw std::runtime_error("Unimplemented");
 		}
-		
+
 		void result_invalid(rapidxml::xml_node<> * node) {
 			throw std::runtime_error("Unimplemented");
 		}
-		
+
 		void result_error(rapidxml::xml_node<> * node) {
 			throw std::runtime_error("Unimplemented");
 		}
-		
+
 		void verify(rapidxml::xml_node<> * node) {
 			throw std::runtime_error("Unimplemented");
 		}
-		
+
 		void verify_valid(rapidxml::xml_node<> * node) {
 			throw std::runtime_error("Unimplemented");
 		}
-		
+
 		void verify_invalid(rapidxml::xml_node<> * node) {
 			throw std::runtime_error("Unimplemented");
 		}
-		
+
 		bool handle(rapidxml::xml_node<> * node) {
 			xml_document<> * d = node->document();
 			d->fixup<parse_default>(node, true);
@@ -115,7 +115,6 @@ namespace {
 			return true;
 		}
 	};
-	
+
 	bool declared = Feature::declare<Dialback>(S2S);
 }
-

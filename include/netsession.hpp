@@ -5,13 +5,15 @@
 #include "defs.hpp"
 #include "rapidxml.hpp"
 
+// fwd:
+struct bufferevent;
+
 namespace Metre {
 	class XMLStream;
 	class Server;
-	
+
 	class NetSession {
 		std::string m_buf;
-		int m_fd;
 		static const size_t buflen = 4096;
 		std::string m_outbuf;
 		XMLStream * m_xml_stream;
@@ -20,28 +22,30 @@ namespace Metre {
 		short m_port;
 		std::string m_hostname;
 		bool m_secure;
+		struct bufferevent * m_bev;
+		unsigned long long m_serial;
 	public:
-		NetSession(int fd, SESSION_TYPE type, Server * server); /* Inbound */
-		NetSession(std::string const & domain, Server * server); /* Outbound S2S */
+		NetSession(unsigned long long serial, struct bufferevent * bev, SESSION_TYPE type, Server * server); /* Inbound */
+		NetSession(unsigned long long serial, std::string const & domain, Server * server); /* Outbound S2S */
 		bool drain();
 		bool need_push();
 		bool push();
-		int fd() { return m_fd; }
-		void fd(int f) { m_fd = f; }
 		void send(rapidxml::xml_document<> & d);
 		void send(std::string const & s);
 		void send(const char * p);
-		
+
+		unsigned long long serial() const {
+			return m_serial;
+		}
+
+		static void read_cb(struct bufferevent * bev, void * arg);
+		static void error_cb(struct bufferevent * bev, short flags, void * arg);
+
 		XMLStream & xml_stream() {
 			return *m_xml_stream;
 		}
-		
-		void new_srv(std::string const & domain, short prio, short weight, short port, std::string const & hostname, bool secure);
-		void srv_done();
-		void new_addr(std::string const & hostname, void * addr);
-		
-		void * loop_read;
-		void * loop_write;
+
+		~NetSession();
 	};
 }
 

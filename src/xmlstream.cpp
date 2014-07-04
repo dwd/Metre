@@ -13,11 +13,12 @@ XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_
 	: m_session(n), m_server(s), m_dir(dir), m_type(t) {
 }
 
-void XMLStream::process(std::string & buf) {
+size_t XMLStream::process(unsigned char * p, size_t len) {
 	using namespace rapidxml;
+	if (len == 0) return 0;
+	std::string buf{reinterpret_cast<char *>(p), len};
 	try {
 		try {
-			if (buf.empty()) return;
 			if (m_stream.first_node() == NULL) {
 				/**
 				 * We need to grab the stream open. Do so by parsing the main buffer to find where the open
@@ -27,7 +28,7 @@ void XMLStream::process(std::string & buf) {
 				auto test = m_stream.first_node();
 				if (!test || !test->name()) {
 					std::cout << "Cannot parse an element, yet." << std::endl;
-					return;
+					return 0;
 				}
 				m_stream_buf.assign(buf.data(), end - buf.data());
 				buf.erase(0, end - buf.data());
@@ -39,20 +40,23 @@ void XMLStream::process(std::string & buf) {
 			while(!buf.empty()) {
 				char * end = m_stanza.parse<parse_fastest|parse_parse_one>(const_cast<char *>(buf.c_str()), m_stream);
 				auto element = m_stanza.first_node();
-				if (!element || !element->name()) return;
+				if (!element || !element->name()) return len - buf.length();
 				std::cout << "TLE {" << element->xmlns() << "}" << element->name() << std::endl;
-				handle(element);
 				buf.erase(0, end - buf.data());
+				handle(element);
 				m_stanza.clear();
 			}
 		} catch(Metre::base::xmpp_exception) {
 			throw;
+		} catch(rapidxml::eof_error & e) {
+			return len - buf.length();
 		} catch(std::exception & e) {
 			throw Metre::undefined_condition(e.what());
 		} catch(...) {
 			throw Metre::undefined_condition();
 		}
 	} catch(Metre::base::xmpp_exception & e) {
+		std::cout << "Raising error: " << e.what() << std::endl;
 		xml_document<> d;
 		auto error = d.allocate_node(node_element, "stream:error");
 		auto specific = d.allocate_node(node_element, e.element_name());
@@ -81,9 +85,10 @@ void XMLStream::process(std::string & buf) {
 		}
 		m_closed = true;
 	}
+	return len - buf.length();
 }
-	
-	
+
+
 const char * XMLStream::content_namespace() const {
 	const char * p;
 	switch (m_type) {
@@ -137,7 +142,7 @@ void XMLStream::stream_open() {
 	}
 	// Assume we're good here.
 	/*
-	 *   We write this out as a string, to avoid trying to make rapidxml 
+	 *   We write this out as a string, to avoid trying to make rapidxml
 	 * write out only the open tag.
 	 */
 	m_session->send("<?xml version='1.0'?><stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='");
@@ -188,7 +193,7 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 		f = Feature::feature(xmlns, *this);
 		if (f) m_features[xmlns] = f;
 	}
-	
+
 	bool handled = false;
 	if (f) {
 		handled = f->handle(element);

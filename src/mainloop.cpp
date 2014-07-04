@@ -11,11 +11,14 @@
 #include "server.hpp"
 #include "netsession.hpp"
 #include <event2/event.h>
+#include <event2/listener.h>
+#include <event2/bufferevent.h>
 #include <memory>
 #include "router.hpp"
 #include <unbound.h>
 #include <cerrno>
 #include <cstring>
+#include <atomic>
 
 namespace Metre {
 	class Mainloop {
@@ -23,11 +26,11 @@ namespace Metre {
 		struct event_base * m_event_base;
 		struct event * m_listen;
 		Server & m_server;
-		std::map<evutil_socket_t, std::shared_ptr<NetSession>> m_sessions;
-		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_vrfy;
-		std::map<std::string, std::shared_ptr<NetSession>> m_sessions_outbound;
+		std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;
 		struct ub_ctx * m_ub_ctx;
 		struct event * m_ub_event;
+		struct evconnlistener * m_server_listener;
+		static std::atomic<unsigned long long> s_serial;
 	public:
 		static Mainloop * s_mainloop;
 		Mainloop(Server & server) : m_event_base(0), m_listen(0), m_server(server), m_sessions(), m_ub_event(0) {
@@ -36,19 +39,12 @@ namespace Metre {
 		bool init() {
 			if (m_event_base) throw std::runtime_error("I'm already initialized!");
 			m_event_base = event_base_new();
-			auto lsock = socket(AF_INET6, SOCK_STREAM, 0);
 			sockaddr_in6 sin = { AF_INET6, htons(5269), 0, { {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0} }, 0 };
-			if (0 > bind(lsock, (sockaddr *)&sin, sizeof(sin))) {
+			m_server_listener = evconnlistener_new_bind(m_event_base, Mainloop::new_session_cb, this, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin));
+			if (!m_server_listener) {
 				throw std::runtime_error(std::string("Cannot bind to server port: ") + strerror(errno));
 			}
-			int opt = 1;
-			setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-			if (0 > listen(lsock, 5)) {
-				throw std::runtime_error("Cannot listen!");
-			}
 			std::cout << "Listening." << std::endl;
-			m_listen = event_new(m_event_base, lsock, EV_READ|EV_PERSIST, Mainloop::new_session_cb, this);
-			event_add(m_listen, NULL);
 			std::cout << "Setting up DNS" << std::endl;
 			m_ub_ctx = ub_ctx_create();
 			if (!m_ub_ctx) {
@@ -63,66 +59,31 @@ namespace Metre {
 			}
 			return true;
 		}
-		
-		void netsession_event(evutil_socket_t sock, NetSession * s) {
-			if (!s->drain()) {
-				event_free(reinterpret_cast<struct event *>(s->loop_read));
-				event_free(reinterpret_cast<struct event *>(s->loop_write));
-				auto it = m_sessions.find(sock);
-				if (it != m_sessions.end()) {
-					m_sessions.erase(it);
-				} else {
-					// So we're dealing with a session that's not in the table.
-					// We're inside a C callback; the best thing to do here is exit hard.
-					std::cerr << "Session not in ownership table; corruption." << std::endl;
-					assert(false);
-				}
-				return;
-			}
-			if (s->need_push()) {
-				s->push();
-			}
-			if (s->need_push()) {
-				event_add(reinterpret_cast<struct event *>(s->loop_write), NULL);
-			}
+
+		static void new_session_cb(struct evconnlistener * listener, evutil_socket_t newsock, struct sockaddr * addr, int len, void * arg) {
+			reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len);
 		}
-		
-		static void event_callback(evutil_socket_t sock, short what, void * ptr) {
-			NetSession * s = reinterpret_cast<NetSession *>(ptr);
-			s_mainloop->netsession_event(sock, s);
-		}
-		
-		static void new_session_cb(evutil_socket_t sock, short, void * arg) {
-			reinterpret_cast<Mainloop *>(arg)->new_session_inbound(sock);
-		}
-		
-		void new_session_inbound(evutil_socket_t lsock) {
-			auto sock = accept(lsock, NULL, NULL);
-			int fl = O_NONBLOCK;
-			fcntl(sock, F_SETFL, fl); 
-			std::shared_ptr<NetSession> session(new NetSession(sock, S2S, &m_server));
-			auto it = m_sessions.find(sock);
+
+		void new_session_inbound(evutil_socket_t sock, struct sockaddr * sin, int sinlen) {
+			struct bufferevent * bev = bufferevent_socket_new(m_event_base, sock, BEV_OPT_CLOSE_ON_FREE);
+			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, S2S, &m_server));
+			auto it = m_sessions.find(session->serial());
 			if (it != m_sessions.end()) {
 				// We already have one for this socket. This seems unlikely to be safe.
 				std::cerr << "Session already in ownership table; corruption." << std::endl;
 				assert(false);
 			}
-			m_sessions[sock] = session;
-			struct event * ev = event_new(m_event_base, sock, EV_READ|EV_PERSIST, event_callback, &*session);
-			session->loop_read = ev;
-			event_add(ev, NULL);
-			ev = event_new(m_event_base, sock, EV_WRITE, event_callback, &*session);
-			session->loop_write = ev;
+			m_sessions[session->serial()] = session;
 		}
-		
+
 		void run() {
 			event_base_dispatch(m_event_base);
 		}
-		
+
 		void new_session_vrfy(std::string const & domain) {
-			
+
 		}
-		
+
 		void srv_lookup_done(int err, struct ub_result * result) {
 			std::cout << "Done SRV lookup" << std::endl;
 			if (err != 0) {
@@ -137,31 +98,24 @@ namespace Metre {
 					std::cout << "DNSSEC secured; add reference names" << std::endl;
 				}
 				std::string domain = result->qname;
-				auto it = m_sessions_outbound.find(domain);
-				if (it != m_sessions_outbound.end()) {
-					for (int i = 0; result->data[i]; ++i) {
-						short priority = ntohs(*reinterpret_cast<short*>(result->data[i]));
-						short weight = ntohs(*reinterpret_cast<short*>(result->data[i]+2));
-						short port = ntohs(*reinterpret_cast<short*>(result->data[i]+4));
-						std::string hostname;
-						for (int x = 6; result->data[i][x]; x += result->data[i][x] + 1) {
-							hostname.append(result->data[i]+x+1, result->data[i][x]);
-							hostname += ".";
-						}
-						std::cout << "Data[" << i << "]: (" << result->len[i] << " bytes) "
-							<< priority << ":"
-							<< weight << ":"
-							<< port << "::"
-							<< hostname << std::endl;
-						(*it).second->new_srv(domain, priority, weight, port, hostname, result->secure);
+				for (int i = 0; result->data[i]; ++i) {
+					short priority = ntohs(*reinterpret_cast<short*>(result->data[i]));
+					short weight = ntohs(*reinterpret_cast<short*>(result->data[i]+2));
+					short port = ntohs(*reinterpret_cast<short*>(result->data[i]+4));
+					std::string hostname;
+					for (int x = 6; result->data[i][x]; x += result->data[i][x] + 1) {
+						hostname.append(result->data[i]+x+1, result->data[i][x]);
+						hostname += ".";
 					}
-					/// (*it).second->srv_complete(domain);
-				} else {
-					std::cout << "No outbound session in operation for " << domain << std::endl;
+					std::cout << "Data[" << i << "]: (" << result->len[i] << " bytes) "
+						<< priority << ":"
+						<< weight << ":"
+						<< port << "::"
+						<< hostname << std::endl;
 				}
 			}
 		}
-		
+
 		class UBResult {
 			/* Quick guard class. */
 		public:
@@ -169,23 +123,23 @@ namespace Metre {
 			UBResult(struct ub_result * r) : result(r) {}
 			~UBResult() { ub_resolve_free(result); }
 		};
-		
+
 		static void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
-			UBResult r(result);
+			UBResult r{result};
 			reinterpret_cast<Mainloop *>(x)->srv_lookup_done(err, result);
 		}
-		
+
 		static void unbound_cb(evutil_socket_t, short, void * arg) {
 			ub_process(reinterpret_cast<struct ub_ctx *>(arg));
 		}
-		
+
 		void check_dns_setup() {
 			if (!m_ub_event) {
 				m_ub_event = event_new(m_event_base, ub_fd(m_ub_ctx), EV_READ|EV_PERSIST, unbound_cb, m_ub_ctx);
 				event_add(m_ub_event, NULL);
 			}
 		}
-		
+
 		void srv_lookup(std::string const & domain) {
 			std::cout << "SRV lookup for _xmpp-server._tcp." << domain << std::endl;
 			int retval = ub_resolve_async(m_ub_ctx,
@@ -197,53 +151,32 @@ namespace Metre {
 				NULL); /* int * async_id */
 			check_dns_setup();
 		}
-		
-		std::shared_ptr<NetSession> session_vrfy(std::string const & domain) {
-			auto it = m_sessions_vrfy.find(domain);
-			try {
-				if (it != m_sessions_vrfy.end()) {
-					std::shared_ptr<NetSession> session((*it).second);
-					return session;
-				}
-			} catch(...) {
-				// Ooops, weak ptr. Clean out the stale entry.
-				m_sessions_vrfy.erase(it);
+
+		void session_closed(NetSession & ns) {
+			auto it = m_sessions.find(ns.serial());
+			assert(it != m_sessions.end());
+			if (it != m_sessions.end()) {
+				m_sessions.erase(it);
 			}
-			auto it2 = m_sessions_outbound.find(domain);
-			if (it2 != m_sessions_outbound.end()) {
-				m_sessions_vrfy[domain] = (*it2).second;
-				return (*it2).second;
-			}
-			// Need to setup a new session //
-			std::shared_ptr<NetSession> session(new NetSession(domain, &m_server));
-			srv_lookup(domain);
-			m_sessions_outbound[domain] = session;
-			m_sessions_vrfy[domain] = session;
-			/*
-			struct event * ev = event_new(m_event_base, sock, EV_READ|EV_PERSIST, event_callback, &*session);
-			session->loop_read = ev;
-			event_add(ev, NULL);
-			ev = event_new(m_event_base, sock, EV_WRITE, event_callback, &*session);
-			session->loop_write = ev;
-			*/
-			return session;
 		}
 	};
 
-	Mainloop * Mainloop::s_mainloop = 0;
-	std::shared_ptr<NetSession> Router::session_vrfy(std::string const & domain) {
-		return Mainloop::s_mainloop->session_vrfy(domain);
+	Mainloop * Mainloop::s_mainloop{nullptr};
+	std::atomic<unsigned long long> Mainloop::s_serial{0};
+
+	void Router::session_closed(NetSession & ns) {
+		Mainloop::s_mainloop->session_closed(ns);
 	}
 }
 
 int main(int argc, char *argv[]) {
 	Metre::Server server;
 	Metre::Mainloop loop(server);
-	
+
 	if (!loop.init()) {
 		return 1;
 	}
 	loop.run();
-	
+
 	return 0;
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-all: metre-test metre keys
+all: metre keys
 	@echo Done.
 
 OBJS:=$(patsubst src/%.cpp,build/src/%.o,$(wildcard src/*.cpp))
@@ -31,7 +31,7 @@ build/%.o: %.cpp
 
 clean:
 	@echo [CLEAN] build/ metre metre-test
-	@rm -rf build metre metre-test	
+	@rm -rf build metre metre-test
 
 keys:
 	@echo [DNSSEC] . '=>' $@

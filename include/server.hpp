@@ -35,7 +35,7 @@ namespace Metre {
 			if (acciter != m_accounts.end()) {
 				return *acciter->second;
 			}
-			if (jid.bare() != "dave@jekyll.dave.cridland.net") {
+			if (jid.bare() != "dave@cridland.im") {
 				throw std::runtime_error("No such account");
 			}
 			auto acc = m_accounts[jid.bare()] = new Account(jid);
@@ -56,7 +56,7 @@ namespace Metre {
 			if (domiter != m_domains.end()) {
 				return *domiter->second;
 			}
-			if (domain != "jekyll.dave.cridland.net") {
+			if (domain != "cridland.im") {
 				throw std::runtime_error("No such domain");
 			}
 			auto dom = m_domains[domain] = new Domain(domain);

@@ -24,7 +24,7 @@ namespace Metre {
 		std::optional<std::string> m_user;
 	public:
 		XMLStream(NetSession * owner, Server * server, SESSION_DIRECTION dir, SESSION_TYPE type);
-		void process(std::string & buf);
+		size_t process(unsigned char *, size_t);
 		const char * content_namespace() const;
 		SESSION_TYPE type() const {
 			return m_type;
