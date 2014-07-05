@@ -4,6 +4,7 @@
 #include <string>
 #include "defs.hpp"
 #include "rapidxml.hpp"
+#include "sigslot/sigslot.h"
 
 // fwd:
 struct bufferevent;
@@ -27,6 +28,10 @@ namespace Metre {
 	public:
 		NetSession(unsigned long long serial, struct bufferevent * bev, SESSION_TYPE type, Server * server); /* Inbound */
 		NetSession(unsigned long long serial, std::string const & domain, Server * server); /* Outbound S2S */
+
+		// Signals:
+		mutable sigslot::signal<sigslot::thread::mt, NetSession &> closed;
+
 		bool drain();
 		bool need_push();
 		bool push();

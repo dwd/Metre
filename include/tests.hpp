@@ -4,6 +4,7 @@
 #include <list>
 #include <string>
 #include <stdexcept>
+#include <iostream>
 
 namespace Metre {
 	namespace assert {

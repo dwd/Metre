@@ -9,12 +9,12 @@ namespace Metre {
 		std::optional<std::string> m_local;
 		std::string m_domain;
 		std::optional<std::string> m_resource;
-		
+
 		mutable std::optional<std::string> m_full;
 		mutable std::optional<std::string> m_bare;
 	public:
 		Jid(std::string const & jid) {
-			// TODO : Parse out //
+			parse(jid);
 		}
 		Jid(std::string const & local, std::string const & domain)
 			: m_local(local), m_domain(domain) {
@@ -24,6 +24,11 @@ namespace Metre {
 		}
 		std::string const & full() const;
 		std::string const & bare() const;
+		std::string const & domain() const {
+			return m_domain;
+		}
+	protected:
+		void parse(std::string const & s);
 	};
 
 }

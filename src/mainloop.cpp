@@ -19,9 +19,10 @@
 #include <cerrno>
 #include <cstring>
 #include <atomic>
+#include "sigslot/sigslot.h"
 
 namespace Metre {
-	class Mainloop {
+	class Mainloop : public sigslot::has_slots<> {
 	private:
 		struct event_base * m_event_base;
 		struct event * m_listen;
@@ -74,6 +75,7 @@ namespace Metre {
 				assert(false);
 			}
 			m_sessions[session->serial()] = session;
+			session->closed.connect(this, &Mainloop::session_closed);
 		}
 
 		void run() {
@@ -163,10 +165,6 @@ namespace Metre {
 
 	Mainloop * Mainloop::s_mainloop{nullptr};
 	std::atomic<unsigned long long> Mainloop::s_serial{0};
-
-	void Router::session_closed(NetSession & ns) {
-		Mainloop::s_mainloop->session_closed(ns);
-	}
 }
 
 int main(int argc, char *argv[]) {

@@ -72,10 +72,10 @@ void NetSession::send(const char * p) {
 
 void NetSession::read_cb(bufferevent *, void * arg) {
 	NetSession & ns = *reinterpret_cast<NetSession *>(arg);
-	if (ns.drain()) Router::session_closed(ns);
+	if (ns.drain()) ns.closed.emit(ns);
 }
 
 void NetSession::error_cb(bufferevent *, short, void * arg) {
 	NetSession & ns = *reinterpret_cast<NetSession *>(arg);
-	Router::session_closed(ns);
+	ns.closed.emit(ns);
 }

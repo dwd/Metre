@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-all: metre keys
+all: metre-test metre keys
 	@echo Done.
 
 OBJS:=$(patsubst src/%.cpp,build/src/%.o,$(wildcard src/*.cpp))
@@ -9,7 +9,7 @@ ETOBJS:=$(filter-out build/src/dialback.o build/src/mainloop.o,$(OBJS))
 
 LIBDIRS=/usr/local/lib
 LIBS=event_core unbound
-INCDIRS=include/ ../rapidxml-1.13/ /usr/local/include
+INCDIRS=include/ ../rapidxml-1.13/ ../SigSlot/ /usr/local/include
 
 LINKLIBS=$(LIBS:%=-l%)
 LINKLIBDIRS=$(LIBDIRS:%=-L%)
