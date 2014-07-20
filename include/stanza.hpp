@@ -7,41 +7,44 @@
 namespace Metre {
 	class XMLStream;
 	class Stanza {
+	protected:
 		std::optional<Jid> m_from;
 		std::optional<Jid> m_to;
 		std::string m_type_str;
 		std::string m_id;
 		std::string m_lang;
-		char * m_payload;
+		const char * m_payload;
 		size_t m_payload_l;
 		XMLStream & m_stream;
 	public:
 		Stanza(rapidxml::xml_node<> const * node, XMLStream & s) : m_stream(s)  {
 			auto to = node->first_attribute("to");
 		}
-		
+		Stanza(XMLStream & s) : m_stream(s) {
+		}
+
 		XMLStream & originator() const {
 			m_stream;
 		}
-		
+
 		Jid const & to() const {
 			//if (!m_to) return m_stream.to();
 			return *m_to;
 		}
-		
+
 		Jid const & from() const {
 			//if (!m_from) return m_stream.from();
 			return *m_from;
 		}
-		
+
 		std::string const & type_str() const {
 			return m_type_str;
 		}
-		
+
 		std::string const & id() const {
 			return m_id;
 		}
-		
+
 		std::string const & lang() const {
 			return m_lang;
 		}
@@ -95,6 +98,18 @@ namespace Metre {
 	class Presence : public Stanza {
 	public:
 		Presence(rapidxml::xml_node<> const * node, XMLStream & s) : Stanza(node, s) {
+		}
+	};
+
+	class Verify : public Stanza {
+		std::string m_key;
+	public:
+		Verify(Jid const & to, Jid const & from, std::string const & stream_id, std::string const & key, XMLStream & s) : Stanza(s), m_key(key) {
+			m_to = to;
+			m_from = from;
+			m_id = stream_id,
+			m_payload = m_key.data();
+			m_payload_l = m_key.length();
 		}
 	};
 }

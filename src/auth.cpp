@@ -13,7 +13,7 @@ namespace {
 		Auth(XMLStream & s) : Feature(s) {}
 		class Description : public Feature::Description<Auth> {
 		public:
-			Description() : Feature::Description<Auth>(sasl_ns) {};
+			Description() : Feature::Description<Auth>(sasl_ns, FEAT_AUTH) {};
 			virtual void offer(xml_node<> * node, XMLStream & s) {
 				if (s.user()) {
 					return;
@@ -28,7 +28,7 @@ namespace {
 				node->append_node(feature);
 			}
 		};
-		
+
 		bool handle(xml_node<> * node) {
 			if (m_stream.user()) {
 				throw Metre::not_authorized("It's best if you don't login twice");
@@ -54,7 +54,6 @@ namespace {
 			}
 		}
 	};
-	
+
 	bool declared = Feature::declare<Auth>(C2S);
 }
-

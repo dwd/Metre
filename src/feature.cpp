@@ -7,7 +7,7 @@ Feature::Feature(XMLStream & s) : m_stream(s) {}
 
 Feature::~Feature() {}
 
-Feature::BaseDescription::BaseDescription(std::string const & ns) : m_xmlns(ns) {}
+Feature::BaseDescription::BaseDescription(std::string const & ns, Feature::Type type) : m_xmlns(ns), m_type(type) {}
 
 std::string const & Feature::BaseDescription::xmlns() const {
 	return m_xmlns;
@@ -31,4 +31,13 @@ Feature * Feature::feature(std::string const & xmlns, XMLStream & stream) {
 		}
 	}
 	return 0;
+}
+
+Feature::Type Feature::type(std::string const & xmlns, XMLStream & stream) {
+	for (auto f : Feature::features(stream.type())) {
+		if (f->xmlns() == xmlns) {
+			return f->type(stream);
+		}
+	}
+	return FEAT_NONE;
 }

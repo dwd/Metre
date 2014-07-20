@@ -20,6 +20,8 @@
 #include <cstring>
 #include <atomic>
 #include "sigslot/sigslot.h"
+#include "dns.hpp"
+#include <arpa/inet.h>
 
 namespace Metre {
 	class Mainloop : public sigslot::has_slots<> {
@@ -36,6 +38,9 @@ namespace Metre {
 		static Mainloop * s_mainloop;
 		Mainloop(Server & server) : m_event_base(0), m_listen(0), m_server(server), m_sessions(), m_ub_event(0) {
 			s_mainloop = this;
+		}
+		struct ub_ctx * ub_ctx() {
+			return m_ub_ctx;
 		}
 		bool init() {
 			if (m_event_base) throw std::runtime_error("I'm already initialized!");
@@ -78,57 +83,43 @@ namespace Metre {
 			session->closed.connect(this, &Mainloop::session_closed);
 		}
 
+		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, unsigned long addr, unsigned short port) {
+			struct sockaddr_in sin;
+			sin.sin_family = AF_INET;
+			sin.sin_addr.s_addr = addr;
+			sin.sin_port = htons(port);
+			char buf[25];
+			std::cout << "Connecting to " << inet_ntop(AF_INET, &sin.sin_addr, buf, 25) << ":" << ntohs(sin.sin_port)  << ":" << port<< std::endl;
+			return connect(fromd, tod, hostname, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin), port);
+		}
+
+		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, struct sockaddr * sin, size_t addrlen, unsigned short port) {
+			struct bufferevent * bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
+			if (!bev) {
+				std::cout << "Error creating BEV" << std::endl;
+				// TODO ARGH!
+			}
+			if(0 > bufferevent_socket_connect(bev, sin, addrlen)) {
+				std::cout << "Error connecting BEV" << std::endl;
+				// TODO Something bad happened.
+				bufferevent_free(bev);
+			}
+			std::cout << "All good so far." << std::endl;
+			std::cout << "BEV fd is " << bufferevent_getfd(bev) << std::endl;
+			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, &m_server));
+			auto it = m_sessions.find(session->serial());
+			if (it != m_sessions.end()) {
+				// We already have one for this socket. This seems unlikely to be safe.
+				std::cerr << "Session already in ownership table; corruption." << std::endl;
+				assert(false);
+			}
+			m_sessions[session->serial()] = session;
+			session->closed.connect(this, &Mainloop::session_closed);
+			return session;
+		}
+
 		void run() {
 			event_base_dispatch(m_event_base);
-		}
-
-		void new_session_vrfy(std::string const & domain) {
-
-		}
-
-		void srv_lookup_done(int err, struct ub_result * result) {
-			std::cout << "Done SRV lookup" << std::endl;
-			if (err != 0) {
-				std::cout << "Resolve error for SRV: " << ub_strerror(err) << std::endl;
-				return;
-			} else if (!result->havedata) {
-				std::cout << "No SRV records." << std::endl;
-			} else if (result->bogus) {
-				std::cout << "Forged result; ignoring." << std::endl;
-			} else {
-				if (result->secure) {
-					std::cout << "DNSSEC secured; add reference names" << std::endl;
-				}
-				std::string domain = result->qname;
-				for (int i = 0; result->data[i]; ++i) {
-					short priority = ntohs(*reinterpret_cast<short*>(result->data[i]));
-					short weight = ntohs(*reinterpret_cast<short*>(result->data[i]+2));
-					short port = ntohs(*reinterpret_cast<short*>(result->data[i]+4));
-					std::string hostname;
-					for (int x = 6; result->data[i][x]; x += result->data[i][x] + 1) {
-						hostname.append(result->data[i]+x+1, result->data[i][x]);
-						hostname += ".";
-					}
-					std::cout << "Data[" << i << "]: (" << result->len[i] << " bytes) "
-						<< priority << ":"
-						<< weight << ":"
-						<< port << "::"
-						<< hostname << std::endl;
-				}
-			}
-		}
-
-		class UBResult {
-			/* Quick guard class. */
-		public:
-			struct ub_result * result;
-			UBResult(struct ub_result * r) : result(r) {}
-			~UBResult() { ub_resolve_free(result); }
-		};
-
-		static void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
-			UBResult r{result};
-			reinterpret_cast<Mainloop *>(x)->srv_lookup_done(err, result);
 		}
 
 		static void unbound_cb(evutil_socket_t, short, void * arg) {
@@ -142,18 +133,6 @@ namespace Metre {
 			}
 		}
 
-		void srv_lookup(std::string const & domain) {
-			std::cout << "SRV lookup for _xmpp-server._tcp." << domain << std::endl;
-			int retval = ub_resolve_async(m_ub_ctx,
-				("_xmpp-server._tcp." + domain).c_str(),
-				33, /* SRV */
-				1,  /* IN */
-				this,
-				srv_lookup_done_cb,
-				NULL); /* int * async_id */
-			check_dns_setup();
-		}
-
 		void session_closed(NetSession & ns) {
 			auto it = m_sessions.find(ns.serial());
 			assert(it != m_sessions.end());
@@ -163,8 +142,164 @@ namespace Metre {
 		}
 	};
 
+	class ResolverImpl : public Metre::DNS::Resolver {
+	private:
+		std::map<std::string, DNS::Resolver::srv_callback_t> m_srv_pending;
+		std::map<std::string, DNS::Resolver::addr_callback_t> m_a_pending;
+	public:
+		void srv_lookup_done(int err, struct ub_result * result) {
+			std::string error;
+			if (err != 0) {
+				error = ub_strerror(err);
+				return;
+			} else if (!result->havedata) {
+				error = "No SRV records present";
+			} else if (result->bogus) {
+				error = std::string("Bogus: ") + result->why_bogus;
+			} else {
+				DNS::Srv srv;
+				if (result->secure) {
+					srv.dnssec = true;
+				}
+				srv.domain = result->qname;
+				for (int i = 0; result->data[i]; ++i) {
+					DNS::SrvRR rr;
+					rr.priority = ntohs(*reinterpret_cast<short*>(result->data[i]));
+					rr.weight = ntohs(*reinterpret_cast<short*>(result->data[i]+2));
+					rr.port = ntohs(*reinterpret_cast<short*>(result->data[i]+4));
+					for (int x = 6; result->data[i][x]; x += result->data[i][x] + 1) {
+						rr.hostname.append(result->data[i]+x+1, result->data[i][x]);
+						rr.hostname += ".";
+					}
+					srv.rrs.push_back(rr);
+					std::cout << "Data[" << i << "]: (" << result->len[i] << " bytes) "
+						<< rr.priority << ":"
+						<< rr.weight << ":"
+						<< rr.port << "::"
+						<< rr.hostname << std::endl;
+				}
+				auto it = m_srv_pending.find(srv.domain);
+				if (it != m_srv_pending.end()) {
+					(*it).second.emit(srv);
+					m_srv_pending.erase(it);
+				}
+				return;
+			}
+			std::cout << "DNS Error: " << error << std::endl;
+			auto it = m_srv_pending.find(result->qname);
+			if (it != m_srv_pending.end()) {
+				DNS::Srv srv;
+				srv.error = error;
+				srv.domain = result->qname;
+				(*it).second.emit(srv);
+				m_srv_pending.erase(it);
+			}
+		}
+		void a_lookup_done(int err, struct ub_result * result) {
+			std::string error;
+			if (err != 0) {
+				error = ub_strerror(err);
+				return;
+			} else if (!result->havedata) {
+				error = "No A records present";
+			} else if (result->bogus) {
+				error = std::string("Bogus: ") + result->why_bogus;
+			} else {
+				DNS::Address a;
+				if (result->secure) {
+					a.dnssec = true;
+				}
+				a.hostname = result->qname;
+				for (int i = 0; result->data[i]; ++i) {
+					a.addr4.push_back(*reinterpret_cast<unsigned long *>(result->data[0]));
+				}
+				auto it = m_a_pending.find(a.hostname);
+				if (it != m_a_pending.end()) {
+					(*it).second.emit(a);
+					m_a_pending.erase(it);
+				}
+				return;
+			}
+			auto it = m_a_pending.find(result->qname);
+			if (it != m_a_pending.end()) {
+				DNS::Address a;
+				a.error = error;
+				a.hostname = result->qname;
+				(*it).second.emit(a);
+				m_a_pending.erase(it);
+			}
+		}
+
+		class UBResult {
+			/* Quick guard class. */
+		public:
+			struct ub_result * result;
+			UBResult(struct ub_result * r) : result(r) {}
+			~UBResult() { ub_resolve_free(result); }
+		};
+
+	static void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
+		UBResult r{result};
+		reinterpret_cast<ResolverImpl *>(x)->srv_lookup_done(err, result);
+	}
+
+	static void a_lookup_done_cb(void * x, int err, struct ub_result * result) {
+		UBResult r{result};
+		reinterpret_cast<ResolverImpl *>(x)->a_lookup_done(err, result);
+	}
+
+		virtual Resolver::srv_callback_t & SrvLookup(std::string const & base_domain) {
+			std::string domain = "_xmpp-server._tcp." + base_domain;
+			std::cout << "SRV lookup for " << domain << std::endl;
+			auto it = m_srv_pending.find(domain);
+			if (it != m_srv_pending.end()) {
+				return (*it).second;
+			}
+			int retval = ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
+				domain.c_str(),
+				33, /* SRV */
+				1,  /* IN */
+				this,
+				srv_lookup_done_cb,
+				NULL); /* int * async_id */
+			Mainloop::s_mainloop->check_dns_setup();
+			return m_srv_pending[domain];
+		}
+
+		virtual Resolver::addr_callback_t & AddressLookup(std::string const & hostname) {
+			std::cout << "A/AAAA lookup for " << hostname << std::endl;
+			auto it = m_a_pending.find(hostname);
+			if (it != m_a_pending.end()) {
+				return (*it).second;
+			}
+			int retval = ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
+				hostname.c_str(),
+				1, /* A */
+				1,  /* IN */
+				this,
+				a_lookup_done_cb,
+				NULL); /* int * async_id */
+			Mainloop::s_mainloop->check_dns_setup();
+			return m_a_pending[hostname];
+		}
+	};
+
 	Mainloop * Mainloop::s_mainloop{nullptr};
 	std::atomic<unsigned long long> Mainloop::s_serial{0};
+	ResolverImpl * s_resolver{nullptr};
+
+	namespace DNS {
+		Resolver & Resolver::resolver() {
+			if (!s_resolver) s_resolver = new ResolverImpl;
+			return *s_resolver;
+		}
+	}
+
+	namespace Router {
+		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, unsigned long addr, unsigned short port) {
+			Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port);
+		}
+	}
 }
 
 int main(int argc, char *argv[]) {

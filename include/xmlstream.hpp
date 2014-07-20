@@ -22,8 +22,15 @@ namespace Metre {
 		NetSession * m_session;
 		std::map<std::string,Feature *> m_features;
 		std::optional<std::string> m_user;
+		std::string m_stream_id;
+		std::string m_stream_from;
+		std::string m_stream_to;
+		bool m_secured; // Channel has been secured, usually by TLS //
+		bool m_compressed; // Channel has compression enabled, by TLS or XEP-0138 //
+		bool m_authenticated; // Channel has been authenticated, by SASL or Dialback. //
 	public:
 		XMLStream(NetSession * owner, Server * server, SESSION_DIRECTION dir, SESSION_TYPE type);
+		XMLStream(NetSession * owner, Server * server, SESSION_DIRECTION dir, SESSION_TYPE type, std::string const & stream_from, std::string const & stream_to);
 		size_t process(unsigned char *, size_t);
 		const char * content_namespace() const;
 		SESSION_TYPE type() const {
@@ -43,10 +50,24 @@ namespace Metre {
 		}
 		void send(rapidxml::xml_document<> & d);
 		void restart();
+		void secured() {m_secured = true;}
+		void compressed() {m_compressed = true;}
+		void authenticated() {m_authenticated = true;}
+		NetSession & session() {
+			return *m_session;
+		}
+		std::string const & stream_id() {
+			return m_stream_id;
+		}
 		~XMLStream();
+
+		static std::string generate_stream_id();
+		void connected(NetSession &);
+
 	private:
 		void handle(rapidxml::xml_node<> *);
 		void stream_open();
+		void send_stream_open(bool, bool);
 	};
 }
 

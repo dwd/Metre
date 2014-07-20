@@ -15,7 +15,7 @@ namespace {
 		Dialback(XMLStream & s) : Feature(s) {}
 		class Description : public Feature::Description<Dialback> {
 		public:
-			Description() : Feature::Description<Dialback>(sasl_ns) {};
+			Description() : Feature::Description<Dialback>(sasl_ns, FEAT_AUTH) {};
 			virtual void offer(xml_node<> * node, XMLStream &) {
 				xml_document<> * d = node->document();
 				auto feature = d->allocate_node(node_element, "dialback");
@@ -46,9 +46,11 @@ namespace {
 			if (!(from && to)) {
 				throw Metre::unsupported_stanza_type("Missing mandatory attributes");
 			}
+			Jid fromjid(from->value());
+			Jid tojid(to->value());
 			// With syntax done, we should send the key:
-			//Router::session_vrfy(from->value());
-			throw std::runtime_error("Unimplemented");
+			std::shared_ptr<Route> route(RouteTable::routeTable().route(Jid(from->value())));
+			route->transmit(Verify(fromjid, tojid, m_stream.stream_id(), key, m_stream));
 		}
 
 		void result_valid(rapidxml::xml_node<> * node) {

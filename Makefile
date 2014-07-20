@@ -8,7 +8,7 @@ TESTOBJS:=$(patsubst tests/%.cpp,build/tests/%.o,$(wildcard tests/*.cpp))
 ETOBJS:=$(filter-out build/src/dialback.o build/src/mainloop.o,$(OBJS))
 
 LIBDIRS=/usr/local/lib
-LIBS=event_core unbound
+LIBS=event_core unbound ssl event_openssl crypto
 INCDIRS=include/ ../rapidxml-1.13/ ../SigSlot/ /usr/local/include
 
 LINKLIBS=$(LIBS:%=-l%)

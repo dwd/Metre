@@ -27,10 +27,19 @@ namespace Metre {
 		unsigned long long m_serial;
 	public:
 		NetSession(unsigned long long serial, struct bufferevent * bev, SESSION_TYPE type, Server * server); /* Inbound */
-		NetSession(unsigned long long serial, std::string const & domain, Server * server); /* Outbound S2S */
+		NetSession(unsigned long long serial, struct bufferevent * bev, std::string const & stream_from, std::string const & stream_to, Server * server); /* Outbound S2S */
+
+		// Scary stuff only used for buffer juggling.
+		struct bufferevent * bufferevent() {
+			return m_bev;
+		}
+		void bufferevent(struct bufferevent * bev);
+		// Stuff for XMLStream to indicate it's used octets.
+		void used(size_t n);
 
 		// Signals:
 		mutable sigslot::signal<sigslot::thread::mt, NetSession &> closed;
+		mutable sigslot::signal<sigslot::thread::mt, NetSession &> connected;
 
 		bool drain();
 		bool need_push();
@@ -44,13 +53,16 @@ namespace Metre {
 		}
 
 		static void read_cb(struct bufferevent * bev, void * arg);
-		static void error_cb(struct bufferevent * bev, short flags, void * arg);
+		static void event_cb(struct bufferevent * bev, short flags, void * arg);
 
 		XMLStream & xml_stream() {
 			return *m_xml_stream;
 		}
 
 		~NetSession();
+	private:
+		void bev_closed();
+		void bev_connected();
 	};
 }
 

@@ -14,12 +14,12 @@ namespace {
 		JabberServer(XMLStream & s) : Feature(s) {}
 		class Description : public Feature::Description<JabberServer> {
 		public:
-			Description() : Feature::Description<JabberServer>(sasl_ns) {};
+			Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
 			virtual void offer(xml_node<> *, XMLStream &) {
 				// No feature advertised.
 			}
 		};
-		
+
 		bool handle(rapidxml::xml_node<> * node) {
 			if (!m_stream.user()) {
 				throw Metre::not_authorized();
@@ -42,7 +42,6 @@ namespace {
 			return true;
 		}
 	};
-	
+
 	bool declared = Feature::declare<JabberServer>(S2S);
 }
-
