@@ -8,6 +8,7 @@ namespace Metre {
 	class XMLStream;
 	class Stanza {
 	protected:
+		const char * m_name;
 		std::optional<Jid> m_from;
 		std::optional<Jid> m_to;
 		std::string m_type_str;
@@ -15,17 +16,10 @@ namespace Metre {
 		std::string m_lang;
 		const char * m_payload;
 		size_t m_payload_l;
-		XMLStream & m_stream;
+		std::string const m_stream_id;
 	public:
-		Stanza(rapidxml::xml_node<> const * node, XMLStream & s) : m_stream(s)  {
-			auto to = node->first_attribute("to");
-		}
-		Stanza(XMLStream & s) : m_stream(s) {
-		}
-
-		XMLStream & originator() const {
-			m_stream;
-		}
+		Stanza(rapidxml::xml_node<> const * node, XMLStream & s);
+		Stanza(const char * name, XMLStream & s);
 
 		Jid const & to() const {
 			//if (!m_to) return m_stream.to();
@@ -48,6 +42,8 @@ namespace Metre {
 		std::string const & lang() const {
 			return m_lang;
 		}
+
+		void render(rapidxml::xml_document<> & d);
 	};
 
 
@@ -101,13 +97,16 @@ namespace Metre {
 		}
 	};
 
+	/*
+		* Slightly hacky; used for building outbound Verify elements.
+		*/
 	class Verify : public Stanza {
 		std::string m_key;
 	public:
-		Verify(Jid const & to, Jid const & from, std::string const & stream_id, std::string const & key, XMLStream & s) : Stanza(s), m_key(key) {
+		Verify(Jid const & to, Jid const & from, std::string const & stream_id, std::string const & key, XMLStream & s) : Stanza("db:verify", s), m_key(key) {
 			m_to = to;
 			m_from = from;
-			m_id = stream_id,
+			m_id = stream_id;
 			m_payload = m_key.data();
 			m_payload_l = m_key.length();
 		}

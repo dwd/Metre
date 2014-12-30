@@ -4,52 +4,59 @@
 #include "server.hpp"
 #include "netsession.hpp"
 #include "feature.hpp"
+#include "router.hpp"
 
 #include <iostream>
 #include <random>
 #include <algorithm>
+#ifdef VALGRIND
+#include <valgrind/memcheck.h>
+#else
+#define VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(ptr,len) 0
+#endif
 
 using namespace Metre;
 
 XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t) {
+	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_closed(false), m_secured(false), m_authenticated(false), m_compressed(false) {
 }
 
 XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const & stream_from, std::string const & stream_to)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_from(stream_from), m_stream_to(stream_to) {
+	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_from(stream_from), m_stream_to(stream_to), m_closed(false), m_secured(false), m_authenticated(false), m_compressed(false) {
 }
 
 size_t XMLStream::process(unsigned char * p, size_t len) {
 	using namespace rapidxml;
 	if (len == 0) return 0;
+	VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
 	std::string buf{reinterpret_cast<char *>(p), len};
 	std::cout << "Got [" << len << "] : " << buf << std::endl;
 	try {
 		try {
-			if (m_stream.first_node() == NULL) {
+			if (m_stream_buf.empty()) {
 				/**
 				 * We need to grab the stream open. Do so by parsing the main buffer to find where the open
 				 * finishes, and copy that segment over to another buffer. Then reparse, this time properly.
 				 */
 				char * end = m_stream.parse<parse_open_only|parse_fastest>(const_cast<char *>(buf.c_str()));
 				auto test = m_stream.first_node();
-				if (!test || !test->name()) {
-					std::cout << "Cannot parse an element, yet." << std::endl;
-					return 0;
+				if (test && test->name()) {
+					m_stream_buf.assign(buf.data(), end - buf.data());
+					m_session->used(end - buf.data());
+					buf.erase(0, end - buf.data());
+					m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
+					stream_open();
+					auto stream_open = m_stream.first_node();
+					std::cout << "Stream open with {" << stream_open->xmlns() << "}" << stream_open->name() << std::endl;
+				} else {
+					m_stream_buf.clear();
 				}
-				m_stream_buf.assign(buf.data(), end - buf.data());
-				m_session->used(end - buf.data());
-				buf.erase(0, end - buf.data());
-				m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
-				stream_open();
-				auto stream_open = m_stream.first_node();
-				std::cout << "Stream open with {" << stream_open->xmlns() << "}" << stream_open->name() << std::endl;
 			}
 			while(!buf.empty()) {
 				char * end = m_stanza.parse<parse_fastest|parse_parse_one>(const_cast<char *>(buf.c_str()), m_stream);
 				auto element = m_stanza.first_node();
 				if (!element || !element->name()) return len - buf.length();
-				std::cout << "TLE {" << element->xmlns() << "}" << element->name() << std::endl;
+				//std::cout << "TLE {" << element->xmlns() << "}" << element->name() << std::endl;
 				m_session->used(end - buf.data());
 				buf.erase(0, end - buf.data());
 				handle(element);
@@ -122,8 +129,10 @@ void XMLStream::stream_open() {
 	if (xmlns && xmlns->value()) {
 		std::string default_xmlns(xmlns->value(), xmlns->value_size());
 		if (default_xmlns == "jabber:client") {
+			std::cout << "C2S stream detected." << std::endl;
 			m_type = C2S;
 		} else if (default_xmlns == "jabber:server") {
+			std::cout << "S2S stream detected." << std::endl;
 			m_type = S2S;
 		} else {
 			std::cout << "Unidentified connection." << std::endl;
@@ -183,7 +192,7 @@ void XMLStream::send_stream_open(bool with_version, bool with_id) {
 	*   We write this out as a string, to avoid trying to make rapidxml
 	* write out only the open tag.
 	*/
-	m_session->send("<?xml version='1.0'?><stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='");
+	m_session->send("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='");
 	if (m_type == C2S) {
 		m_session->send("jabber:client' from='");
 	} else {
@@ -194,22 +203,27 @@ void XMLStream::send_stream_open(bool with_version, bool with_id) {
 		}
 		m_session->send("' from='");
 	}
-	m_session->send(m_stream_from + "'");
+	m_session->send(m_stream_from);
 	if (with_id) {
-		m_session->send(" id='");
-		m_stream_id = generate_stream_id();
+		m_session->send("' id='");
+		generate_stream_id();
 		m_session->send(m_stream_id);
-		m_session->send("'");
 	}
 	if (with_version) {
-		m_session->send(" version='1.0'>");
+		m_session->send("' version='1.0'>");
 	} else {
-		m_session->send(">");
+		m_session->send("'>");
 	}
 	m_opened = true;
 }
 
 void XMLStream::send(rapidxml::xml_document<> & d) {
+	m_session->send(d);
+}
+
+void XMLStream::send(std::unique_ptr<Verify> v) {
+	rapidxml::xml_document<> d;
+	v->render(d);
 	m_session->send(d);
 }
 
@@ -287,12 +301,17 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 }
 
 void XMLStream::restart() {
+	if (!m_stream_id.empty()) {
+		Router::unregister_stream_id(m_stream_id);
+		m_stream_id.clear();
+	}
 	for (auto f : m_features) {
 		delete f.second;
 	}
 	m_features.clear();
 	m_stream.clear();
 	m_stanza.clear();
+	m_stream_buf.clear();
 	if (m_dir == OUTBOUND) {
 		send_stream_open(true, false);
 	}
@@ -304,12 +323,16 @@ XMLStream::~XMLStream() {
 	}
 }
 
-std::string XMLStream::generate_stream_id() {
+void XMLStream::generate_stream_id() {
+	if (!m_stream_id.empty()) {
+		Router::unregister_stream_id(m_stream_id);
+	}
 	const size_t id_len = 16;
 	char characters[] = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
 	std::default_random_engine random(std::random_device{}());
-	std::uniform_int_distribution<> dist(0, sizeof(characters) - 1);
+	std::uniform_int_distribution<> dist(0, sizeof(characters) - 2);
 	std::string id(id_len, char{});
 	std::generate_n(id.begin(), id_len, [&characters,&random,&dist](){return characters[dist(random)];});
-	return id;
+	m_stream_id = id;
+	Router::register_stream_id(m_stream_id, *m_session);
 }

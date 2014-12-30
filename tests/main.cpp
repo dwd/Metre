@@ -36,7 +36,7 @@ void Metre::Test::add(Metre::Test * t) {
 
 namespace Metre {
 	namespace Router {
-		std::shared_ptr<Metre::NetSession> connect(std::string const &, std::string const &, std::string const &, unsigned long, unsigned short) {
+		std::shared_ptr<Metre::NetSession> connect(std::string const &, std::string const &, std::string const &, uint32_t, unsigned short) {
 			return std::shared_ptr<Metre::NetSession>();
 		}
 	}

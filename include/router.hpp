@@ -18,21 +18,25 @@ namespace Metre {
 		std::shared_ptr<NetSession> m_to;
 		std::shared_ptr<NetSession> m_from;
 		std::shared_ptr<NetSession> m_vrfy;
-		std::vector<Stanza> m_queue;
-		std::vector<Verify> m_dialback;
+		std::list<std::unique_ptr<Stanza>> m_queue;
+		std::list<std::unique_ptr<Verify>> m_dialback;
 		Jid const m_domain;
 		DNS::Srv m_srv;
 		std::vector<DNS::SrvRR>::const_iterator m_rr;
 		DNS::Address m_addr;
-		std::vector<unsigned long>::const_iterator m_arr;
+		std::vector<uint32_t>::const_iterator m_arr;
 	public:
 		Route(Jid const & to);
-		void transmit(Stanza const &);
-		void transmit(Verify const &);
+		void transmit(std::unique_ptr<Stanza>);
+		void transmit(std::unique_ptr<Verify>);
 
 	// Callbacks:
-		void SrvResult(DNS::Srv);
-		void AddressResult(DNS::Address);
+		void SrvResult(DNS::Srv const *);
+		void AddressResult(DNS::Address const *);
+
+	// Slots
+		void SessionDialback(XMLStream &);
+		void SessionAuthenticated(XMLStream &);
 	};
 
 	class RouteTable {
@@ -45,9 +49,13 @@ namespace Metre {
 
 	namespace Router {
 		std::shared_ptr<NetSession> session_by_remote_addr(std::string const & remote_addr);
-		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, unsigned long addr, unsigned short port);
+		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, uint32_t addr, unsigned short port);
 		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, char addr[], unsigned short port);
 		void session_closed(NetSession &);
+
+		std::shared_ptr<NetSession> session_by_stream_id(std::string const & stream_id);
+		void register_stream_id(std::string const &, NetSession &);
+		void unregister_stream_id(std::string const &);
 	}
 }
 

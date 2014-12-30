@@ -9,14 +9,14 @@
 namespace Metre {
 	class Feature {
 	public:
-		enum Type {FEAT_NONE=0, FEAT_SECURE, FEAT_AUTH, FEAT_COMP, FEAT_POSTAUTH};
+		enum Type {FEAT_NONE=0, FEAT_POSTAUTH, FEAT_COMP, FEAT_AUTH, FEAT_SECURE};
 		class BaseDescription {
 		private:
 			std::string const & m_xmlns;
 			Feature::Type const m_type;
 		public:
 			BaseDescription(std::string const &, Feature::Type);
-			virtual void offer(rapidxml::xml_node<> * node, XMLStream & s) = 0;
+			virtual void offer(rapidxml::xml_node<> * node, XMLStream & s) {}
 			std::string const & xmlns() const;
 			virtual Feature * instantiate(XMLStream &) = 0;
 			virtual Feature::Type type(XMLStream &) {

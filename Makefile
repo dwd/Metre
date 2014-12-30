@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-all: metre-test metre keys
+all: metre keys
 	@echo Done.
 
 OBJS:=$(patsubst src/%.cpp,build/src/%.o,$(wildcard src/*.cpp))
@@ -27,7 +27,7 @@ metre: $(OBJS)
 build/%.o: %.cpp
 	@echo [C++] $< '=>' $@
 	@mkdir -p $(dir $@)
-	@g++ -g --std=c++11 $(FINCDIRS) -o $@ -c $< -MT $@ -MMD -MF $(patsubst %.o,%.d,$@)
+	@g++ -g --std=c++11 $(FINCDIRS) -DVALGRIND -o $@ -c $< -MT $@ -MMD -MF $(patsubst %.o,%.d,$@)
 
 clean:
 	@echo [CLEAN] build/ metre metre-test

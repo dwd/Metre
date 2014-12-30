@@ -38,8 +38,8 @@ namespace Metre {
 		void used(size_t n);
 
 		// Signals:
-		mutable sigslot::signal<sigslot::thread::mt, NetSession &> closed;
-		mutable sigslot::signal<sigslot::thread::mt, NetSession &> connected;
+		mutable sigslot::signal<sigslot::thread::mt, NetSession &> onClosed;
+		mutable sigslot::signal<sigslot::thread::mt, NetSession &> onConnected;
 
 		bool drain();
 		bool need_push();

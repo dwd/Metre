@@ -4,11 +4,15 @@
 #include "defs.hpp"
 #include <map>
 #include <optional>
+#include <memory>
+#include "sigslot/sigslot.h"
 
 namespace Metre {
 	class NetSession;
 	class Server;
 	class Feature;
+	class Verify;
+	class Stanza;
 
 	class XMLStream {
 		rapidxml::xml_document<> m_stream;
@@ -17,6 +21,7 @@ namespace Metre {
 		SESSION_DIRECTION m_dir;
 		bool m_opened;
 		bool m_closed;
+		bool m_seen_open;
 		std::string m_stream_buf; // Sort-of-temporary buffer //
 		Server * m_server;
 		NetSession * m_session;
@@ -49,10 +54,17 @@ namespace Metre {
 			m_user = u;
 		}
 		void send(rapidxml::xml_document<> & d);
+		void send(std::unique_ptr<Verify> v);
+		void send(std::unique_ptr<Stanza> v);
 		void restart();
 		void secured() {m_secured = true;}
 		void compressed() {m_compressed = true;}
 		void authenticated() {m_authenticated = true;}
+
+		std::string const & to() const {
+			return m_stream_to;
+		}
+
 		NetSession & session() {
 			return *m_session;
 		}
@@ -61,8 +73,12 @@ namespace Metre {
 		}
 		~XMLStream();
 
-		static std::string generate_stream_id();
+		void generate_stream_id();
 		void connected(NetSession &);
+
+		// Signals:
+		sigslot::signal<sigslot::thread::mt, XMLStream &> onSecured;
+		sigslot::signal<sigslot::thread::mt, XMLStream &> onAuthenticated;
 
 	private:
 		void handle(rapidxml::xml_node<> *);

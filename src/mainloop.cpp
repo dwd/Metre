@@ -30,10 +30,12 @@ namespace Metre {
 		struct event * m_listen;
 		Server & m_server;
 		std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;
+		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_id;
 		struct ub_ctx * m_ub_ctx;
 		struct event * m_ub_event;
 		struct evconnlistener * m_server_listener;
 		static std::atomic<unsigned long long> s_serial;
+		std::list<std::shared_ptr<NetSession>> m_closed_sessions;
 	public:
 		static Mainloop * s_mainloop;
 		Mainloop(Server & server) : m_event_base(0), m_listen(0), m_server(server), m_sessions(), m_ub_event(0) {
@@ -66,6 +68,33 @@ namespace Metre {
 			return true;
 		}
 
+		std::shared_ptr<NetSession> session_by_id(std::string const & id) {
+			auto it = m_sessions_by_id.find(id);
+			if (it != m_sessions_by_id.end()) {
+				std::shared_ptr<NetSession> s((*it).second);
+				return s;
+			}
+			return nullptr;
+		}
+
+		void register_stream_id(std::string const & id, unsigned long long serial) {
+			auto it = m_sessions.find(serial);
+			if (it == m_sessions.end()) {
+				return;
+			}
+			auto it2 = m_sessions_by_id.find(id);
+			if (it2 != m_sessions_by_id.end()) {
+				m_sessions_by_id.erase(it2);
+			}
+			m_sessions_by_id.insert(std::make_pair(id, (*it).second));
+		}
+		void unregister_stream_id(std::string const & id) {
+			auto it2 = m_sessions_by_id.find(id);
+			if (it2 != m_sessions_by_id.end()) {
+				m_sessions_by_id.erase(it2);
+			}
+		}
+
 		static void new_session_cb(struct evconnlistener * listener, evutil_socket_t newsock, struct sockaddr * addr, int len, void * arg) {
 			reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len);
 		}
@@ -80,10 +109,10 @@ namespace Metre {
 				assert(false);
 			}
 			m_sessions[session->serial()] = session;
-			session->closed.connect(this, &Mainloop::session_closed);
+			session->onClosed.connect(this, &Mainloop::session_closed);
 		}
 
-		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, unsigned long addr, unsigned short port) {
+		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, uint32_t addr, unsigned short port) {
 			struct sockaddr_in sin;
 			sin.sin_family = AF_INET;
 			sin.sin_addr.s_addr = addr;
@@ -114,12 +143,15 @@ namespace Metre {
 				assert(false);
 			}
 			m_sessions[session->serial()] = session;
-			session->closed.connect(this, &Mainloop::session_closed);
+			session->onClosed.connect(this, &Mainloop::session_closed);
 			return session;
 		}
 
 		void run() {
-			event_base_dispatch(m_event_base);
+			while(true) {
+				event_base_dispatch(m_event_base);
+				m_closed_sessions.clear();
+			}
 		}
 
 		static void unbound_cb(evutil_socket_t, short, void * arg) {
@@ -135,8 +167,9 @@ namespace Metre {
 
 		void session_closed(NetSession & ns) {
 			auto it = m_sessions.find(ns.serial());
-			assert(it != m_sessions.end());
 			if (it != m_sessions.end()) {
+				m_closed_sessions.push_back((*it).second);
+				event_base_loopexit(m_event_base, NULL);
 				m_sessions.erase(it);
 			}
 		}
@@ -158,9 +191,7 @@ namespace Metre {
 				error = std::string("Bogus: ") + result->why_bogus;
 			} else {
 				DNS::Srv srv;
-				if (result->secure) {
-					srv.dnssec = true;
-				}
+				srv.dnssec = result->secure;
 				srv.domain = result->qname;
 				for (int i = 0; result->data[i]; ++i) {
 					DNS::SrvRR rr;
@@ -180,7 +211,7 @@ namespace Metre {
 				}
 				auto it = m_srv_pending.find(srv.domain);
 				if (it != m_srv_pending.end()) {
-					(*it).second.emit(srv);
+					(*it).second.emit(&srv);
 					m_srv_pending.erase(it);
 				}
 				return;
@@ -191,7 +222,7 @@ namespace Metre {
 				DNS::Srv srv;
 				srv.error = error;
 				srv.domain = result->qname;
-				(*it).second.emit(srv);
+				(*it).second.emit(&srv);
 				m_srv_pending.erase(it);
 			}
 		}
@@ -206,16 +237,14 @@ namespace Metre {
 				error = std::string("Bogus: ") + result->why_bogus;
 			} else {
 				DNS::Address a;
-				if (result->secure) {
-					a.dnssec = true;
-				}
+				a.dnssec = result->secure;
 				a.hostname = result->qname;
 				for (int i = 0; result->data[i]; ++i) {
-					a.addr4.push_back(*reinterpret_cast<unsigned long *>(result->data[0]));
+					a.addr4.push_back(*reinterpret_cast<uint32_t *>(result->data[0]));
 				}
 				auto it = m_a_pending.find(a.hostname);
 				if (it != m_a_pending.end()) {
-					(*it).second.emit(a);
+					(*it).second.emit(&a);
 					m_a_pending.erase(it);
 				}
 				return;
@@ -225,7 +254,7 @@ namespace Metre {
 				DNS::Address a;
 				a.error = error;
 				a.hostname = result->qname;
-				(*it).second.emit(a);
+				(*it).second.emit(&a);
 				m_a_pending.erase(it);
 			}
 		}
@@ -296,8 +325,18 @@ namespace Metre {
 	}
 
 	namespace Router {
-		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, unsigned long addr, unsigned short port) {
-			Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port);
+		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, uint32_t addr, unsigned short port) {
+			return Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port);
+		}
+
+		void register_stream_id(std::string const & id, NetSession & session) {
+			Mainloop::s_mainloop->register_stream_id(id, session.serial());
+		}
+		void unregister_stream_id(std::string const & id) {
+			Mainloop::s_mainloop->unregister_stream_id(id);
+		}
+		std::shared_ptr<NetSession> session_by_stream_id(std::string const & id) {
+			return Mainloop::s_mainloop->session_by_id(id);
 		}
 	}
 }

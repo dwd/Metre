@@ -72,12 +72,12 @@ void NetSession::send(rapidxml::xml_document<> & d) {
 	std::string tmp;
 	rapidxml::print(std::back_inserter(tmp), d, rapidxml::print_no_indenting);
 	struct evbuffer * buf = bufferevent_get_output(m_bev);
-	std::cout << "Send: " << tmp << std::endl;
+	std::cout << "Send: "  << m_xml_stream << ": " << tmp << std::endl;
 	evbuffer_add(buf, tmp.data(), tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
 }
 void NetSession::send(std::string const & s) {
 	struct evbuffer * buf = bufferevent_get_output(m_bev);
-	std::cout << "Send: " << s << std::endl;
+	std::cout << "Send: "  << m_xml_stream << ": " << s << std::endl;
 	evbuffer_add(buf, s.data(), s.length());
 }
 void NetSession::send(const char * p) {
@@ -88,15 +88,15 @@ void NetSession::send(const char * p) {
 
 void NetSession::read_cb(struct bufferevent *, void * arg) {
 	NetSession & ns = *reinterpret_cast<NetSession *>(arg);
-	if (ns.drain()) ns.closed.emit(ns);
+	if (ns.drain()) ns.onClosed.emit(ns);
 }
 
 void NetSession::bev_closed() {
-	closed.emit(*this);
+	onClosed.emit(*this);
 }
 
 void NetSession::bev_connected() {
-	connected.emit(*this);
+	onConnected.emit(*this);
 	m_xml_stream->restart();
 }
 

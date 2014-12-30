@@ -2,28 +2,46 @@
 #include "stanza.hpp"
 #include "xmppexcept.hpp"
 #include "router.hpp"
+#include "netsession.hpp"
 #include <memory>
 
 using namespace Metre;
 using namespace rapidxml;
 
 namespace {
-	const std::string sasl_ns = "jabber:server:dialback";
+	const std::string db_ns = "jabber:server:dialback";
+	const std::string db_feat_ns = "urn:xmpp:features:dialback";
+
+	class NewDialback : public Feature {
+	public:
+		NewDialback(XMLStream & s) : Feature(s) {}
+		class Description : public Feature::Description<NewDialback> {
+		public:
+			Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH) {};
+			virtual void offer(xml_node<> * node, XMLStream &) {
+				xml_document<> * d = node->document();
+				auto feature = d->allocate_node(node_element, "dialback");
+				feature->append_attribute(d->allocate_attribute("xmlns", db_feat_ns.c_str()));
+				auto errors = d->allocate_node(node_element, "errors");
+				feature->append_node(errors);
+				node->append_node(feature);
+			}
+		};
+		bool negotiate(rapidxml::xml_node<> *) override {
+			RouteTable::routeTable().route(m_stream.to())->SessionDialback(m_stream);
+			return false;
+		}
+		bool handle(rapidxml::xml_node<> *) override {
+			throw Metre::unsupported_stanza_type("Wrong namespace for dialback.");
+		}
+	};
 
 	class Dialback : public Feature {
 	public:
 		Dialback(XMLStream & s) : Feature(s) {}
 		class Description : public Feature::Description<Dialback> {
 		public:
-			Description() : Feature::Description<Dialback>(sasl_ns, FEAT_AUTH) {};
-			virtual void offer(xml_node<> * node, XMLStream &) {
-				xml_document<> * d = node->document();
-				auto feature = d->allocate_node(node_element, "dialback");
-				feature->append_attribute(d->allocate_attribute("xmlns", "urn:xmpp:features:dialback"));
-				auto errors = d->allocate_node(node_element, "errors");
-				feature->append_node(errors);
-				node->append_node(feature);
-			}
+			Description() : Feature::Description<Dialback>(db_ns, FEAT_AUTH) {};
 		};
 
 		/**
@@ -50,7 +68,7 @@ namespace {
 			Jid tojid(to->value());
 			// With syntax done, we should send the key:
 			std::shared_ptr<Route> route(RouteTable::routeTable().route(Jid(from->value())));
-			route->transmit(Verify(fromjid, tojid, m_stream.stream_id(), key, m_stream));
+			route->transmit(std::unique_ptr<Verify>(new Verify(fromjid, tojid, m_stream.stream_id(), key, m_stream)));
 		}
 
 		void result_valid(rapidxml::xml_node<> * node) {
@@ -70,7 +88,27 @@ namespace {
 		}
 
 		void verify_valid(rapidxml::xml_node<> * node) {
-			throw std::runtime_error("Unimplemented");
+			auto id_att = node->first_attribute("id");
+			if (!id_att || !id_att->value()) throw std::runtime_error("Missing id on verify");
+			std::string id = id_att->value();
+			std::shared_ptr<NetSession> session = Router::session_by_stream_id(id);
+			if (!session) throw std::runtime_error("Session not found");
+			XMLStream & stream = session->xml_stream();
+			// TODO : Validate stream to/from
+			auto to_att = node->first_attribute("to");
+			if (!to_att || !to_att->value()) throw std::runtime_error("Missing to on verify");
+			std::string to = to_att->value();
+			auto from_att = node->first_attribute("from");
+			if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on verify");
+			std::string from = from_att->value();
+			rapidxml::xml_document<> d;
+			auto db_result = d.allocate_node(rapidxml::node_element, "db:result");
+			db_result->append_attribute(d.allocate_attribute("to", from.c_str()));
+			db_result->append_attribute(d.allocate_attribute("from", to.c_str()));
+			db_result->append_attribute(d.allocate_attribute("type", "valid"));
+			d.append_node(db_result);
+			session->send(d);
+			// TODO : stream->do_something_about_authentication();
 		}
 
 		void verify_invalid(rapidxml::xml_node<> * node) {
@@ -118,5 +156,6 @@ namespace {
 		}
 	};
 
-	bool declared = Feature::declare<Dialback>(S2S);
+	bool declared_classic = Feature::declare<Dialback>(S2S);
+	bool declared_new = Feature::declare<NewDialback>(S2S);
 }
