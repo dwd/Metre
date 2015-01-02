@@ -27,8 +27,8 @@ namespace {
 				node->append_node(feature);
 			}
 		};
-		bool negotiate(rapidxml::xml_node<> *) override {
-			RouteTable::routeTable().route(m_stream.to())->SessionDialback(m_stream);
+		bool negotiate(rapidxml::xml_node<> *) override { // Note that this offer, unusually, can be nullptr.
+			m_stream.set_auth_ready();
 			return false;
 		}
 		bool handle(rapidxml::xml_node<> *) override {
@@ -72,7 +72,16 @@ namespace {
 		}
 
 		void result_valid(rapidxml::xml_node<> * node) {
-			throw std::runtime_error("Unimplemented");
+			// TODO : Validate stream to/from
+			auto to_att = node->first_attribute("to");
+			if (!to_att || !to_att->value()) throw std::runtime_error("Missing to on db:result:valid");
+			std::string to = to_att->value();
+			auto from_att = node->first_attribute("from");
+			if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on db:result:valid");
+			std::string from = from_att->value();
+			if (m_stream.s2s_auth_pair(to, from, OUTBOUND) == XMLStream::REQUESTED) {
+				m_stream.s2s_auth_pair(to, from, OUTBOUND, XMLStream::AUTHORIZED);
+			}
 		}
 
 		void result_invalid(rapidxml::xml_node<> * node) {
@@ -84,7 +93,26 @@ namespace {
 		}
 
 		void verify(rapidxml::xml_node<> * node) {
-			throw std::runtime_error("Unimplemented");
+			auto id_att = node->first_attribute("id");
+			if (!id_att || !id_att->value()) throw std::runtime_error("Missing id on db:result:valid");
+			std::string id = id_att->value();
+			// TODO : Validate stream to/from
+			auto to_att = node->first_attribute("to");
+			if (!to_att || !to_att->value()) throw std::runtime_error("Missing to on db:result:valid");
+			std::string to = to_att->value();
+			auto from_att = node->first_attribute("from");
+			if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on db:result:valid");
+			std::string from = from_att->value();
+			const char * validity="invalid";
+			if (node->value() == std::string("validate-me")) validity="valid";
+			xml_document<> d;
+			auto vrfy = d.allocate_node(node_element, "db:verify");
+			vrfy->append_attribute(d.allocate_attribute("from", to.c_str()));
+			vrfy->append_attribute(d.allocate_attribute("to", from.c_str()));
+			vrfy->append_attribute(d.allocate_attribute("id", id.c_str()));
+			vrfy->append_attribute(d.allocate_attribute("type", validity));
+			d.append_node(vrfy);
+			m_stream.send(d);
 		}
 
 		void verify_valid(rapidxml::xml_node<> * node) {
@@ -101,14 +129,14 @@ namespace {
 			auto from_att = node->first_attribute("from");
 			if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on verify");
 			std::string from = from_att->value();
-			rapidxml::xml_document<> d;
-			auto db_result = d.allocate_node(rapidxml::node_element, "db:result");
-			db_result->append_attribute(d.allocate_attribute("to", from.c_str()));
-			db_result->append_attribute(d.allocate_attribute("from", to.c_str()));
-			db_result->append_attribute(d.allocate_attribute("type", "valid"));
-			d.append_node(db_result);
-			session->send(d);
-			// TODO : stream->do_something_about_authentication();
+			xml_document<> d;
+			auto result = d.allocate_node(node_element, "db:result");
+			result->append_attribute(d.allocate_attribute("from", to.c_str()));
+			result->append_attribute(d.allocate_attribute("to", from.c_str()));
+			result->append_attribute(d.allocate_attribute("type", "valid"));
+			d.append_node(result);
+			stream.send(d);
+			stream.s2s_auth_pair(to, from, INBOUND, XMLStream::AUTHORIZED);
 		}
 
 		void verify_invalid(rapidxml::xml_node<> * node) {

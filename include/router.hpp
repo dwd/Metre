@@ -15,10 +15,10 @@ namespace Metre {
 
 	class Route : public sigslot::has_slots<> {
 	private:
-		std::shared_ptr<NetSession> m_to;
-		std::shared_ptr<NetSession> m_from;
-		std::shared_ptr<NetSession> m_vrfy;
-		std::list<std::unique_ptr<Stanza>> m_queue;
+		std::weak_ptr<NetSession> m_to;
+		std::weak_ptr<NetSession> m_from;
+		std::weak_ptr<NetSession> m_vrfy;
+		std::list<std::unique_ptr<Stanza>> m_stanzas;
 		std::list<std::unique_ptr<Verify>> m_dialback;
 		Jid const m_domain;
 		DNS::Srv m_srv;

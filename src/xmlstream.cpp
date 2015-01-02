@@ -18,11 +18,11 @@
 using namespace Metre;
 
 XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_closed(false), m_secured(false), m_authenticated(false), m_compressed(false) {
+	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_closed(false), m_secured(false), m_authready(false), m_compressed(false) {
 }
 
-XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const & stream_from, std::string const & stream_to)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_from(stream_from), m_stream_to(stream_to), m_closed(false), m_secured(false), m_authenticated(false), m_compressed(false) {
+XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const & stream_local, std::string const & stream_remote)
+	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_local(stream_local), m_stream_remote(stream_remote), m_closed(false), m_secured(false), m_authready(false), m_compressed(false) {
 }
 
 size_t XMLStream::process(unsigned char * p, size_t len) {
@@ -58,18 +58,16 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 				if (!element || !element->name()) return len - buf.length();
 				//std::cout << "TLE {" << element->xmlns() << "}" << element->name() << std::endl;
 				m_session->used(end - buf.data());
-				buf.erase(0, end - buf.data());
 				handle(element);
+				buf.erase(0, end - buf.data());
 				m_stanza.clear();
 			}
 		} catch(Metre::base::xmpp_exception) {
 			throw;
 		} catch(rapidxml::eof_error & e) {
 			return len - buf.length();
-		} catch(std::exception & e) {
+		} catch(std::runtime_error & e) {
 			throw Metre::undefined_condition(e.what());
-		} catch(...) {
-			throw Metre::undefined_condition();
 		}
 	} catch(Metre::base::xmpp_exception & e) {
 		std::cout << "Raising error: " << e.what() << std::endl;
@@ -144,13 +142,13 @@ void XMLStream::stream_open() {
 		domainname.assign(domainat->value(), domainat->value_size());
 		std::cout << "Requested contact domain {" << domainname << "}" << std::endl;
 	} else {
-		domainname = m_stream_from;
+		domainname = "cridland.im";
 	}
 	std::string from;
 	if (auto fromat = stream->first_attribute("from")) {
 		from.assign(fromat->value(), fromat->value_size());
 	}
-	std::cout << "Requesting domain is " << domainname << std::endl;
+	std::cout << "Requesting domain is " << from << std::endl;
 	auto domain = this->m_server->domain(domainname);
 	if (!stream->xmlns()) {
 		throw Metre::bad_format("Missing namespace for stream");
@@ -169,8 +167,11 @@ void XMLStream::stream_open() {
 		with_ver = true;
 	}
 	if (m_dir == INBOUND) {
-		m_stream_from = domain.domain();
-		m_stream_to = from;
+		m_stream_local = domain.domain();
+		m_stream_remote = from;
+		if (m_stream_remote == m_stream_local) {
+			throw std::runtime_error("That's me, you fool");
+		}
 		send_stream_open(with_ver, true);
 		if (with_ver) {
 			rapidxml::xml_document<> doc;
@@ -182,8 +183,16 @@ void XMLStream::stream_open() {
 			m_session->send(doc);
 		}
 	} else if (m_dir == OUTBOUND) {
-		// Best get on with dialback, then.
-		// Also send all verifies.
+		return;
+		auto so = m_stream.first_node();
+		auto dbatt = so->first_attribute("xmlns:db");
+		if (dbatt && dbatt->value() == std::string("jabber:server:dialback")) {
+			std::string feature_xmlns = "urn:xmpp:features:dialback";
+			Feature * f = Feature::feature(feature_xmlns, *this);
+			assert(f);
+			f->negotiate(nullptr);
+			m_features[feature_xmlns] = f;
+		}
 	}
 }
 
@@ -197,13 +206,13 @@ void XMLStream::send_stream_open(bool with_version, bool with_id) {
 		m_session->send("jabber:client' from='");
 	} else {
 		m_session->send("jabber:server' xmlns:db='jabber:server:dialback");
-		if (m_stream_to != "") {
+		if (m_stream_remote != "") {
 			m_session->send("' to='");
-			m_session->send(m_stream_to);
+			m_session->send(m_stream_remote);
 		}
 		m_session->send("' from='");
 	}
-	m_session->send(m_stream_from);
+	m_session->send(m_stream_local);
 	if (with_id) {
 		m_session->send("' id='");
 		generate_stream_id();
@@ -221,13 +230,20 @@ void XMLStream::send(rapidxml::xml_document<> & d) {
 	m_session->send(d);
 }
 
-void XMLStream::send(std::unique_ptr<Verify> v) {
+void XMLStream::send(std::unique_ptr<Stanza> s) {
 	rapidxml::xml_document<> d;
-	v->render(d);
+	s->render(d);
 	m_session->send(d);
 }
 
 void XMLStream::handle(rapidxml::xml_node<> * element) {
+	if (element->prefix() && element->prefix()[0] == '/') {
+		// Odd case; it's a closing stream tag. Probably. Actually any closing tag will do this.
+		m_session->send("</stream:stream>");
+		m_session->close();
+		m_closed = true;
+		return;
+	}
 	std::string xmlns(element->xmlns(), element->xmlns_size());
 	if (xmlns == "http://etherx.jabber.org/streams") {
 		std::string elname(element->name(), element->name_size());
@@ -249,8 +265,6 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						continue;
 					case Feature::Type::FEAT_SECURE:
 						if (m_secured) continue;
-					case Feature::Type::FEAT_AUTH:
-						if (m_authenticated) continue;
 					case Feature::Type::FEAT_COMP:
 						if (m_compressed) continue;
 					}
@@ -261,7 +275,19 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						feature_type = offer_type;
 					}
 				}
-				if (feature_type == Feature::Type::FEAT_NONE) return;
+				if (feature_type == Feature::Type::FEAT_NONE) {
+					if (m_features.find("urn:xmpp:features:dialback") == m_features.end()) {
+						auto so = m_stream.first_node();
+						auto dbatt = so->first_attribute("xmlns:db");
+						if (dbatt && dbatt->value() == std::string("jabber:server:dialback")) {
+							feature_xmlns = "urn:xmpp:features:dialback";
+						} else {
+							return;
+						}
+					} else {
+						return;
+					}
+				}
 				Feature * f = Feature::feature(feature_xmlns, *this);
 				assert(f);
 				try {
@@ -335,4 +361,24 @@ void XMLStream::generate_stream_id() {
 	std::generate_n(id.begin(), id_len, [&characters,&random,&dist](){return characters[dist(random)];});
 	m_stream_id = id;
 	Router::register_stream_id(m_stream_id, *m_session);
+}
+
+XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION dir) const {
+	auto & m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
+	auto it = m.find(std::make_pair(local,remote));
+	if (it != m.end()) {
+		return (*it).second;
+	}
+	return NONE;
+}
+
+XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION dir, XMLStream::AUTH_STATE state) {
+	auto & m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
+	auto key = std::make_pair(local, remote);
+	AUTH_STATE current = m[key];
+	if (current < state) {
+		m[key] = state;
+		onAuthenticated.emit(*this);
+	}
+	return m[key];
 }

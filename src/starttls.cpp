@@ -82,7 +82,7 @@ namespace {
         struct bufferevent * bev_ssl = bufferevent_openssl_filter_new(bufferevent_get_base(bev), bev, ssl, st, BEV_OPT_CLOSE_ON_FREE);
         if (!bev_ssl) throw std::runtime_error("Cannot create OpenSSL filter");
         m_stream.session().bufferevent(bev_ssl);
-        m_stream.secured();
+        m_stream.set_secured();
         // m_stream.restart(); // Will delete *this.
         return true;
       } else {

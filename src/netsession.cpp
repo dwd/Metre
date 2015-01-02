@@ -35,7 +35,7 @@ void NetSession::bufferevent(struct bufferevent * bev) {
 }
 
 NetSession::~NetSession() {
-	bufferevent_free(m_bev);
+	if (m_bev) bufferevent_free(m_bev);
 }
 
 bool NetSession::drain() {
@@ -49,6 +49,8 @@ bool NetSession::drain() {
 				break;
 			}
 			//evbuffer_drain(buf, used);
+		} else {
+			break;
 		}
 	}
 	// If we can't consume it all, try pullup(), then return.
@@ -58,6 +60,9 @@ bool NetSession::drain() {
 			/*if (used != 0) {
 				evbuffer_drain(buf, used);
 			}*/
+		} else {
+			std::cout << "Stuff left after close: {" << len << "}" << std::endl;
+			return true;
 		}
 	}
 	return m_xml_stream->closed() && (evbuffer_get_length(buf) == 0);
@@ -111,4 +116,9 @@ void NetSession::event_cb(struct bufferevent *, short events, void * arg) {
 		std::cout << "Connected." << std::endl;
 		ns.bev_connected();
 	}
+}
+
+void NetSession::close() {
+	bufferevent_flush(m_bev, EV_WRITE, BEV_FINISHED);
+	onClosed.emit(*this);
 }

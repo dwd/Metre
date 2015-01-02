@@ -11,8 +11,13 @@ Route::Route(Jid const & to) : m_domain(to) {
 }
 
 void Route::transmit(std::unique_ptr<Verify> v) {
-  if(m_vrfy) {
-    m_vrfy->xml_stream().send(std::move(v));
+  auto vrfy = m_vrfy.lock();
+  if(vrfy) {
+    if (vrfy->xml_stream().auth_ready()) {
+      vrfy->xml_stream().send(std::move(v));
+    } else {
+      vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
+    }
   } else {
     // TODO Look for an existing session and use that.
     // Otherwise, start SRV lookups.
@@ -21,9 +26,50 @@ void Route::transmit(std::unique_ptr<Verify> v) {
   }
 }
 
+void Route::transmit(std::unique_ptr<Stanza> s) {
+  auto to = m_to.lock();
+  if (to) {
+    switch (to->xml_stream().s2s_auth_pair("cridland.im", m_domain.domain(), OUTBOUND)) {
+    case XMLStream::AUTHORIZED:
+      to->xml_stream().send(std::move(s));
+      break;
+    default:
+      if (!to->xml_stream().auth_ready()) {
+        to->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
+        return;
+      } else {
+        /// Send a dialback request or something.
+        std::string key = "validate-me";
+        rapidxml::xml_document<> d;
+        auto dbr = d.allocate_node(rapidxml::node_element, "db:result");
+        dbr->append_attribute(d.allocate_attribute("to", m_domain.domain().c_str()));
+        dbr->append_attribute(d.allocate_attribute("from", "cridland.im"));
+        dbr->value(key.c_str(), key.length());
+        d.append_node(dbr);
+        to->xml_stream().send(d);
+        to->xml_stream().s2s_auth_pair("cridland.im", m_domain.domain(), OUTBOUND, XMLStream::REQUESTED);
+      }
+    case XMLStream::REQUESTED:
+      m_stanzas.push_back(std::move(s));
+      to->xml_stream().onAuthenticated.connect(this, &Route::SessionAuthenticated);
+    }
+  } else {
+    if(!m_vrfy.expired()) {
+      std::shared_ptr<NetSession> vrfy(m_vrfy);
+      m_to = vrfy;
+      transmit(std::move(s)); // Retry
+      return;
+    }
+    // TODO Look for an existing session, etc.
+    m_stanzas.push_back(std::move(s));
+    DNS::Resolver::resolver().SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+  }
+}
+
 void Route::SrvResult(DNS::Srv const * srv) {
+  auto vrfy = m_vrfy.lock();
   std::cout << "Got SRV" << std::endl;
-  if (m_vrfy) {
+  if (vrfy) {
     return;
   }
   m_srv = *srv;
@@ -39,8 +85,9 @@ void Route::SrvResult(DNS::Srv const * srv) {
 }
 
 void Route::AddressResult(DNS::Address const * addr) {
+  auto vrfy = m_vrfy.lock();
   std::cout << "Now what?" << std::endl;
-  if (m_vrfy) {
+  if (vrfy) {
     return;
   }
   if (!addr->error.empty()) {
@@ -49,20 +96,42 @@ void Route::AddressResult(DNS::Address const * addr) {
   }
   m_addr = *addr;
   m_arr = m_addr.addr4.begin();
-  m_vrfy = Router::connect("cridland.im", m_domain.domain(), (*m_rr).hostname, *m_arr, (*m_rr).port);
-  std::cout << "Connected, " << &*m_vrfy << std::endl;
-  // _vrfy->xml_stream().onSecured.connect(this, &Route::SessionSecured);
+  vrfy = Router::connect("cridland.im", m_domain.domain(), (*m_rr).hostname, *m_arr, (*m_rr).port);
+  std::cout << "Connected, " << &*vrfy << std::endl;
+  vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
+  m_vrfy = vrfy;
+  if (m_to.expired()) {
+    m_to = vrfy;
+    vrfy->xml_stream().onAuthenticated.connect(this, &Route::SessionAuthenticated);
+  }
   // m_vrfy->connected.connect(...);
 }
 
 void Route::SessionDialback(XMLStream & stream) {
-  std::cout << "Stream is secured." << std::endl;
-  if (&stream.session() == &*m_vrfy) {
+  auto vrfy = m_vrfy.lock();
+  std::cout << "Stream is ready for dialback." << std::endl;
+  if (vrfy && &stream.session() == &*vrfy) {
     std::cout << "This is the droid I am looking for." << std::endl;
     for (auto & v : m_dialback) {
-      m_vrfy->xml_stream().send(std::move(v));
+      vrfy->xml_stream().send(std::move(v));
     }
     m_dialback.clear();
+  }
+  auto to = m_to.lock();
+  if (to && &stream.session() == &*to && stream.s2s_auth_pair("cridland.im", m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
+    std::cout << "Stream is to; needs dialback." << std::endl;
+  }
+}
+
+void Route::SessionAuthenticated(XMLStream & stream) {
+  auto to = m_to.lock();
+  std::cout << "Stream is ready for stanzas." << std::endl;
+  if (&stream.session() == &*to && stream.s2s_auth_pair("cridland.im", m_domain.domain(), OUTBOUND) == XMLStream::AUTHORIZED) {
+    std::cout << "This is the droid I am looking for." << std::endl;
+    for (auto & s : m_stanzas) {
+      to->xml_stream().send(std::move(s));
+    }
+    m_stanzas.clear();
   }
 }
 

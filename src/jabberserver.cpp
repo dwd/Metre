@@ -1,6 +1,7 @@
 #include "feature.hpp"
 #include "stanza.hpp"
 #include "xmppexcept.hpp"
+#include "router.hpp"
 #include <memory>
 
 using namespace Metre;
@@ -21,24 +22,61 @@ namespace {
 		};
 
 		bool handle(rapidxml::xml_node<> * node) {
-			if (!m_stream.user()) {
-				throw Metre::not_authorized();
-			}
 			xml_document<> * d = node->document();
 			d->fixup<parse_default>(node, false); // Just terminate the header.
 			std::string stanza = node->name();
-			std::shared_ptr<Stanza> s;
+			std::unique_ptr<Stanza> s;
 			if (stanza == "message") {
-				s = std::shared_ptr<Stanza>(new Message(node, m_stream));
+				s = std::move(std::unique_ptr<Stanza>(new Message(node, m_stream)));
 			} else if (stanza == "iq") {
-				s = std::shared_ptr<Stanza>(new Iq(node, m_stream));
+				s = std::move(std::unique_ptr<Stanza>(new Iq(node, m_stream)));
 			} else if (stanza == "presence") {
-				s = std::shared_ptr<Stanza>(new Presence(node, m_stream));
+				s = std::move(std::unique_ptr<Stanza>(new Presence(node, m_stream)));
 			} else {
 				throw Metre::unsupported_stanza_type(stanza);
 			}
-			Jid const & to = s->to();
-			// Lookup endpoint.
+			try {
+				try {
+					Jid const & to = s->to();
+					Jid const & from = s->from();
+					// Check auth state.
+					if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
+						throw Metre::not_authorized();
+					}
+					// For now, bounce everything.
+					bool ping = false;
+					if (stanza == "iq" && to.full() == "cridland.im") {
+						auto query = node->first_node();
+						if (query) {
+							std::string xmlns{query->xmlns(), query->xmlns_size()};
+							if (xmlns == "urn:xmpp:ping") {
+								ping = true;
+							}
+						}
+					}
+					if (ping) {
+						std::string id;
+						auto id_att = node->first_attribute("id");
+						if (id_att && id_att->value()) id = id_att->value();
+						std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, id, m_stream)};
+						std::shared_ptr<Route> route = RouteTable::routeTable().route(from);
+						route->transmit(std::move(pong));
+					} else {
+						throw stanza_service_unavailable();
+					}
+					// Lookup endpoint.
+				} catch(Metre::base::xmpp_exception) {
+					throw;
+				} catch(Metre::base::stanza_exception) {
+					throw;
+				} catch(std::runtime_error & e) {
+					throw Metre::stanza_undefined_condition(e.what());
+				}
+			} catch (Metre::base::stanza_exception const & stanza_error) {
+				std::unique_ptr<Stanza> st = s->create_bounce(stanza_error, m_stream);
+				std::shared_ptr<Route> route = RouteTable::routeTable().route(st->to());
+				route->transmit(std::move(st));
+			}
 			return true;
 		}
 	};

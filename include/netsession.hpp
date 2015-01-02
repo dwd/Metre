@@ -48,6 +48,8 @@ namespace Metre {
 		void send(std::string const & s);
 		void send(const char * p);
 
+		void close();
+
 		unsigned long long serial() const {
 			return m_serial;
 		}
