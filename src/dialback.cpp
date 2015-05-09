@@ -67,7 +67,7 @@ namespace {
 			Jid fromjid(from->value());
 			Jid tojid(to->value());
 			// With syntax done, we should send the key:
-			std::shared_ptr<Route> route(RouteTable::routeTable().route(Jid(from->value())));
+			std::shared_ptr<Route> route = RouteTable::routeTable(tojid).route(fromjid);
 			route->transmit(std::unique_ptr<Verify>(new Verify(fromjid, tojid, m_stream.stream_id(), key, m_stream)));
 		}
 

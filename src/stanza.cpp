@@ -66,9 +66,25 @@ std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const & ex,
   text->value(ex.what());
   error->append_node(text);
   rapidxml::print(std::back_inserter(stanza->m_payload_str), d, rapidxml::print_no_indenting);
-  if (m_payload && m_payload_l) stanza->m_payload_str.append(m_payload, m_payload_l);
-  stanza->m_payload = stanza->m_payload_str.c_str();
-  stanza->m_payload_l = stanza->m_payload_str.length();
+  if (m_payload && m_payload_l) {
+    stanza->m_payload_str.append(m_payload, m_payload_l);
+    stanza->m_payload = stanza->m_payload_str.c_str();
+    stanza->m_payload_l = stanza->m_payload_str.length();
+  }
+  return stanza;
+}
+
+std::unique_ptr<Stanza> Stanza::create_forward(XMLStream & s) {
+  std::unique_ptr<Stanza> stanza{new Stanza(m_name, s)};
+  stanza->m_from = m_from;
+  stanza->m_to = m_to;
+  stanza->m_id = m_id;
+  stanza->m_type_str = m_type_str;
+  if (m_payload && m_payload_l) {
+    stanza->m_payload_str.append(m_payload, m_payload_l);
+    stanza->m_payload = stanza->m_payload_str.c_str();
+    stanza->m_payload_l = stanza->m_payload_str.length();
+  }
   return stanza;
 }
 

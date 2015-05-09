@@ -76,6 +76,7 @@ namespace Metre {
 		void render(rapidxml::xml_document<> & d);
 
 		std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const & e, XMLStream & s);
+		std::unique_ptr<Stanza> create_forward(XMLStream & s);
 	};
 
 

@@ -31,9 +31,12 @@ namespace Metre {
 		Server & m_server;
 		std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;
 		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_id;
+		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_domain;
+		std::map<std::pair<std::string,unsigned short>, std::weak_ptr<NetSession>> m_sessions_by_address;
 		struct ub_ctx * m_ub_ctx;
 		struct event * m_ub_event;
 		struct evconnlistener * m_server_listener;
+		struct evconnlistener * m_component_listener;
 		static std::atomic<unsigned long long> s_serial;
 		std::list<std::shared_ptr<NetSession>> m_closed_sessions;
 	public:
@@ -47,12 +50,22 @@ namespace Metre {
 		bool init() {
 			if (m_event_base) throw std::runtime_error("I'm already initialized!");
 			m_event_base = event_base_new();
-			sockaddr_in6 sin = { AF_INET6, htons(5269), 0, { {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0} }, 0 };
-			m_server_listener = evconnlistener_new_bind(m_event_base, Mainloop::new_session_cb, this, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin));
-			if (!m_server_listener) {
-				throw std::runtime_error(std::string("Cannot bind to server port: ") + strerror(errno));
+			{
+				sockaddr_in6 sin = { AF_INET6, htons(5269), 0, { {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0} }, 0 };
+				m_server_listener = evconnlistener_new_bind(m_event_base, Mainloop::new_server_session_cb, this, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin));
+				if (!m_server_listener) {
+					throw std::runtime_error(std::string("Cannot bind to server port: ") + strerror(errno));
+				}
+				std::cout << "Listening to server." << std::endl;
 			}
-			std::cout << "Listening." << std::endl;
+			{
+				sockaddr_in6 sin = { AF_INET6, htons(5347), 0, { {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0} }, 0 };
+				m_component_listener = evconnlistener_new_bind(m_event_base, Mainloop::new_comp_session_cb, this, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, -1, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin));
+				if (!m_component_listener) {
+					throw std::runtime_error(std::string("Cannot bind to component port: ") + strerror(errno));
+				}
+				std::cout << "Listening to component." << std::endl;
+			}
 			std::cout << "Setting up DNS" << std::endl;
 			m_ub_ctx = ub_ctx_create();
 			if (!m_ub_ctx) {
@@ -71,7 +84,23 @@ namespace Metre {
 		std::shared_ptr<NetSession> session_by_id(std::string const & id) {
 			auto it = m_sessions_by_id.find(id);
 			if (it != m_sessions_by_id.end()) {
-				std::shared_ptr<NetSession> s((*it).second);
+				std::shared_ptr<NetSession> s((*it).second.lock());
+				return s;
+			}
+			return nullptr;
+		}
+		std::shared_ptr<NetSession> session_by_domain(std::string const & id) {
+			auto it = m_sessions_by_domain.find(id);
+			if (it != m_sessions_by_domain.end()) {
+				std::shared_ptr<NetSession> s((*it).second.lock());
+				return s;
+			}
+			return nullptr;
+		}
+		std::shared_ptr<NetSession> session_by_address(std::string const & host, unsigned short port) {
+			auto it = m_sessions_by_address.find(std::make_pair(host,port));
+			if (it != m_sessions_by_address.end()) {
+				std::shared_ptr<NetSession> s((*it).second.lock());
 				return s;
 			}
 			return nullptr;
@@ -95,13 +124,29 @@ namespace Metre {
 			}
 		}
 
-		static void new_session_cb(struct evconnlistener * listener, evutil_socket_t newsock, struct sockaddr * addr, int len, void * arg) {
-			reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len);
+		void register_session_domain(std::string const & dom, unsigned long long serial) {
+			auto it = m_sessions.find(serial);
+			if (it == m_sessions.end()) {
+				return;
+			}
+			auto it2 = m_sessions_by_domain.find(dom);
+			if (it2 != m_sessions_by_domain.end()) {
+				m_sessions_by_domain.erase(it2);
+			}
+			m_sessions_by_domain.insert(std::make_pair(dom, (*it).second));
 		}
 
-		void new_session_inbound(evutil_socket_t sock, struct sockaddr * sin, int sinlen) {
+		static void new_server_session_cb(struct evconnlistener * listener, evutil_socket_t newsock, struct sockaddr * addr, int len, void * arg) {
+			reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, S2S);
+		}
+
+		static void new_comp_session_cb(struct evconnlistener * listener, evutil_socket_t newsock, struct sockaddr * addr, int len, void * arg) {
+			reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, COMP);
+		}
+
+		void new_session_inbound(evutil_socket_t sock, struct sockaddr * sin, int sinlen, SESSION_TYPE stype) {
 			struct bufferevent * bev = bufferevent_socket_new(m_event_base, sock, BEV_OPT_CLOSE_ON_FREE);
-			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, S2S, &m_server));
+			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, stype, &m_server));
 			auto it = m_sessions.find(session->serial());
 			if (it != m_sessions.end()) {
 				// We already have one for this socket. This seems unlikely to be safe.
@@ -119,7 +164,14 @@ namespace Metre {
 			sin.sin_port = htons(port);
 			char buf[25];
 			std::cout << "Connecting to " << inet_ntop(AF_INET, &sin.sin_addr, buf, 25) << ":" << ntohs(sin.sin_port)  << ":" << port<< std::endl;
-			return connect(fromd, tod, hostname, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin), port);
+			std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin), port);
+			m_sessions_by_address[std::make_pair(hostname,port)] = sesh;
+			auto it = m_sessions_by_domain.find(tod);
+			if (it == m_sessions_by_domain.end() ||
+					(*it).second.expired()) {
+				m_sessions_by_domain[tod] = sesh;
+			}
+			return sesh;
 		}
 
 		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, struct sockaddr * sin, size_t addrlen, unsigned short port) {
@@ -335,8 +387,17 @@ namespace Metre {
 		void unregister_stream_id(std::string const & id) {
 			Mainloop::s_mainloop->unregister_stream_id(id);
 		}
+		void register_session_domain(std::string const & domain, NetSession & session) {
+			Mainloop::s_mainloop->register_session_domain(domain, session.serial());
+		}
 		std::shared_ptr<NetSession> session_by_stream_id(std::string const & id) {
 			return Mainloop::s_mainloop->session_by_id(id);
+		}
+		std::shared_ptr<NetSession> session_by_domain(std::string const & id) {
+			return Mainloop::s_mainloop->session_by_domain(id);
+		}
+		std::shared_ptr<NetSession> session_by_address(std::string const & id, unsigned short p) {
+			return Mainloop::s_mainloop->session_by_address(id, p);
 		}
 	}
 }

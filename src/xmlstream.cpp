@@ -29,6 +29,19 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 	using namespace rapidxml;
 	if (len == 0) return 0;
 	VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
+	size_t spaces = 0;
+	for (unsigned char * sp{p}; len != 0; ++sp, --len, ++spaces) {
+		switch (*sp) {
+		default:
+			break;
+		case ' ':
+		case '\r':
+		case '\n':
+			continue;
+		}
+		break;
+	}
+	if (len == 0) return 0;
 	std::string buf{reinterpret_cast<char *>(p), len};
 	std::cout << "Got [" << len << "] : " << buf << std::endl;
 	try {
@@ -65,7 +78,7 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 		} catch(Metre::base::xmpp_exception) {
 			throw;
 		} catch(rapidxml::eof_error & e) {
-			return len - buf.length();
+			return spaces + len - buf.length();
 		} catch(std::runtime_error & e) {
 			throw Metre::undefined_condition(e.what());
 		}
@@ -99,7 +112,7 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 		}
 		m_closed = true;
 	}
-	return len - buf.length();
+	return spaces + len - buf.length();
 }
 
 
@@ -132,6 +145,9 @@ void XMLStream::stream_open() {
 		} else if (default_xmlns == "jabber:server") {
 			std::cout << "S2S stream detected." << std::endl;
 			m_type = S2S;
+		} else if (default_xmlns == "jabber:component:accept") {
+			std::cout << "114 stream detected." <<std::endl;
+			m_type = COMP;
 		} else {
 			std::cout << "Unidentified connection." << std::endl;
 		}
@@ -161,9 +177,10 @@ void XMLStream::stream_open() {
 	auto version = stream->first_attribute("version");
 	std::string ver = "1.0";
 	bool with_ver = false;
-	if (version->value() &&
-		version->value_size() == 3 &&
-		ver.compare(0, 3, version->value(), version->value_size()) == 0) {
+	if (version &&
+			version->value() &&
+			version->value_size() == 3 &&
+			ver.compare(0, 3, version->value(), version->value_size()) == 0) {
 		with_ver = true;
 	}
 	if (m_dir == INBOUND) {
@@ -364,6 +381,15 @@ void XMLStream::generate_stream_id() {
 }
 
 XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION dir) const {
+	if (m_type == COMP) {
+		if (m_user) {
+			if (dir == OUTBOUND && *m_user == remote) {
+				return AUTHORIZED;
+			} else if (dir == INBOUND && *m_user == remote) {
+				return AUTHORIZED;
+			}
+		}
+	}
 	auto & m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
 	auto it = m.find(std::make_pair(local,remote));
 	if (it != m.end()) {

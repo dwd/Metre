@@ -56,7 +56,9 @@ namespace Metre {
 			if (domiter != m_domains.end()) {
 				return *domiter->second;
 			}
-			if (domain != "cridland.im") {
+			if (domain != "cridland.im" &&
+					domain != "channels.cridland.im" &&
+					domain != "topics.cridland.im") {
 				throw std::runtime_error("No such domain");
 			}
 			auto dom = m_domains[domain] = new Domain(domain);

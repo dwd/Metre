@@ -67,6 +67,7 @@ namespace Metre {
 		void set_compressed() {m_compressed = true;}
 		void set_secured() {m_secured = true;}
 		bool auth_ready() { return m_authready; }
+		std::string const & local_domain() { return m_stream_local; }
 
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION) const;
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION, AUTH_STATE auth);

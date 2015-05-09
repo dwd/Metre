@@ -43,26 +43,31 @@ namespace {
 					if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
 						throw Metre::not_authorized();
 					}
-					// For now, bounce everything.
-					bool ping = false;
-					if (stanza == "iq" && to.full() == "cridland.im") {
-						auto query = node->first_node();
-						if (query) {
-							std::string xmlns{query->xmlns(), query->xmlns_size()};
-							if (xmlns == "urn:xmpp:ping") {
-								ping = true;
+					if (to.domain() == "cridland.im") {
+						// For now, bounce everything.
+						bool ping = false;
+						if (stanza == "iq" && to.full() == "cridland.im") {
+							auto query = node->first_node();
+							if (query) {
+								std::string xmlns{query->xmlns(), query->xmlns_size()};
+								if (xmlns == "urn:xmpp:ping") {
+									ping = true;
+								}
 							}
 						}
-					}
-					if (ping) {
-						std::string id;
-						auto id_att = node->first_attribute("id");
-						if (id_att && id_att->value()) id = id_att->value();
-						std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, id, m_stream)};
-						std::shared_ptr<Route> route = RouteTable::routeTable().route(from);
-						route->transmit(std::move(pong));
+						if (ping) {
+							std::string id;
+							auto id_att = node->first_attribute("id");
+							if (id_att && id_att->value()) id = id_att->value();
+							std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, id, m_stream)};
+							std::shared_ptr<Route> route = RouteTable::routeTable(to).route(from);
+							route->transmit(std::move(pong));
+						} else {
+							throw stanza_service_unavailable();
+						}
 					} else {
-						throw stanza_service_unavailable();
+						std::shared_ptr<Route> route = RouteTable::routeTable(to).route(to);
+						route->transmit(std::move(s));
 					}
 					// Lookup endpoint.
 				} catch(Metre::base::xmpp_exception) {
@@ -74,7 +79,7 @@ namespace {
 				}
 			} catch (Metre::base::stanza_exception const & stanza_error) {
 				std::unique_ptr<Stanza> st = s->create_bounce(stanza_error, m_stream);
-				std::shared_ptr<Route> route = RouteTable::routeTable().route(st->to());
+				std::shared_ptr<Route> route = RouteTable::routeTable(st->from()).route(st->to());
 				route->transmit(std::move(st));
 			}
 			return true;
