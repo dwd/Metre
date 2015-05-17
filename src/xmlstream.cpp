@@ -6,8 +6,8 @@
 #include "feature.hpp"
 #include "router.hpp"
 #include "config.h"
+#include "log.h"
 
-#include <iostream>
 #include <random>
 #include <algorithm>
 #ifdef VALGRIND
@@ -44,7 +44,7 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 	}
 	if (len == 0) return 0;
 	std::string buf{reinterpret_cast<char *>(p + spaces), len};
-	std::cout << "Got [" << len << "] : " << buf << std::endl;
+	METRE_LOG("Got [" << len << "] : " << buf);
 	try {
 		try {
 			if (m_stream_buf.empty()) {
@@ -61,7 +61,7 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 					m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
 					stream_open();
 					auto stream_open = m_stream.first_node();
-					std::cout << "Stream open with {" << stream_open->xmlns() << "}" << stream_open->name() << std::endl;
+					METRE_LOG("Stream open with {" << stream_open->xmlns() << "}" << stream_open->name());
 				} else {
 					m_stream_buf.clear();
 				}
@@ -84,7 +84,7 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 			throw Metre::undefined_condition(e.what());
 		}
 	} catch(Metre::base::xmpp_exception & e) {
-		std::cout << "Raising error: " << e.what() << std::endl;
+		METRE_LOG("Raising error: " << e.what());
 		xml_document<> d;
 		auto error = d.allocate_node(node_element, "stream:error");
 		auto specific = d.allocate_node(node_element, e.element_name());
@@ -141,23 +141,23 @@ void XMLStream::stream_open() {
 	if (xmlns && xmlns->value()) {
 		std::string default_xmlns(xmlns->value(), xmlns->value_size());
 		if (default_xmlns == "jabber:client") {
-			std::cout << "C2S stream detected." << std::endl;
+			METRE_LOG("C2S stream detected.");
 			m_type = C2S;
 		} else if (default_xmlns == "jabber:server") {
-			std::cout << "S2S stream detected." << std::endl;
+			METRE_LOG("S2S stream detected.");
 			m_type = S2S;
 		} else if (default_xmlns == "jabber:component:accept") {
-			std::cout << "114 stream detected." <<std::endl;
+			METRE_LOG("114 stream detected.");
 			m_type = COMP;
 		} else {
-			std::cout << "Unidentified connection." << std::endl;
+			METRE_LOG("Unidentified connection.");
 		}
 	}
 	auto domainat = stream->first_attribute("to");
 	std::string domainname;
 	if (domainat && domainat->value()) {
 		domainname.assign(domainat->value(), domainat->value_size());
-		std::cout << "Requested contact domain {" << domainname << "}" << std::endl;
+		METRE_LOG("Requested contact domain {" << domainname << "}");
 	} else {
 		domainname = Config::config().default_domain();
 	}
@@ -165,7 +165,7 @@ void XMLStream::stream_open() {
 	if (auto fromat = stream->first_attribute("from")) {
 		from.assign(fromat->value(), fromat->value_size());
 	}
-	std::cout << "Requesting domain is " << from << std::endl;
+	METRE_LOG("Requesting domain is " << from);
 	Config::Domain const & domain = Config::config().domain(domainname);
 	if (domain.block()) {
 		throw Metre::host_unknown("Requested domain is blocked");
@@ -276,7 +276,7 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 	if (xmlns == "http://etherx.jabber.org/streams") {
 		std::string elname(element->name(), element->name_size());
 		if (elname == "features") {
-			std::cout << "It's features!" << std::endl;
+			METRE_LOG("It's features!");
 			for(;;) {
 				rapidxml::xml_node<> * feature_offer = nullptr;
 				Feature::Type feature_type = Feature::Type::FEAT_NONE;
@@ -284,10 +284,10 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 				for (auto feat_ad = element->first_node(); feat_ad; feat_ad = feat_ad->next_sibling()) {
 					std::string offer_name(feat_ad->name(), feat_ad->name_size());
 					std::string offer_ns(feat_ad->xmlns(), feat_ad->xmlns_size());
-					std::cout << "Got feature offer: {" << offer_ns << "}" << offer_name << std::endl;
+					METRE_LOG("Got feature offer: {" << offer_ns << "}" << offer_name);
 					if (m_features.find(offer_ns) != m_features.end()) continue; // Already negotiated.
 					Feature::Type offer_type = Feature::type(offer_ns, *this);
-					std::cout << "Offer type seems to be " << offer_type << std::endl;
+					METRE_LOG("Offer type seems to be " << offer_type);
 					switch(offer_type) {
 					case Feature::Type::FEAT_NONE:
 						continue;
@@ -297,7 +297,7 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						if (m_compressed) continue;
 					}
 					if (feature_type < offer_type) {
-						std::cout << "I'll keep {" << offer_ns << "} instead of {" << feature_xmlns << "}" << std::endl;
+						METRE_LOG("I'll keep {" << offer_ns << "} instead of {" << feature_xmlns << "}");
 						feature_offer = feat_ad;
 						feature_xmlns = offer_ns;
 						feature_type = offer_type;
@@ -327,16 +327,16 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 				}
 			}
 		} else if (elname == "error") {
-			std::cout << "It's a stream error!" << std::endl;
+			METRE_LOG("It's a stream error!");
 			throw std::runtime_error("Actually, I have a bag of shite for error handling.");
 		} else {
-			std::cout << "It's something weird." << std::endl;
+			METRE_LOG("It's something weird.");
 			throw Metre::unsupported_stanza_type("Unknown stream element");
 		}
 	} else {
 		auto fit = m_features.find(xmlns);
 		Feature * f = 0;
-		std::cout << "Hunting handling feature for {" << xmlns << "}" << std::endl;
+		METRE_LOG("Hunting handling feature for {" << xmlns << "}");
 		if (fit != m_features.end()) {
 			f = (*fit).second;
 		} else {

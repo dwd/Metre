@@ -2,14 +2,14 @@
 #include "dns.hpp"
 #include "xmlstream.hpp"
 #include "netsession.hpp"
+#include "log.h"
 
-#include <iostream>
 #include <unordered_map>
 
 using namespace Metre;
 
 Route::Route(Jid const & from, Jid const & to) : m_local(from), m_domain(to) {
-  std::cout << "Route created, local is " << m_local.domain() << " remote is " << m_domain.domain() << std::endl;
+  METRE_LOG("Route created, local is " << m_local.domain() << " remote is " << m_domain.domain());
 }
 
 namespace {
@@ -94,28 +94,28 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
       return;
     }
     m_stanzas.push_back(std::move(s));
-    std::cout << "Queued stanza (fallback) for " << m_local.domain() << "=>" << m_domain.domain() << std::endl;
+    METRE_LOG("Queued stanza (fallback) for " << m_local.domain() << "=>" << m_domain.domain());
     DNS::Resolver::resolver().SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
   } else { // Got a to but it's not ready yet.
-    std::cout << "Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain() << std::endl;
+    METRE_LOG("Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain());
     m_stanzas.push_back(std::move(s));
   }
 }
 
 void Route::SrvResult(DNS::Srv const * srv) {
   auto vrfy = m_vrfy.lock();
-  std::cout << "Got SRV" << std::endl;
+  METRE_LOG("Got SRV");
   if (vrfy) {
     return;
   }
   m_srv = *srv;
   if (!m_srv.error.empty()) {
-    std::cout << "Got an error during DNS: " << m_srv.error << std::endl;
+    METRE_LOG("Got an error during DNS: " << m_srv.error);
     return;
   }
   m_rr = m_srv.rrs.begin();
   // TODO Look for an existing host/port session and use that.
-  std::cout << "Should look for " << (*m_rr).hostname << ":" << (*m_rr).port << std::endl;
+  METRE_LOG("Should look for " << (*m_rr).hostname << ":" << (*m_rr).port);
   std::shared_ptr<NetSession> sesh = Router::session_by_address((*m_rr).hostname, (*m_rr).port);
   if (sesh) {
     m_vrfy = sesh;
@@ -130,18 +130,18 @@ void Route::SrvResult(DNS::Srv const * srv) {
 
 void Route::AddressResult(DNS::Address const * addr) {
   auto vrfy = m_vrfy.lock();
-  std::cout << "Now what?" << std::endl;
+  METRE_LOG("Now what?");
   if (vrfy) {
     return;
   }
   if (!addr->error.empty()) {
-    std::cout << "Got an error during DNS: " << addr->error << std::endl;
+    METRE_LOG("Got an error during DNS: ");
     return;
   }
   m_addr = *addr;
   m_arr = m_addr.addr4.begin();
   vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname, *m_arr, (*m_rr).port);
-  std::cout << "Connected, " << &*vrfy << std::endl;
+  METRE_LOG("Connected, " << &*vrfy);
   vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
   m_vrfy = vrfy;
   if (m_to.expired()) {
@@ -153,9 +153,9 @@ void Route::AddressResult(DNS::Address const * addr) {
 
 void Route::SessionDialback(XMLStream & stream) {
   auto vrfy = m_vrfy.lock();
-  std::cout << "Stream is ready for dialback." << std::endl;
+  METRE_LOG("Stream is ready for dialback.");
   if (vrfy && &stream.session() == &*vrfy) {
-    std::cout << "This is the droid I am looking for." << std::endl;
+    METRE_LOG("This is the droid I am looking for.");
     for (auto & v : m_dialback) {
       vrfy->xml_stream().send(std::move(v));
     }
@@ -168,16 +168,16 @@ void Route::SessionDialback(XMLStream & stream) {
   auto to = m_to.lock();
   if (to) {
     if (&stream.session() == &*to && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
-      std::cout << "Stream is to; needs dialback." << std::endl;
+      METRE_LOG("Stream is to; needs dialback.");
     }
   }
 }
 
 void Route::SessionAuthenticated(XMLStream & stream) {
   auto to = m_to.lock();
-  std::cout << "Stream is ready for stanzas." << std::endl;
+  METRE_LOG("Stream is ready for stanzas.");
   if (&stream.session() == &*to && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::AUTHORIZED) {
-    std::cout << "This is the droid I am looking for." << std::endl;
+    METRE_LOG("This is the droid I am looking for.");
     for (auto & s : m_stanzas) {
       to->xml_stream().send(std::move(s));
     }

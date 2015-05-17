@@ -1,7 +1,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <vector>
-#include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
 #include <map>
@@ -23,6 +22,7 @@
 #include "dns.hpp"
 #include <arpa/inet.h>
 #include "config.h"
+#include "log.h"
 
 namespace Metre {
 	class Mainloop : public sigslot::has_slots<> {
@@ -57,7 +57,7 @@ namespace Metre {
 				if (!m_server_listener) {
 					throw std::runtime_error(std::string("Cannot bind to server port: ") + strerror(errno));
 				}
-				std::cout << "Listening to server." << std::endl;
+				METRE_LOG("Listening to server.");
 			}
 			{
 				sockaddr_in6 sin = { AF_INET6, htons(5347), 0, { {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0} }, 0 };
@@ -65,9 +65,9 @@ namespace Metre {
 				if (!m_component_listener) {
 					throw std::runtime_error(std::string("Cannot bind to component port: ") + strerror(errno));
 				}
-				std::cout << "Listening to component." << std::endl;
+				METRE_LOG("Listening to component.");
 			}
-			std::cout << "Setting up DNS" << std::endl;
+			METRE_LOG("Setting up DNS");
 			m_ub_ctx = ub_ctx_create();
 			if (!m_ub_ctx) {
 				throw std::runtime_error("DNS context creation failure.");
@@ -151,7 +151,7 @@ namespace Metre {
 			auto it = m_sessions.find(session->serial());
 			if (it != m_sessions.end()) {
 				// We already have one for this socket. This seems unlikely to be safe.
-				std::cerr << "Session already in ownership table; corruption." << std::endl;
+				METRE_LOG("Session already in ownership table; corruption.");
 				assert(false);
 			}
 			m_sessions[session->serial()] = session;
@@ -164,7 +164,7 @@ namespace Metre {
 			sin.sin_addr.s_addr = addr;
 			sin.sin_port = htons(port);
 			char buf[25];
-			std::cout << "Connecting to " << inet_ntop(AF_INET, &sin.sin_addr, buf, 25) << ":" << ntohs(sin.sin_port)  << ":" << port<< std::endl;
+			METRE_LOG("Connecting to " << inet_ntop(AF_INET, &sin.sin_addr, buf, 25) << ":" << ntohs(sin.sin_port)  << ":" << port);
 			std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin), port);
 			m_sessions_by_address[std::make_pair(hostname,port)] = sesh;
 			auto it = m_sessions_by_domain.find(tod);
@@ -178,21 +178,20 @@ namespace Metre {
 		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, struct sockaddr * sin, size_t addrlen, unsigned short port) {
 			struct bufferevent * bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
 			if (!bev) {
-				std::cout << "Error creating BEV" << std::endl;
+				METRE_LOG("Error creating BEV");
 				// TODO ARGH!
 			}
 			if(0 > bufferevent_socket_connect(bev, sin, addrlen)) {
-				std::cout << "Error connecting BEV" << std::endl;
+				METRE_LOG("Error connecting BEV");
 				// TODO Something bad happened.
 				bufferevent_free(bev);
 			}
-			std::cout << "All good so far." << std::endl;
-			std::cout << "BEV fd is " << bufferevent_getfd(bev) << std::endl;
+			METRE_LOG("BEV fd is " << bufferevent_getfd(bev));
 			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, &m_server));
 			auto it = m_sessions.find(session->serial());
 			if (it != m_sessions.end()) {
 				// We already have one for this socket. This seems unlikely to be safe.
-				std::cerr << "Session already in ownership table; corruption." << std::endl;
+				METRE_LOG("Session already in ownership table; corruption.");
 				assert(false);
 			}
 			m_sessions[session->serial()] = session;
@@ -256,11 +255,11 @@ namespace Metre {
 						rr.hostname += ".";
 					}
 					srv.rrs.push_back(rr);
-					std::cout << "Data[" << i << "]: (" << result->len[i] << " bytes) "
+					METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
 						<< rr.priority << ":"
 						<< rr.weight << ":"
 						<< rr.port << "::"
-						<< rr.hostname << std::endl;
+						<< rr.hostname);
 				}
 				auto it = m_srv_pending.find(srv.domain);
 				if (it != m_srv_pending.end()) {
@@ -269,7 +268,7 @@ namespace Metre {
 				}
 				return;
 			}
-			std::cout << "DNS Error: " << error << std::endl;
+			METRE_LOG("DNS Error: " << error);
 			auto it = m_srv_pending.find(result->qname);
 			if (it != m_srv_pending.end()) {
 				DNS::Srv srv;
@@ -332,7 +331,7 @@ namespace Metre {
 
 		virtual Resolver::srv_callback_t & SrvLookup(std::string const & base_domain) {
 			std::string domain = "_xmpp-server._tcp." + base_domain;
-			std::cout << "SRV lookup for " << domain << std::endl;
+			METRE_LOG("SRV lookup for " << domain);
 			auto it = m_srv_pending.find(domain);
 			if (it != m_srv_pending.end()) {
 				return (*it).second;
@@ -349,7 +348,7 @@ namespace Metre {
 		}
 
 		virtual Resolver::addr_callback_t & AddressLookup(std::string const & hostname) {
-			std::cout << "A/AAAA lookup for " << hostname << std::endl;
+			METRE_LOG("A/AAAA lookup for " << hostname);
 			auto it = m_a_pending.find(hostname);
 			if (it != m_a_pending.end()) {
 				return (*it).second;
@@ -407,6 +406,7 @@ int main(int argc, char *argv[]) {
 	Metre::Server server;
 	Metre::Mainloop loop(server);
 	new Metre::Config("./metre.conf.xml");
+	new Metre::Log("./metre.log");
 
 	if (!loop.init()) {
 		return 1;

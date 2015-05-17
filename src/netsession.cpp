@@ -1,6 +1,7 @@
 #include "netsession.hpp"
 #include "xmlstream.hpp"
 #include "router.hpp"
+#include "log.h"
 
 #include "rapidxml_print.hpp"
 
@@ -10,7 +11,6 @@
 
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <iostream>
 #include <unistd.h>
 #include <fcntl.h>
 #include <cstring>
@@ -61,7 +61,7 @@ bool NetSession::drain() {
 				evbuffer_drain(buf, used);
 			}*/
 		} else {
-			std::cout << "Stuff left after close: {" << len << "}" << std::endl;
+			METRE_LOG("Stuff left after close: {" << len << "}");
 			return true;
 		}
 	}
@@ -77,12 +77,12 @@ void NetSession::send(rapidxml::xml_document<> & d) {
 	std::string tmp;
 	rapidxml::print(std::back_inserter(tmp), d, rapidxml::print_no_indenting);
 	struct evbuffer * buf = bufferevent_get_output(m_bev);
-	std::cout << "Send: "  << m_xml_stream << ": " << tmp << std::endl;
+	METRE_LOG("Send: "  << m_xml_stream << ": " << tmp);
 	evbuffer_add(buf, tmp.data(), tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
 }
 void NetSession::send(std::string const & s) {
 	struct evbuffer * buf = bufferevent_get_output(m_bev);
-	std::cout << "Send: "  << m_xml_stream << ": " << s << std::endl;
+	METRE_LOG("Send: "  << m_xml_stream << ": " << s);
 	evbuffer_add(buf, s.data(), s.length());
 }
 void NetSession::send(const char * p) {
@@ -106,14 +106,14 @@ void NetSession::bev_connected() {
 }
 
 void NetSession::event_cb(struct bufferevent *, short events, void * arg) {
-	std::cout << "Events have happened." << std::endl;
+	METRE_LOG("Events have happened.");
 	NetSession & ns = *reinterpret_cast<NetSession *>(arg);
 	if (events & BEV_EVENT_ERROR) {
 		ns.bev_closed();
 	} else if (events & BEV_EVENT_EOF) {
 		ns.bev_closed();
 	} else if (events & BEV_EVENT_CONNECTED) {
-		std::cout << "Connected." << std::endl;
+		METRE_LOG("Connected.");
 		ns.bev_connected();
 	}
 }

@@ -2,10 +2,9 @@
 #include "stanza.hpp"
 #include "router.hpp"
 #include "xmppexcept.hpp"
+#include "log.h"
 #include <rapidxml.hpp>
 #include <openssl/sha.h>
-
-#include <iostream>
 
 using namespace rapidxml;
 using namespace Metre;
@@ -69,8 +68,8 @@ namespace {
         std::string const handshake_offered{node->value(), node->value_size()};
         std::string const handshake_expected{handshake_content()};
         if (handshake_offered != handshake_expected) {
-          std::cout << "RX: '" << handshake_offered << "'" << std::endl;
-          std::cout << "TX: '" << handshake_expected << "'" << std::endl;
+          METRE_LOG("RX: '" << handshake_offered << "'");
+          METRE_LOG("TX: '" << handshake_expected << "'");
           throw not_authorized("Component handshake failure");
         }
 
