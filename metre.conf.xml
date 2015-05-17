@@ -1,0 +1,53 @@
+<config xmlns='http://surevine.com/xmlns/metre/config'>
+  <globals>
+    <domain name='cridland.im'/>
+    <!-- Default domain. Used in extremis if no domain is present in the stream header. -->
+
+    <rundir>/home/dwd/src/metre/</rundir>
+    <!-- Run directory, used to store pid file. -->
+
+    <datadir>/home/dwd/src/metre/data/</datadir>
+    <!-- Data directory root; currently unused -->
+
+  </globals>
+  <inbound>
+    <!-- The Inbound stanza lists all domains the server will respond to over external connectivity.
+          If it's empty, it will populate automatically from <local/> and any component <connections/>.
+        -->
+  </inbound>
+  <local>
+    <!-- Domains actually serviced by this instance are listed in the Local stanza.
+          This could be empty if the server is acting purely as a forwarding agent.
+          -->
+    <domain name='cridland.im'>
+      <x509 chain='./cridland.im.stuffs' key='./cridland.im.key'/>
+    </domain>
+  </local>
+  <remote>
+    <!-- The Remote stanza lists known external domains and parameters for connections.
+          There is a special "default" entry which is used to connect to unlisted domains - if this
+          is not present, it will simply not connect to unlisted domains.
+        -->
+    <any> <!-- Special entry for any domain -->
+      <transport type='s2s' sec='tls'>
+        <lookup type='srv' dnssec='none'/>
+        <lookup type='address' dnssec='none'/>
+        <auth type='dane'/><!-- Not implemented -->
+        <auth type='pkix'/>
+        <auth type='toru' validate-first='false'/><!-- Not implemented. -->
+        <auth type='dialback'/>
+      </transport>
+      <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/>
+    </any>
+    <domain name='channels.cridland.im' forward='true'> <!-- Component. -->
+      <transport type='114' sec='none'>
+        <auth type='secret'>secret</auth>
+      </transport>
+    </domain>
+    <domain name='topics.cridland.im' forward='true'> <!-- Component. -->
+      <transport type='114' sec='none'>
+        <auth type='secret'>secret</auth>
+      </transport>
+    </domain>
+  </remote>
+</config>

@@ -5,6 +5,7 @@
 #include "netsession.hpp"
 #include "feature.hpp"
 #include "router.hpp"
+#include "config.h"
 
 #include <iostream>
 #include <random>
@@ -42,7 +43,7 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 		break;
 	}
 	if (len == 0) return 0;
-	std::string buf{reinterpret_cast<char *>(p), len};
+	std::string buf{reinterpret_cast<char *>(p + spaces), len};
 	std::cout << "Got [" << len << "] : " << buf << std::endl;
 	try {
 		try {
@@ -158,14 +159,24 @@ void XMLStream::stream_open() {
 		domainname.assign(domainat->value(), domainat->value_size());
 		std::cout << "Requested contact domain {" << domainname << "}" << std::endl;
 	} else {
-		domainname = "cridland.im";
+		domainname = Config::config().default_domain();
 	}
 	std::string from;
 	if (auto fromat = stream->first_attribute("from")) {
 		from.assign(fromat->value(), fromat->value_size());
 	}
 	std::cout << "Requesting domain is " << from << std::endl;
-	auto domain = this->m_server->domain(domainname);
+	Config::Domain const & domain = Config::config().domain(domainname);
+	if (domain.block()) {
+		throw Metre::host_unknown("Requested domain is blocked");
+	}
+	Config::Domain const & from_domain = Config::config().domain(from);
+	if (from_domain.block()) {
+		throw Metre::host_unknown("Requesting domain is blocked");
+	}
+	if (from_domain.forward() != domain.forward()) {
+		throw Metre::host_unknown("Will not forward between those domains");
+	}
 	if (!stream->xmlns()) {
 		throw Metre::bad_format("Missing namespace for stream");
 	}
@@ -184,7 +195,7 @@ void XMLStream::stream_open() {
 		with_ver = true;
 	}
 	if (m_dir == INBOUND) {
-		m_stream_local = domain.domain();
+		m_stream_local = domainname;
 		m_stream_remote = from;
 		if (m_stream_remote == m_stream_local) {
 			throw std::runtime_error("That's me, you fool");

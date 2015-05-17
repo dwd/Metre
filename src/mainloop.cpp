@@ -22,6 +22,7 @@
 #include "sigslot/sigslot.h"
 #include "dns.hpp"
 #include <arpa/inet.h>
+#include "config.h"
 
 namespace Metre {
 	class Mainloop : public sigslot::has_slots<> {
@@ -405,6 +406,7 @@ namespace Metre {
 int main(int argc, char *argv[]) {
 	Metre::Server server;
 	Metre::Mainloop loop(server);
+	new Metre::Config("./metre.conf.xml");
 
 	if (!loop.init()) {
 		return 1;

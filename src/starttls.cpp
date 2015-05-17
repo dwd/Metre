@@ -3,6 +3,7 @@
 #include "xmppexcept.hpp"
 #include "router.hpp"
 #include "netsession.hpp"
+#include "config.h"
 #include <memory>
 
 #include <event2/bufferevent_ssl.h>
@@ -34,24 +35,10 @@ namespace {
       }
     };
 
-    static SSL_CTX * context() {
-      static SSL_CTX * ctx = 0;
+    SSL_CTX * context() {
+      SSL_CTX * ctx = Config::config().domain(m_stream.local_domain()).ssl_ctx();
       if (!ctx) {
-        SSL_library_init();
-    		ERR_load_crypto_strings();
-    		SSL_load_error_strings();
-    		OpenSSL_add_all_algorithms();
-    		if (RAND_poll() == 0) {
-          return nullptr;
-    		}
-        ctx = SSL_CTX_new(SSLv23_method());
-        SSL_CTX_set_options(ctx, SSL_OP_ALL|SSL_OP_NO_SSLv2);
-        if (SSL_CTX_use_certificate_chain_file(ctx, "cridland.im.stuffs") != 1) {
-          return nullptr;
-        }
-        if (SSL_CTX_use_PrivateKey_file(ctx, "cridland.im.key", SSL_FILETYPE_PEM) != 1) {
-          return nullptr;
-        }
+        ctx = Config::config().domain("").ssl_ctx();
       }
       return ctx;
     }

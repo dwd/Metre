@@ -2,6 +2,7 @@
 #include "stanza.hpp"
 #include "xmppexcept.hpp"
 #include "router.hpp"
+#include "config.h"
 #include <memory>
 
 using namespace Metre;
@@ -43,10 +44,10 @@ namespace {
 					if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
 						throw Metre::not_authorized();
 					}
-					if (to.domain() == "cridland.im") {
+					if (Config::config().domain(to.domain()).transport_type() == INT) {
 						// For now, bounce everything.
 						bool ping = false;
-						if (stanza == "iq" && to.full() == "cridland.im") {
+						if (stanza == "iq" && to.full() == to.domain()) {
 							auto query = node->first_node();
 							if (query) {
 								std::string xmlns{query->xmlns(), query->xmlns_size()};

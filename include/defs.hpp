@@ -5,7 +5,8 @@ namespace Metre {
 	typedef enum {
 		C2S,
 		S2S,
-		COMP
+		COMP,
+		INT
 	} SESSION_TYPE;
 
 

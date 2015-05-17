@@ -4,6 +4,7 @@
 #include "router.hpp"
 #include "netsession.hpp"
 #include <memory>
+#include "config.h"
 
 using namespace Metre;
 using namespace rapidxml;
