@@ -126,6 +126,10 @@ void Config::Domain::x509(std::string const & chain, std::string const & pkey) {
   if (SSL_CTX_use_PrivateKey_file(m_ssl_ctx, pkey.c_str(), SSL_FILETYPE_PEM) != 1) {
     throw std::runtime_error("Couldn't load keyfile");
   }
+  if (SSL_CTX_check_private_key(m_ssl_ctx)) {
+    throw std::runtime_error("Private key mismatch");
+  }
+  SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
 }
 
 Config::Config(std::string const & filename) : m_config_str() {
