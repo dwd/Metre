@@ -44,13 +44,46 @@ namespace Metre {
 			//Address(Address const &) = default;
 		};
 
+		class TlsaRR {
+			typedef enum {
+				CAConstraint=0,
+				CertConstraint=1,
+				TrustAnchorAssertion=2,
+				DomainCert=3
+			} CertUsage;
+			typedef enum {
+				FullCert=0,
+				SubjectPublicKeyInfo=1
+			} Selector;
+			typedef enum {
+				NoHash=0,
+				Sha256=1,
+				Sha512=2
+			} MatchType;
+			CertUage certUsage;
+			Selector selector;
+			MatchType matchType;
+			std::string matchData;
+		};
+		class Tlsa {
+			short unsigned int port;
+			std::string protocol;
+			std::string hostname;
+			std::string error;
+			bool dnssec;
+
+			std::vector<TlsaRR> records;
+		};
+
 
 		class Resolver {
 		public:
 			typedef sigslot::signal<sigslot::thread::mt, Srv const*> srv_callback_t;
 			typedef sigslot::signal<sigslot::thread::mt, Address const*> addr_callback_t;
+			typedef sigslot::signal<sigslot::thread::mt, Tlsa const*> tlsa_callback_t;
 			virtual srv_callback_t & SrvLookup(std::string const & domain) = 0;
 			virtual addr_callback_t & AddressLookup(std::string const & hostname) = 0;
+			virtual tlsa_callback_t & TlsaLookup(short unsigned int port, std::string protocol, std::string hostname) = 0;
 			static Resolver & resolver();
 		};
 	}

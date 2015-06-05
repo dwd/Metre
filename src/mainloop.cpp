@@ -231,7 +231,51 @@ namespace Metre {
 	private:
 		std::map<std::string, DNS::Resolver::srv_callback_t> m_srv_pending;
 		std::map<std::string, DNS::Resolver::addr_callback_t> m_a_pending;
+		std::map<std::string, DNS::Resolver::tlsa_callback_t> m_tlsa_pending;
 	public:
+		void tlsa_lookup_done(int err, struct ub_result * result) {
+			std::string error;
+			if (err != 0) {
+				error = ub_strerror(err);
+				return;
+			} else if (!result->havedata) {
+				error = "No TLSA records present";
+			} else if (result->bogus) {
+				error = std::string("Bogus: ") + result->why_bogus;
+			} else {
+				DNS::Tlsa tlsa;
+				tlsa.dnssec = result->secure;
+				tlsa.domain = result->qname;
+				for (int i = 0; result->data[i]; ++i) {
+					DNS::TlsaRR rr;
+					rr.certUsage = result->data[i][0];
+					rr.selector = result->data[i][1];
+					rr.matchType = result->data[i][2];
+					rr.matchData.assign(result->data[i] + 3, result->len[i] - 3);
+					tlsa.rrs.push_back(rr);
+					METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
+						<< rr.certUsage << ":"
+						<< rr.selector << ":"
+						<< rr.matchType << "::"
+						<< rr.matchData);
+				}
+				auto it = m_tlsa_pending.find(tlsa.domain);
+				if (it != m_tlsa_pending.end()) {
+					(*it).second.emit(&tlsa);
+					m_tlsa_pending.erase(it);
+				}
+				return;
+			}
+			METRE_LOG("DNS Error: " << error);
+			auto it = m_tlsa_pending.find(result->qname);
+			if (it != m_tlsa_pending.end()) {
+				DNS::Srv tlsa;
+				tlsa.error = error;
+				tlsa.domain = result->qname;
+				(*it).second.emit(&tlsa);
+				m_tlsa_pending.erase(it);
+			}
+		}
 		void srv_lookup_done(int err, struct ub_result * result) {
 			std::string error;
 			if (err != 0) {
@@ -319,15 +363,20 @@ namespace Metre {
 			~UBResult() { ub_resolve_free(result); }
 		};
 
-	static void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
-		UBResult r{result};
-		reinterpret_cast<ResolverImpl *>(x)->srv_lookup_done(err, result);
-	}
+		static void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
+			UBResult r{result};
+			reinterpret_cast<ResolverImpl *>(x)->srv_lookup_done(err, result);
+		}
 
-	static void a_lookup_done_cb(void * x, int err, struct ub_result * result) {
-		UBResult r{result};
-		reinterpret_cast<ResolverImpl *>(x)->a_lookup_done(err, result);
-	}
+		static void a_lookup_done_cb(void * x, int err, struct ub_result * result) {
+			UBResult r{result};
+			reinterpret_cast<ResolverImpl *>(x)->a_lookup_done(err, result);
+		}
+
+		static void tlsa_lookup_done_cb(void * x, int err, struct ub_result * result) {
+			UBResult r{result};
+			reinterpret_cast<ResolverImpl *>(x)->tlsa_lookup_done(err, result);
+		}
 
 		virtual Resolver::srv_callback_t & SrvLookup(std::string const & base_domain) {
 			std::string domain = "_xmpp-server._tcp." + base_domain;
@@ -345,6 +394,26 @@ namespace Metre {
 				NULL); /* int * async_id */
 			Mainloop::s_mainloop->check_dns_setup();
 			return m_srv_pending[domain];
+		}
+
+		virtual Resolver::tlsa_callback_t & TlsaLookup(unsigned short port, std::string const & base_domain) {
+			std::ostringstream out;
+			out << "_" << port << "._tcp." << base_domain;
+			std::string domain = out.str();
+			METRE_LOG("SRV lookup for " << domain);
+			auto it = m_tlsa_pending.find(domain);
+			if (it != m_tlsa_pending.end()) {
+				return (*it).second;
+			}
+			int retval = ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
+				domain.c_str(),
+				52, /* TLSA */
+				1,  /* IN */
+				this,
+				tlsa_lookup_done_cb,
+				NULL); /* int * async_id */
+			Mainloop::s_mainloop->check_dns_setup();
+			return m_tlsa_pending[domain];
 		}
 
 		virtual Resolver::addr_callback_t & AddressLookup(std::string const & hostname) {
