@@ -45,6 +45,7 @@ namespace Metre {
 		};
 
 		class TlsaRR {
+		public:
 			typedef enum {
 				CAConstraint=0,
 				CertConstraint=1,
@@ -60,19 +61,20 @@ namespace Metre {
 				Sha256=1,
 				Sha512=2
 			} MatchType;
-			CertUage certUsage;
+			CertUsage certUsage;
 			Selector selector;
 			MatchType matchType;
 			std::string matchData;
 		};
 		class Tlsa {
+		public:
 			short unsigned int port;
 			std::string protocol;
-			std::string hostname;
+			std::string domain;
 			std::string error;
 			bool dnssec;
 
-			std::vector<TlsaRR> records;
+			std::vector<TlsaRR> rrs;
 		};
 
 
@@ -83,7 +85,7 @@ namespace Metre {
 			typedef sigslot::signal<sigslot::thread::mt, Tlsa const*> tlsa_callback_t;
 			virtual srv_callback_t & SrvLookup(std::string const & domain) = 0;
 			virtual addr_callback_t & AddressLookup(std::string const & hostname) = 0;
-			virtual tlsa_callback_t & TlsaLookup(short unsigned int port, std::string protocol, std::string hostname) = 0;
+			virtual tlsa_callback_t & TlsaLookup(short unsigned int port, std::string const & hostname) = 0;
 			static Resolver & resolver();
 		};
 	}

@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <map>
+#include <sstream>
 #include "rapidxml.hpp"
 #include <optional> // Uses the supplied optional by default.
 #include "xmppexcept.hpp"
@@ -248,9 +249,9 @@ namespace Metre {
 				tlsa.domain = result->qname;
 				for (int i = 0; result->data[i]; ++i) {
 					DNS::TlsaRR rr;
-					rr.certUsage = result->data[i][0];
-					rr.selector = result->data[i][1];
-					rr.matchType = result->data[i][2];
+					rr.certUsage = static_cast<DNS::TlsaRR::CertUsage>(result->data[i][0]);
+					rr.selector = static_cast<DNS::TlsaRR::Selector>(result->data[i][1]);
+					rr.matchType = static_cast<DNS::TlsaRR::MatchType>(result->data[i][2]);
 					rr.matchData.assign(result->data[i] + 3, result->len[i] - 3);
 					tlsa.rrs.push_back(rr);
 					METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
@@ -269,7 +270,7 @@ namespace Metre {
 			METRE_LOG("DNS Error: " << error);
 			auto it = m_tlsa_pending.find(result->qname);
 			if (it != m_tlsa_pending.end()) {
-				DNS::Srv tlsa;
+				DNS::Tlsa tlsa;
 				tlsa.error = error;
 				tlsa.domain = result->qname;
 				(*it).second.emit(&tlsa);

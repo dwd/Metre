@@ -5,6 +5,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
+#include <openssl/x509v3.h>
 
 using namespace Metre;
 using namespace rapidxml;
