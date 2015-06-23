@@ -3,8 +3,8 @@
 all: metre keys
 	@echo Done.
 
-OBJS:=$(patsubst src/%.cpp,build/src/%.o,$(wildcard src/*.cpp))
-TESTOBJS:=$(patsubst tests/%.cpp,build/tests/%.o,$(wildcard tests/*.cpp))
+OBJS:=$(patsubst src/%.cc,build/src/%.o,$(wildcard src/*.cc))
+TESTOBJS:=$(patsubst tests/%.cc,build/tests/%.o,$(wildcard tests/*.cc))
 ETOBJS:=$(filter-out build/src/dialback.o build/src/mainloop.o,$(OBJS))
 
 LIBDIRS=/usr/local/lib
@@ -24,7 +24,7 @@ metre: $(OBJS)
 	@echo [LINK] $< '=>' $@
 	g++ --std=c++11 -o $@ $+ $(LINKLIBDIRS) $(LINKLIBS)
 
-build/%.o: %.cpp
+build/%.o: %.cc
 	@echo [C++] $< '=>' $@
 	@mkdir -p $(dir $@)
 	@g++ -g --std=c++11 $(FINCDIRS) -DVALGRIND -o $@ -c $< -MT $@ -MMD -MF $(patsubst %.o,%.d,$@)
