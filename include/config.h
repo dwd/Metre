@@ -19,25 +19,6 @@ struct x509_store_ctx_st; // X509_STORE_CTX;
 namespace Metre {
   class Config {
   public:
-    class Auth {
-    public:
-      typedef enum {
-        DANE,
-        PKIX,
-        SECRET,
-        DIALBACK,
-        TORU
-      } AUTH_TYPE;
-      AUTH_TYPE type();
-      std::optional<std::string> const & secret() const;
-
-      Auth(AUTH_TYPE type);
-      Auth(AUTH_TYPE type, std::string const & secret);
-      Auth(Auth &&);
-    private:
-      AUTH_TYPE m_type;
-      std::optional<std::string> m_secret;
-    };
     class Domain {
     public:
       std::string const & domain() const {
@@ -55,18 +36,23 @@ namespace Metre {
       bool block() const {
         return m_block;
       }
+      bool auth_pkix() const {
+        return m_auth_pkix;
+      }
+      bool auth_dialback() const {
+        return m_auth_dialback;
+      }
+      std::optional<std::string> const & auth_secret() const {
+        return m_auth_secret;
+      }
       struct ssl_ctx_st * ssl_ctx() const {
         return m_ssl_ctx;
-      }
-      std::list<std::unique_ptr<Auth>> const & auth() const {
-        return m_auth;
       }
 
       /* Loading functions */
       void x509(std::string const & chain, std::string const &);
-      void auth(Auth &&);
 
-      Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block);
+      Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool auth_pkix, bool auth_dialback, std::optional<std::string> && m_auth_secret);
       Domain(Domain const &) = delete;
       Domain(Domain &&) = delete;
       ~Domain();
@@ -77,7 +63,9 @@ namespace Metre {
       bool m_forward;
       bool m_require_tls;
       bool m_block;
-      std::list<std::unique_ptr<Auth>> m_auth;
+      bool m_auth_pkix;
+      bool m_auth_dialback;
+      std::optional<std::string> m_auth_secret;
       struct ssl_ctx_st * m_ssl_ctx;
     };
     Config(std::string const & filename);

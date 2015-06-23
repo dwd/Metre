@@ -67,6 +67,20 @@ namespace {
 			}
 			Jid fromjid(from->value());
 			Jid tojid(to->value());
+			Config::Domain const & from_domain = Config::config().domain(fromjid.domain());
+			if (from_domain.block()) {
+				throw Metre::host_unknown("Requesting domain is blocked.");
+			}
+			if (from_domain.transport_type() != S2S) {
+				throw Metre::host_unknown("Nice try.");
+			}
+			if (Config::config().domain(tojid.domain()).block()) {
+				throw Metre::host_unknown("Requested domain is blocked.");
+			}
+			// Shortcuts here.
+			if (!from_domain.auth_dialback()) {
+				throw Metre::host_unknown("Will not perform dialback with you.");
+			}
 			// With syntax done, we should send the key:
 			std::shared_ptr<Route> route = RouteTable::routeTable(tojid).route(fromjid);
 			route->transmit(std::unique_ptr<Verify>(new Verify(fromjid, tojid, m_stream.stream_id(), key, m_stream)));

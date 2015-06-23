@@ -123,6 +123,9 @@ const char * XMLStream::content_namespace() const {
 	case C2S:
 		p = "jabber:client";
 		break;
+	case COMP:
+		p = "jabber:component:accept";
+		break;
 	default:
 	case S2S:
 		p = "jabber:server";
@@ -168,14 +171,24 @@ void XMLStream::stream_open() {
 	METRE_LOG("Requesting domain is " << from);
 	Config::Domain const & domain = Config::config().domain(domainname);
 	if (domain.block()) {
-		throw Metre::host_unknown("Requested domain is blocked");
+		throw Metre::host_unknown("Requested domain is blocked.");
+	}
+	if (m_type == COMP && domain.transport_type() != COMP) {
+		throw Metre::host_unknown("That would be me.");
 	}
 	Config::Domain const & from_domain = Config::config().domain(from);
-	if (from_domain.block()) {
-		throw Metre::host_unknown("Requesting domain is blocked");
-	}
-	if (from_domain.forward() != domain.forward()) {
-		throw Metre::host_unknown("Will not forward between those domains");
+	if (!from.empty()) {
+		if (from_domain.block()) {
+			throw Metre::host_unknown("Requesting domain is blocked");
+		}
+		if (from_domain.forward() != domain.forward()) {
+			throw Metre::host_unknown("Will not forward between those domains");
+		}
+		if (from_domain.transport_type() == COMP) {
+			if (m_type != COMP) {
+				throw Metre::host_unknown("Seems unlikely.");
+			}
+		}
 	}
 	if (!stream->xmlns()) {
 		throw Metre::bad_format("Missing namespace for stream");
@@ -230,16 +243,15 @@ void XMLStream::send_stream_open(bool with_version, bool with_id) {
 	* write out only the open tag.
 	*/
 	m_session->send("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='");
-	if (m_type == C2S) {
-		m_session->send("jabber:client' from='");
-	} else {
-		m_session->send("jabber:server' xmlns:db='jabber:server:dialback");
+	m_session->send(content_namespace());
+	if (m_type == S2S) {
+		m_session->send("' xmlns:db='jabber:server:dialback");
 		if (m_stream_remote != "") {
 			m_session->send("' to='");
 			m_session->send(m_stream_remote);
 		}
-		m_session->send("' from='");
 	}
+	m_session->send("' from='");
 	m_session->send(m_stream_local);
 	if (with_id) {
 		m_session->send("' id='");

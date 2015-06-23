@@ -34,6 +34,9 @@ namespace {
     SESSION_TYPE sess = def;
     bool tls_required = true;
     bool block = false;
+    bool auth_pkix = false;
+    bool auth_dialback = false;
+    std::optional<std::string> auth_secret;
     if (any_element == domain->name()) {
       name = "";
     } else {
@@ -60,14 +63,28 @@ namespace {
           sess = S2S;
         } else if (type == "114") {
           sess = COMP;
+          tls_required = false;
         }
       }
       auto tls_a = transport->first_attribute("sec");
       if (tls_a) {
         tls_required = xmlbool(tls_a->value());
       }
+      for (auto auth = transport->first_node("auth"); auth; auth = auth->next_sibling("auth")) {
+        auto type_a = auth->first_attribute("type");
+        if (type_a) {
+          std::string type = type_a->value();
+          if (type == "pkix") {
+            auth_pkix = true;
+          } else if (type == "dialback") {
+            auth_dialback = true;
+          } else if (type == "secret") {
+            auth_secret.emplace(auth->value(), auth->value_size());
+          }
+        }
+      }
     }
-    std::unique_ptr<Config::Domain> dom(new Config::Domain(name, sess, forward, tls_required, block));
+    std::unique_ptr<Config::Domain> dom(new Config::Domain(name, sess, forward, tls_required, block, auth_pkix, auth_dialback, std::move(auth_secret)));
     auto x509t = domain->first_node("x509");
     if (x509t) {
       auto chain_a = x509t->first_attribute("chain");
@@ -88,8 +105,8 @@ namespace {
   bool openssl_init = false;
 }
 
-Config::Domain::Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block)
-  : m_domain(domain), m_type(transport_type), m_forward(forward), m_require_tls(require_tls), m_block(block), m_auth(), m_ssl_ctx(nullptr) {
+Config::Domain::Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool auth_pkix, bool auth_dialback, std::optional<std::string> && auth_secret)
+  : m_domain(domain), m_type(transport_type), m_forward(forward), m_require_tls(require_tls), m_block(block), m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_secret(auth_secret), m_ssl_ctx(nullptr) {
 }
 
 Config::Domain::~Domain() {
@@ -127,7 +144,7 @@ void Config::Domain::x509(std::string const & chain, std::string const & pkey) {
   if (SSL_CTX_use_PrivateKey_file(m_ssl_ctx, pkey.c_str(), SSL_FILETYPE_PEM) != 1) {
     throw std::runtime_error("Couldn't load keyfile");
   }
-  if (SSL_CTX_check_private_key(m_ssl_ctx)) {
+  if (SSL_CTX_check_private_key(m_ssl_ctx) != 1) {
     throw std::runtime_error("Private key mismatch");
   }
   SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
@@ -172,13 +189,13 @@ void Config::load(std::string const & filename) {
   if (external) {
     for (auto domain = external->first_node(); domain; domain = domain->next_sibling()) {
       if (domain->type() == rapidxml::node_comment) continue;
-      std::unique_ptr<Config::Domain> dom = std::move(parse_domain(domain, INT));
+      std::unique_ptr<Config::Domain> dom = std::move(parse_domain(domain, S2S));
       m_domains[dom->domain()] = std::move(dom);
     }
   }
   auto it = m_domains.find("");
   if (it == m_domains.end()) {
-    m_domains[""] = std::unique_ptr<Config::Domain>(new Config::Domain("", INT, false, true, true));
+    m_domains[""] = std::unique_ptr<Config::Domain>(new Config::Domain("", INT, false, true, true, true, true, std::optional<std::string>()));
   }
 }
 

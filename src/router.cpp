@@ -3,6 +3,7 @@
 #include "xmlstream.hpp"
 #include "netsession.hpp"
 #include "log.h"
+#include "config.h"
 
 #include <unordered_map>
 
@@ -95,7 +96,12 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
     }
     m_stanzas.push_back(std::move(s));
     METRE_LOG("Queued stanza (fallback) for " << m_local.domain() << "=>" << m_domain.domain());
-    DNS::Resolver::resolver().SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+    // TODO : Timeout.
+    Config::Domain const & conf = Config::config().domain(m_domain.domain());
+    if (conf.transport_type() == S2S) {
+      DNS::Resolver::resolver().SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+    }
+    // Otherwise wait.
   } else { // Got a to but it's not ready yet.
     METRE_LOG("Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain());
     m_stanzas.push_back(std::move(s));
@@ -125,7 +131,7 @@ void Route::SrvResult(DNS::Srv const * srv) {
     return;
   }
   // TODO Otherwise, start address lookups.
-  DNS::Resolver::resolver().AddressLookup((*m_rr).hostname).connect(this, &Route::AddressResult);
+  DNS::Resolver::resolver().AddressLookup(m_domain.domain(), (*m_rr).hostname).connect(this, &Route::AddressResult);
 }
 
 void Route::AddressResult(DNS::Address const * addr) {

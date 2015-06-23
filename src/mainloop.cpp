@@ -397,7 +397,7 @@ namespace Metre {
 			return m_srv_pending[domain];
 		}
 
-		virtual Resolver::tlsa_callback_t & TlsaLookup(unsigned short port, std::string const & base_domain) {
+		virtual Resolver::tlsa_callback_t & TlsaLookup(std::string const & fordomain, unsigned short port, std::string const & base_domain) {
 			std::ostringstream out;
 			out << "_" << port << "._tcp." << base_domain;
 			std::string domain = out.str();
@@ -417,7 +417,7 @@ namespace Metre {
 			return m_tlsa_pending[domain];
 		}
 
-		virtual Resolver::addr_callback_t & AddressLookup(std::string const & hostname) {
+		virtual Resolver::addr_callback_t & AddressLookup(std::string const & domain, std::string const & hostname) {
 			METRE_LOG("A/AAAA lookup for " << hostname);
 			auto it = m_a_pending.find(hostname);
 			if (it != m_a_pending.end()) {

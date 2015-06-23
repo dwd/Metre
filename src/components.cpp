@@ -3,6 +3,7 @@
 #include "router.hpp"
 #include "xmppexcept.hpp"
 #include "log.h"
+#include "config.h"
 #include <rapidxml.hpp>
 #include <openssl/sha.h>
 
@@ -24,20 +25,24 @@ namespace {
     };
 
     std::string handshake_content() const {
-        std::string const key("component-secret");
-        std::string concat = m_stream.stream_id() + key;
-        std::string binoutput;
-        binoutput.resize(20);
-        SHA1(reinterpret_cast<const unsigned char *>(concat.data()), concat.length(), const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(binoutput.data())));
-        std::string hexoutput;
-        for (unsigned char c : binoutput) {
-          int low = c & 0x0F;
-          int high = (c & 0xF0) >> 4;
-          hexoutput += ((high < 0x0A) ? '0' : ('a' - 10)) + high;
-          hexoutput += ((low < 0x0A) ? '0' : ('a' - 10)) + low;
-        }
-        assert(hexoutput.length() == 40);
-        return hexoutput;
+      Config::Domain const & domain = Config::config().domain(m_stream.local_domain());
+      if (domain.transport_type() != COMP) {
+        throw Metre::host_unknown("Nope.");
+      }
+      std::string const & key(*domain.auth_secret());
+      std::string concat = m_stream.stream_id() + key;
+      std::string binoutput;
+      binoutput.resize(20);
+      SHA1(reinterpret_cast<const unsigned char *>(concat.data()), concat.length(), const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(binoutput.data())));
+      std::string hexoutput;
+      for (unsigned char c : binoutput) {
+        int low = c & 0x0F;
+        int high = (c & 0xF0) >> 4;
+        hexoutput += ((high < 0x0A) ? '0' : ('a' - 10)) + high;
+        hexoutput += ((low < 0x0A) ? '0' : ('a' - 10)) + low;
+      }
+      assert(hexoutput.length() == 40);
+      return hexoutput;
     }
 
     void send_handshake(XMLStream & s) {

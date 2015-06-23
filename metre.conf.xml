@@ -30,15 +30,21 @@
         -->
     <any> <!-- Special entry for any domain -->
       <transport type='s2s' sec='tls'>
-        <lookup type='srv' dnssec='none'/>
-        <lookup type='address' dnssec='none'/>
-        <auth type='dane'/><!-- Not implemented -->
         <auth type='pkix'/>
-        <auth type='toru' validate-first='false'/><!-- Not implemented. -->
         <auth type='dialback'/>
       </transport>
       <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/>
     </any>
+    <domain name='dave.cridland.net' forward='true'>
+      <transport type='s2s' sec='tls'/>
+      <dns><!-- Override DNS records. -->
+        <srv host='peirce.dave.cridland.net' port='5269'/>
+        <host name='peirce.dave.cridland.net' a='217.155.137.60'/>
+        <tlsa hostname='peirce.dave.cridland.net' port='5269' certusage='DomainCert' selector='SubjectPublicKeyInfo' matchtype='Sha512'>
+            <!-- ... -->
+        </tlsa>
+      </dns>
+    </domain>
     <domain name='channels.cridland.im' forward='true'> <!-- Component. -->
       <transport type='114' sec='none'>
         <auth type='secret'>secret</auth>
