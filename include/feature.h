@@ -1,9 +1,9 @@
 #ifndef FEATURE__HPP
 #define FEATURE__HPP
 
-#include "defs.hpp"
+#include "defs.h"
 #include "rapidxml.hpp"
-#include "xmlstream.hpp"
+#include "xmlstream.h"
 #include <list>
 
 namespace Metre {

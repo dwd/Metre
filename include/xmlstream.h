@@ -1,7 +1,7 @@
 #ifndef XMLSTREAM__H
 #define XMLSTREAM__H
 
-#include "defs.hpp"
+#include "defs.h"
 #include <map>
 #include <optional>
 #include <memory>

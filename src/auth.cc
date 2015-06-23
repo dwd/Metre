@@ -1,5 +1,5 @@
-#include "feature.hpp"
-#include "xmppexcept.hpp"
+#include "feature.h"
+#include "xmppexcept.h"
 #include <iostream>
 
 using namespace Metre;

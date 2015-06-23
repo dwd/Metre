@@ -7,7 +7,7 @@
 #include <memory>
 #include <list>
 
-#include "defs.hpp"
+#include "defs.h"
 
 /**
  * OpenSSL forward declarations.

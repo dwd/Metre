@@ -2,7 +2,7 @@
 #define NETSESSION__HPP
 
 #include <string>
-#include "defs.hpp"
+#include "defs.h"
 #include "rapidxml.hpp"
 #include "sigslot/sigslot.h"
 

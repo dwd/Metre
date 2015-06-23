@@ -1,5 +1,5 @@
-#include "jid.hpp"
-#include "tests.hpp"
+#include "jid.h"
+#include "tests.h"
 #include <iostream>
 
 using namespace Metre;

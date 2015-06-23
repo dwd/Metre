@@ -1,8 +1,8 @@
-#include "feature.hpp"
-#include "stanza.hpp"
-#include "xmppexcept.hpp"
-#include "router.hpp"
-#include "netsession.hpp"
+#include "feature.h"
+#include "stanza.h"
+#include "xmppexcept.h"
+#include "router.h"
+#include "netsession.h"
 #include "config.h"
 #include <memory>
 

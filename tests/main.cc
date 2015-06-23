@@ -1,8 +1,8 @@
-#include "tests.hpp"
-#include "dns.hpp"
+#include "tests.h"
+#include "dns.h"
 #include <iostream>
 #include <memory>
-#include "netsession.hpp"
+#include "netsession.h"
 
 namespace {
 	class DummyResolver : public Metre::DNS::Resolver{

@@ -1,9 +1,9 @@
 #ifndef ROUTER__H
 #define ROUTER__H
 
-#include "jid.hpp"
-#include "stanza.hpp"
-#include "dns.hpp"
+#include "jid.h"
+#include "stanza.h"
+#include "dns.h"
 
 #include <string>
 #include <memory>

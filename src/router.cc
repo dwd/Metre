@@ -1,7 +1,7 @@
-#include "router.hpp"
-#include "dns.hpp"
-#include "xmlstream.hpp"
-#include "netsession.hpp"
+#include "router.h"
+#include "dns.h"
+#include "xmlstream.h"
+#include "netsession.h"
 #include "log.h"
 #include "config.h"
 

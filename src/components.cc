@@ -1,7 +1,7 @@
-#include "feature.hpp"
-#include "stanza.hpp"
-#include "router.hpp"
-#include "xmppexcept.hpp"
+#include "feature.h"
+#include "stanza.h"
+#include "router.h"
+#include "xmppexcept.h"
 #include "log.h"
 #include "config.h"
 #include <rapidxml.hpp>

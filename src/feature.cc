@@ -1,4 +1,4 @@
-#include "feature.hpp"
+#include "feature.h"
 #include <map>
 
 using namespace Metre;

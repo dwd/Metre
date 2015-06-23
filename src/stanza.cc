@@ -1,5 +1,5 @@
-#include "stanza.hpp"
-#include "xmlstream.hpp"
+#include "stanza.h"
+#include "xmlstream.h"
 #include "rapidxml_print.hpp"
 
 using namespace Metre;

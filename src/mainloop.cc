@@ -7,20 +7,20 @@
 #include <sstream>
 #include "rapidxml.hpp"
 #include <optional> // Uses the supplied optional by default.
-#include "xmppexcept.hpp"
-#include "server.hpp"
-#include "netsession.hpp"
+#include "xmppexcept.h"
+#include "server.h"
+#include "netsession.h"
 #include <event2/event.h>
 #include <event2/listener.h>
 #include <event2/bufferevent.h>
 #include <memory>
-#include "router.hpp"
+#include "router.h"
 #include <unbound.h>
 #include <cerrno>
 #include <cstring>
 #include <atomic>
 #include "sigslot/sigslot.h"
-#include "dns.hpp"
+#include "dns.h"
 #include <arpa/inet.h>
 #include "config.h"
 #include "log.h"

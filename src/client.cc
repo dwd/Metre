@@ -1,6 +1,6 @@
-#include "feature.hpp"
-#include "stanza.hpp"
-#include "xmppexcept.hpp"
+#include "feature.h"
+#include "stanza.h"
+#include "xmppexcept.h"
 #include <memory>
 
 using namespace Metre;

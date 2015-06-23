@@ -1,8 +1,8 @@
 #ifndef STANZA__H
 #define STANZA__H
 
-#include "jid.hpp"
-#include "xmppexcept.hpp"
+#include "jid.h"
+#include "xmppexcept.h"
 #include "rapidxml.hpp"
 
 #include <memory>

@@ -1,8 +1,8 @@
 #ifndef SERVER__HPP
 #define SERVER__HPP
 
-#include "jid.hpp"
-#include "stanza.hpp"
+#include "jid.h"
+#include "stanza.h"
 #include <map>
 
 namespace Metre {

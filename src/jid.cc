@@ -1,4 +1,4 @@
-#include "jid.hpp"
+#include "jid.h"
 
 using namespace Metre;
 

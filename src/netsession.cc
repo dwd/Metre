@@ -1,6 +1,6 @@
-#include "netsession.hpp"
-#include "xmlstream.hpp"
-#include "router.hpp"
+#include "netsession.h"
+#include "xmlstream.h"
+#include "router.h"
 #include "log.h"
 
 #include "rapidxml_print.hpp"
@@ -8,11 +8,6 @@
 #include <event2/bufferevent.h>
 #include <event2/buffer.h>
 #include <event2/event.h>
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <cstring>
 
 using namespace Metre;
