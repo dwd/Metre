@@ -8,8 +8,6 @@
 #include "config.h"
 #include "log.h"
 
-#include <random>
-#include <algorithm>
 #ifdef VALGRIND
 #include <valgrind/memcheck.h>
 #else
@@ -393,13 +391,7 @@ void XMLStream::generate_stream_id() {
 	if (!m_stream_id.empty()) {
 		Router::unregister_stream_id(m_stream_id);
 	}
-	const size_t id_len = 16;
-	char characters[] = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
-	std::default_random_engine random(std::random_device{}());
-	std::uniform_int_distribution<> dist(0, sizeof(characters) - 2);
-	std::string id(id_len, char{});
-	std::generate_n(id.begin(), id_len, [&characters,&random,&dist](){return characters[dist(random)];});
-	m_stream_id = id;
+	m_stream_id = Config::config().random_identifier();
 	Router::register_stream_id(m_stream_id, *m_session);
 }
 

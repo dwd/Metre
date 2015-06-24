@@ -81,11 +81,17 @@ namespace Metre {
     void load(std::string const & filename);
 
     static Config const & config();
+    std::string random_identifier() const;
+    std::string const & dialback_secret() const {
+      return m_dialback_secret;
+    }
+    std::string dialback_key(std::string const & id, std::string const & local_domain, std::string const & remote_domain) const;
 
   private:
     std::string m_config_str;
     std::string m_default_domain;
     std::string m_runtime_dir;
+    std::string m_dialback_secret;
     std::map<std::string, std::unique_ptr<Domain>> m_domains;
   };
 }

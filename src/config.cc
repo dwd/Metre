@@ -1,6 +1,9 @@
 #include "config.h"
 
 #include <fstream>
+#include <random>
+#include <algorithm>
+
 #include <rapidxml.hpp>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -150,7 +153,7 @@ void Config::Domain::x509(std::string const & chain, std::string const & pkey) {
   SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
 }
 
-Config::Config(std::string const & filename) : m_config_str() {
+Config::Config(std::string const & filename) : m_config_str(), m_dialback_secret(random_identifier()) {
   load(filename);
   s_config = this;
 }
@@ -205,6 +208,33 @@ Config::Domain const & Config::domain(std::string const & dom) const {
     it = m_domains.find("");
   }
   return *(*it).second;
+}
+
+std::string Config::random_identifier() const {
+  const size_t id_len = 16;
+  char characters[] = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
+  std::default_random_engine random(std::random_device{}());
+  std::uniform_int_distribution<> dist(0, sizeof(characters) - 2);
+  std::string id(id_len, char{});
+  std::generate_n(id.begin(), id_len, [&characters,&random,&dist](){return characters[dist(random)];});
+  return std::move(id);
+}
+
+std::string Config::dialback_key(std::string const & id, std::string const & local_domain, std::string const & remote_domain) const {
+  std::string binoutput;
+  binoutput.resize(20);
+  std::string const & key = dialback_secret();
+  std::string concat = id + '|' + local_domain + '|' + remote_domain;
+  HMAC(EVP_sha1(), reinterpret_cast<const unsigned char *>(key.data()), key.length(), reinterpret_cast<const unsigned char *>(concat.data()), concat.length(), const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(binoutput.data())), nullptr);
+  std::string hexoutput;
+  for (unsigned char c : binoutput) {
+    int low = c & 0x0F;
+    int high = (c & 0xF0) >> 4;
+    hexoutput += ((high < 0x0A) ? '0' : ('a' - 10)) + high;
+    hexoutput += ((low < 0x0A) ? '0' : ('a' - 10)) + low;
+  }
+  assert(hexoutput.length() == 40);
+  return hexoutput;
 }
 
 Config const & Config::config() {

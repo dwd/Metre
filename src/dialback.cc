@@ -6,6 +6,9 @@
 #include <memory>
 #include "config.h"
 
+#include <openssl/sha.h>
+#include <openssl/sha.h>
+
 using namespace Metre;
 using namespace rapidxml;
 
@@ -119,7 +122,8 @@ namespace {
 			if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on db:result:valid");
 			std::string from = from_att->value();
 			const char * validity="invalid";
-			if (node->value() == std::string("validate-me")) validity="valid";
+			std::string expected = Config::config().dialback_key(id, to, from);
+			if (node->value() == expected) validity="valid";
 			xml_document<> d;
 			auto vrfy = d.allocate_node(node_element, "db:verify");
 			vrfy->append_attribute(d.allocate_attribute("from", to.c_str()));

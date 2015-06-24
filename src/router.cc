@@ -38,7 +38,7 @@ namespace {
           to->xml_stream().onAuthReady.connect(&r, &Route::SessionDialback);
         } else {
           /// Send a dialback request or something.
-          std::string key = "validate-me";
+          std::string key = Config::config().dialback_key(to->xml_stream().stream_id(), r.local(), r.domain());
           rapidxml::xml_document<> d;
           auto dbr = d.allocate_node(rapidxml::node_element, "db:result");
           dbr->append_attribute(d.allocate_attribute("to", r.domain().c_str()));
