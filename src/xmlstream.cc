@@ -4,6 +4,7 @@
 #include "server.h"
 #include "netsession.h"
 #include "feature.h"
+#include "filter.h"
 #include "router.h"
 #include "config.h"
 #include "log.h"
@@ -422,4 +423,45 @@ XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::s
 		onAuthenticated.emit(*this);
 	}
 	return m[key];
+}
+
+bool XMLStream::filter(Stanza & s) {
+	rapidxml::xml_node<> const * node = s.node();
+	if (!node) {
+		// Synthetic Stanza. Probably a bounce, or similar.
+		return false;
+	}
+	std::set<std::string> xmlnses;
+	// For each child element::
+	for (auto child = node->first_node(); child; child = child->next_sibling()) {
+		// If the namespace is the content namespace, use the empty string in lieu of the namespace.
+		std::string xmlns;
+		auto xmlns_v = child->xmlns();
+		if (xmlns_v) {
+			xmlns.assign(xmlns_v, child->xmlns_size());
+			if (xmlns == content_namespace()) {
+				xmlns = "";
+			}
+		}
+		xmlnses.insert(std::move(xmlns));
+	}
+	for (auto const & xmlns : xmlnses) {
+		// Then look to see if we have an active Filter for that element.
+		auto i = m_filters.lower_bound(xmlns);
+		// If we do not, check the Filter::Descriptions for one to create.
+		if (i == m_filters.end() || (*i).first != xmlns) {
+			Filter::instantiate(xmlns, *this);
+			i = m_filters.lower_bound(xmlns);
+		}
+		auto i2 = m_filters.upper_bound(xmlns);
+		// If we (now) do, for each matching Filter::
+		for (; i != i2; ++i) {
+			// pass the stanza to it. If it returns true, exit true. (It may also throw).
+			if ((*i).second) {
+				if ((*i).second->apply(true, s)) return true;
+			}
+		}
+	}
+	// If the stanza if a Message or Iq(non-result), and is now empty, we should bounce.
+	return false;
 }

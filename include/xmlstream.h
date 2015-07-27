@@ -6,6 +6,7 @@
 #include <optional>
 #include <memory>
 #include "sigslot/sigslot.h"
+#include "rapidxml.hpp"
 
 namespace Metre {
 	class NetSession;
@@ -39,6 +40,8 @@ namespace Metre {
 		bool m_secured; // Crypto in place via TLS. //
 		std::map<std::pair<std::string,std::string>,AUTH_STATE> m_auth_pairs_rx;
 		std::map<std::pair<std::string,std::string>,AUTH_STATE> m_auth_pairs_tx;
+		std::map<std::string,Filter *> m_filters;
+
 	public:
 		XMLStream(NetSession * owner, Server * server, SESSION_DIRECTION dir, SESSION_TYPE type);
 		XMLStream(NetSession * owner, Server * server, SESSION_DIRECTION dir, SESSION_TYPE type, std::string const & stream_from, std::string const & stream_to);
@@ -71,6 +74,8 @@ namespace Metre {
 
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION) const;
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION, AUTH_STATE auth);
+
+		bool filter(Stanza &); // Filter a stanza. Returns true if it's been swallowed.
 
 		std::string const & stream_local() const {
 			return m_stream_local;

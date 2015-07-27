@@ -48,6 +48,8 @@
     <domain name='channels.cridland.im' forward='true'> <!-- Component. -->
       <transport type='114' sec='none'>
         <auth type='secret'>secret</auth>
+        <auth type='pkix'/>
+	<auth type='dialback'/>
       </transport>
     </domain>
     <domain name='topics.cridland.im' forward='true'> <!-- Component. -->

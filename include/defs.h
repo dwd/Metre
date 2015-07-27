@@ -14,6 +14,11 @@ namespace Metre {
 		INBOUND,
 		OUTBOUND
 	} SESSION_DIRECTION;
+
+	class Feature;
+	class Filter;
+	class Stanza;
+	class XMLStream;
 }
 
 #endif
