@@ -20,10 +20,9 @@ namespace Metre {
       std::set<std::string> m_suppress_features;
       std::set<std::string> m_namespaces;
     };
-    template<typename T> class Description {
+    template<typename T> class Description : public BaseDescription {
     public:
-      Description(std::string && name);
-      bool suppress_feature(std::string const & feature);
+      Description(std::string && name) : BaseDescription(std::move(name)) {};
 
       std::unique_ptr<T> create(XMLStream &);
     };

@@ -35,7 +35,7 @@
       </transport>
       <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/>
     </any>
-    <domain name='dave.cridland.net' forward='true'>
+    <domain name='XXXdave.cridland.net' forward='true'>
       <transport type='s2s' sec='tls'/>
       <dns><!-- Override DNS records. -->
         <srv host='peirce.dave.cridland.net' port='5269'/>
@@ -48,8 +48,6 @@
     <domain name='channels.cridland.im' forward='true'> <!-- Component. -->
       <transport type='114' sec='none'>
         <auth type='secret'>secret</auth>
-        <auth type='pkix'/>
-	<auth type='dialback'/>
       </transport>
     </domain>
     <domain name='topics.cridland.im' forward='true'> <!-- Component. -->

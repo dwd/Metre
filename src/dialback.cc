@@ -71,16 +71,21 @@ namespace {
 			Jid fromjid(from->value());
 			Jid tojid(to->value());
 			Config::Domain const & from_domain = Config::config().domain(fromjid.domain());
-			if (from_domain.block()) {
-				throw Metre::host_unknown("Requesting domain is blocked.");
-			}
 			if (from_domain.transport_type() != S2S) {
 				throw Metre::host_unknown("Nice try.");
 			}
-			if (Config::config().domain(tojid.domain()).block()) {
-				throw Metre::host_unknown("Requested domain is blocked.");
-			}
+			m_stream.check_domain_pair(fromjid.domain(), tojid.domain());
 			// Shortcuts here.
+			if (m_stream.tls_auth_ok() && tojid.domain() == m_stream.local_domain() && fromjid.domain() == m_stream.remote_domain()) {
+				xml_document<> d;
+				auto result = d.allocate_node(node_element, "db:result");
+				result->append_attribute(d.allocate_attribute("from", m_stream.local_domain().c_str()));
+				result->append_attribute(d.allocate_attribute("to", m_stream.remote_domain().c_str()));
+				result->append_attribute(d.allocate_attribute("type", "valid"));
+				d.append_node(result);
+				m_stream.send(d);
+				m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), INBOUND, XMLStream::AUTHORIZED);
+			}
 			if (!from_domain.auth_dialback()) {
 				throw Metre::host_unknown("Will not perform dialback with you.");
 			}

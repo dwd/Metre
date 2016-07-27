@@ -56,6 +56,7 @@ namespace {
 
     bool negotiate(rapidxml::xml_node<> *) override {
       m_stream.onAuthReady.connect(this, &Component::send_handshake);
+      return false;
     }
 
     bool handle(rapidxml::xml_node<> * node) {

@@ -18,6 +18,8 @@ namespace {
   const std::string tls_ns = "urn:ietf:params:xml:ns:xmpp-tls";
 
   class StartTls : public Feature {
+  private:
+      SSL * m_ssl;
   public:
     StartTls(XMLStream & s) : Feature(s) {}
     class Description : public Feature::Description<StartTls> {
@@ -53,6 +55,11 @@ namespace {
         if (!ctx) throw new std::runtime_error("Failed to load certificates");
         SSL * ssl = SSL_new(ctx);
         if (!ssl) throw std::runtime_error("Failure to initiate TLS, sorry!");
+        m_ssl = ssl;
+        X509_VERIFY_PARAM * vpm = X509_VERIFY_PARAM_new();
+        X509_VERIFY_PARAM_set1_host(vpm, m_stream.remote_domain().c_str(), m_stream.remote_domain().size());
+        // X509_VERIFY_PARAM_set_auth_level(vpm, 1); // OpenSSL 1.1.0 only, maybe?
+        SSL_set1_param(ssl, vpm);
         bufferevent_ssl_state st = BUFFEREVENT_SSL_ACCEPTING;
         if (m_stream.direction() == INBOUND) {
           SSL_set_accept_state(ssl);
@@ -86,8 +93,20 @@ namespace {
       m_stream.send(d);
       return true;
     }
+
+      SSL * ssl() {
+          return m_ssl;
+      }
   };
 
   bool s2s_declared = Feature::declare<StartTls>(S2S);
   bool c2s_declared = Feature::declare<StartTls>(C2S);
+}
+
+namespace Metre {
+    bool verify_tls(Feature & feature) {
+        StartTls & tls = dynamic_cast<StartTls &>(feature);
+        SSL * ssl = tls.ssl();
+        return 0 == SSL_get_verify_result(ssl);
+    }
 }

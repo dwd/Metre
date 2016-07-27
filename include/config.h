@@ -8,6 +8,7 @@
 #include <list>
 
 #include "defs.h"
+#include "dns.h"
 
 /**
  * OpenSSL forward declarations.
@@ -48,9 +49,11 @@ namespace Metre {
       struct ssl_ctx_st * ssl_ctx() const {
         return m_ssl_ctx;
       }
+      DNS::Address * host_lookup(std::string const & hostname) const;
 
       /* Loading functions */
       void x509(std::string const & chain, std::string const &);
+      void host(std::string const & hostname, uint32_t inaddr);
 
       Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool auth_pkix, bool auth_dialback, std::optional<std::string> && m_auth_secret);
       Domain(Domain const &) = delete;
@@ -67,6 +70,9 @@ namespace Metre {
       bool m_auth_dialback;
       std::optional<std::string> m_auth_secret;
       struct ssl_ctx_st * m_ssl_ctx;
+      std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
+      std::map<std::string, std::unique_ptr<DNS::Srv>> m_srvrecs;
+      std::map<std::string, std::unique_ptr<DNS::Tlsa>> m_tlsarecs;
     };
     Config(std::string const & filename);
 

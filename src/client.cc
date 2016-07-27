@@ -37,7 +37,7 @@ namespace {
 			} else {
 				throw Metre::unsupported_stanza_type(stanza);
 			}
-			Jid const & to = s->to();
+			// Jid const & to = s->to();
 			// Lookup endpoint.
 			return true;
 		}

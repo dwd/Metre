@@ -20,8 +20,8 @@ namespace Metre {
 		std::weak_ptr<NetSession> m_vrfy;
 		std::list<std::unique_ptr<Stanza>> m_stanzas;
 		std::list<std::unique_ptr<Verify>> m_dialback;
-		Jid const m_domain;
 		Jid const m_local;
+		Jid const m_domain;
 		DNS::Srv m_srv;
 		std::vector<DNS::SrvRR>::const_iterator m_rr;
 		DNS::Address m_addr;

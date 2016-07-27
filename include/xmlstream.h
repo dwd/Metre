@@ -7,6 +7,7 @@
 #include <memory>
 #include "sigslot/sigslot.h"
 #include "rapidxml.hpp"
+#include "feature.h"
 
 namespace Metre {
 	class NetSession;
@@ -22,22 +23,22 @@ namespace Metre {
 	private:
 		rapidxml::xml_document<> m_stream;
 		rapidxml::xml_document<> m_stanza; // Not, in fact, always a stanza per-se. //
-		SESSION_TYPE m_type;
-		SESSION_DIRECTION m_dir;
-		bool m_opened;
-		bool m_closed;
-		bool m_seen_open;
-		std::string m_stream_buf; // Sort-of-temporary buffer //
-		Server * m_server;
 		NetSession * m_session;
+		Server * m_server;
+		SESSION_DIRECTION m_dir;
+		SESSION_TYPE m_type;
+		std::string m_stream_buf; // Sort-of-temporary buffer //
 		std::map<std::string,Feature *> m_features;
 		std::optional<std::string> m_user;
 		std::string m_stream_id;
 		std::string m_stream_local;
 		std::string m_stream_remote;
-		bool m_authready; // Channel is ready for dialback/SASL //
-		bool m_compressed; // Channel has compression enabled, by TLS or XEP-0138 //
-		bool m_secured; // Crypto in place via TLS. //
+		bool m_opened = false;
+		bool m_closed = false;
+		bool m_seen_open = false;
+		bool m_secured = false; // Crypto in place via TLS. //
+		bool m_authready = false; // Channel is ready for dialback/SASL //
+		bool m_compressed = false; // Channel has compression enabled, by TLS or XEP-0138 //
 		std::map<std::pair<std::string,std::string>,AUTH_STATE> m_auth_pairs_rx;
 		std::map<std::pair<std::string,std::string>,AUTH_STATE> m_auth_pairs_tx;
 		std::map<std::string,Filter *> m_filters;
@@ -71,10 +72,14 @@ namespace Metre {
 		void set_secured() {m_secured = true;}
 		bool auth_ready() { return m_authready; }
 		std::string const & local_domain() { return m_stream_local; }
+		std::string const & remote_domain() { return m_stream_remote; }
+		bool tls_auth_ok();
 
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION) const;
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION, AUTH_STATE auth);
+		void check_domain_pair(std::string const & from, std::string const & to) const;
 
+		bool process(Stanza &);
 		bool filter(Stanza &); // Filter a stanza. Returns true if it's been swallowed.
 
 		std::string const & stream_local() const {
@@ -91,6 +96,7 @@ namespace Metre {
 
 		void generate_stream_id();
 		void connected(NetSession &);
+		Feature & feature(std::string const &);
 
 		// Signals:
 		sigslot::signal<sigslot::thread::mt, XMLStream &> onAuthReady;

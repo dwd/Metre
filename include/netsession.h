@@ -17,14 +17,14 @@ namespace Metre {
 		std::string m_buf;
 		static const size_t buflen = 4096;
 		std::string m_outbuf;
-		XMLStream * m_xml_stream;
-		Server * m_server;
 		std::string const m_domain;
 		short m_port;
 		std::string m_hostname;
 		bool m_secure;
-		struct bufferevent * m_bev;
 		unsigned long long m_serial;
+		struct bufferevent * m_bev;
+		XMLStream * m_xml_stream;
+		Server * m_server;
 	public:
 		NetSession(unsigned long long serial, struct bufferevent * bev, SESSION_TYPE type, Server * server); /* Inbound */
 		NetSession(unsigned long long serial, struct bufferevent * bev, std::string const & stream_from, std::string const & stream_to, Server * server); /* Outbound S2S */

@@ -15,20 +15,24 @@
 #define VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(ptr,len) 0
 #endif
 
+namespace Metre {
+	bool verify_tls(Feature & tls_feature);
+}
+
 using namespace Metre;
 
 XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_closed(false), m_secured(false), m_authready(false), m_compressed(false) {
+	: m_session(n), m_server(s), m_dir(dir), m_type(t) {
 }
 
 XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const & stream_local, std::string const & stream_remote)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_local(stream_local), m_stream_remote(stream_remote), m_closed(false), m_secured(false), m_authready(false), m_compressed(false) {
+	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_local(stream_local), m_stream_remote(stream_remote) {
 }
 
 size_t XMLStream::process(unsigned char * p, size_t len) {
 	using namespace rapidxml;
 	if (len == 0) return 0;
-	VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
+	(void)VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
 	size_t spaces = 0;
 	for (unsigned char * sp{p}; len != 0; ++sp, --len, ++spaces) {
 		switch (*sp) {
@@ -133,6 +137,30 @@ const char * XMLStream::content_namespace() const {
 	return p;
 }
 
+void XMLStream::check_domain_pair(std::string const & from, std::string const & domainname) const {
+	Config::Domain const & domain = Config::config().domain(domainname);
+	if (domain.block()) {
+		throw Metre::host_unknown("Requested domain is blocked.");
+	}
+	if (m_type == COMP && domain.transport_type() != COMP) {
+		throw Metre::host_unknown("That would be me.");
+	}
+	Config::Domain const & from_domain = Config::config().domain(from);
+	if (!from.empty()) {
+		if (from_domain.block()) {
+			throw Metre::host_unknown("Requesting domain is blocked");
+		}
+		if ((domain.transport_type() != COMP) && (from_domain.forward() == domain.forward())) {
+			throw Metre::host_unknown("Will not forward between those domains");
+		}
+		if (from_domain.transport_type() == COMP) {
+			if (m_type != COMP) {
+				throw Metre::host_unknown("Seems unlikely.");
+			}
+		}
+	}
+}
+
 void XMLStream::stream_open() {
 	/**
 	 * We may be able to change our minds on what stream type this is, here,
@@ -168,27 +196,7 @@ void XMLStream::stream_open() {
 		from.assign(fromat->value(), fromat->value_size());
 	}
 	METRE_LOG("Requesting domain is " << from);
-	Config::Domain const & domain = Config::config().domain(domainname);
-	if (domain.block()) {
-		throw Metre::host_unknown("Requested domain is blocked.");
-	}
-	if (m_type == COMP && domain.transport_type() != COMP) {
-		throw Metre::host_unknown("That would be me.");
-	}
-	Config::Domain const & from_domain = Config::config().domain(from);
-	if (!from.empty()) {
-		if (from_domain.block()) {
-			throw Metre::host_unknown("Requesting domain is blocked");
-		}
-		if (from_domain.forward() != domain.forward()) {
-			throw Metre::host_unknown("Will not forward between those domains");
-		}
-		if (from_domain.transport_type() == COMP) {
-			if (m_type != COMP) {
-				throw Metre::host_unknown("Seems unlikely.");
-			}
-		}
-	}
+	check_domain_pair(from, domainname);
 	if (!stream->xmlns()) {
 		throw Metre::bad_format("Missing namespace for stream");
 	}
@@ -223,6 +231,12 @@ void XMLStream::stream_open() {
 			m_session->send(doc);
 		}
 	} else if (m_dir == OUTBOUND) {
+		if (m_type == S2S) {
+			auto id_att = stream->first_attribute("id");
+			if (id_att) {
+				m_stream_id = id_att->value();
+			}
+		}
 		return;
 		auto so = m_stream.first_node();
 		auto dbatt = so->first_attribute("xmlns:db");
@@ -304,8 +318,12 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						continue;
 					case Feature::Type::FEAT_SECURE:
 						if (m_secured) continue;
+							break;
 					case Feature::Type::FEAT_COMP:
 						if (m_compressed) continue;
+							break;
+					default:
+						/* pass */;
 					}
 					if (feature_type < offer_type) {
 						METRE_LOG("I'll keep {" << offer_ns << "} instead of {" << feature_xmlns << "}");
@@ -365,6 +383,14 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 	}
 }
 
+Feature & XMLStream::feature(const std::string & ns) {
+	auto i = m_features.find(ns);
+	if (i == m_features.end()) {
+		throw std::runtime_error("Expected feature " + ns + " not found");
+	}
+	return *(i->second);
+}
+
 void XMLStream::restart() {
 	if (!m_stream_id.empty()) {
 		Router::unregister_stream_id(m_stream_id);
@@ -420,6 +446,7 @@ XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::s
 	AUTH_STATE current = m[key];
 	if (current < state) {
 		m[key] = state;
+		if (state == XMLStream::AUTHORIZED) METRE_LOG("Authenticated session from " + local + " to " + remote );
 		onAuthenticated.emit(*this);
 	}
 	return m[key];
@@ -431,7 +458,7 @@ bool XMLStream::filter(Stanza & s) {
 		// Synthetic Stanza. Probably a bounce, or similar.
 		return false;
 	}
-	std::set<std::string> xmlnses;
+	std::set<std::string> xmlnses = {""};
 	// For each child element::
 	for (auto child = node->first_node(); child; child = child->next_sibling()) {
 		// If the namespace is the content namespace, use the empty string in lieu of the namespace.
@@ -463,5 +490,46 @@ bool XMLStream::filter(Stanza & s) {
 		}
 	}
 	// If the stanza if a Message or Iq(non-result), and is now empty, we should bounce.
+	return false;
+}
+
+bool XMLStream::process(Stanza & s) {
+	try {
+		try {
+			Jid const & from = s.from();
+			Jid const & to = s.to();
+			// Check auth state.
+			if (s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
+				throw not_authorized();
+			}
+			// Apply filters
+			if (filter(s)) {
+				throw Metre::stanza_service_unavailable("Stanza rejected by filter");
+			}
+			// Forward everything.
+			std::unique_ptr<Stanza> copy(s.create_forward(*this));
+			std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
+			route->transmit(std::move(copy));
+		} catch(Metre::base::xmpp_exception) {
+			throw;
+		} catch(Metre::base::stanza_exception) {
+			throw;
+		} catch(std::runtime_error & e) {
+			throw Metre::stanza_undefined_condition(e.what());
+		}
+	} catch (Metre::base::stanza_exception const & stanza_error) {
+		std::unique_ptr<Stanza> st = s.create_bounce(stanza_error, *this);
+		std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
+		route->transmit(std::move(st));
+	}
+	return true;
+}
+
+bool XMLStream::tls_auth_ok() {
+	if (!m_secured) return false;
+	auto i = m_features.find("urn:ietf:params:xml:ns:xmpp-tls");
+	if (i != m_features.end()) {
+		return verify_tls(*(i->second));
+	}
 	return false;
 }

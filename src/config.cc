@@ -9,6 +9,11 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/x509v3.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <dns.h>
+
+#include "log.h"
 
 using namespace Metre;
 using namespace rapidxml;
@@ -100,6 +105,20 @@ namespace {
         }
       }
     }
+    auto dnst = domain->first_node("dns");
+    if (dnst) {
+      for (auto hostt = dnst->first_node("host"); hostt; hostt = hostt->next_sibling("host")) {
+        auto hosta = hostt->first_attribute("name");
+        if (!hosta) continue;
+        std::string host = hosta->value();
+        auto aa = hostt->first_attribute("a");
+        if (!aa) continue;
+        struct in_addr ina;
+        if (inet_aton(aa->value(), &ina)) {
+          dom->host(host, ina.s_addr);
+        }
+      }
+    }
     return dom;
   }
 
@@ -119,7 +138,24 @@ Config::Domain::~Domain() {
   }
 }
 
-int Config::Domain::verify_callback_cb(int preverify_ok, X509_STORE_CTX *store) {
+void Config::Domain::host(std::string const &hostname, uint32_t inaddr) {
+  std::unique_ptr<DNS::Address> address(new DNS::Address);
+  address->dnssec = true;
+  address->hostname = hostname;
+  address->addr4.push_back(inaddr);
+  m_host_arecs[hostname] = std::move(address);
+}
+
+DNS::Address * Config::Domain::host_lookup(std::string const &hostname) const {
+  auto i = m_host_arecs.find(hostname);
+  if (i == m_host_arecs.end()) return 0;
+  return &*((*i).second);
+}
+
+int Config::Domain::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *) {
+  if (!preverify_ok) {
+    METRE_LOG("Cert failed basic verification");
+  }
   return 1;
 }
 
@@ -234,6 +270,7 @@ std::string Config::dialback_key(std::string const & id, std::string const & loc
     hexoutput += ((low < 0x0A) ? '0' : ('a' - 10)) + low;
   }
   assert(hexoutput.length() == 40);
+  METRE_LOG("Dialback key id " << id << " ::  " << local_domain << " | " << remote_domain);
   return hexoutput;
 }
 
