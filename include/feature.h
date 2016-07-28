@@ -9,7 +9,7 @@
 namespace Metre {
 	class Feature {
 	public:
-		enum Type {FEAT_NONE=0, FEAT_POSTAUTH, FEAT_COMP, FEAT_AUTH, FEAT_SECURE};
+		enum Type {FEAT_NONE=0, FEAT_POSTAUTH, FEAT_COMP, FEAT_AUTH_FALLBACK, FEAT_AUTH, FEAT_SECURE};
 		class BaseDescription {
 		private:
 			std::string const & m_xmlns;

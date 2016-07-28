@@ -4,6 +4,7 @@
 #include "router.h"
 #include "netsession.h"
 #include "config.h"
+#include "log.h"
 #include <memory>
 
 #include <event2/bufferevent_ssl.h>
@@ -18,12 +19,15 @@ namespace {
   const std::string tls_ns = "urn:ietf:params:xml:ns:xmpp-tls";
 
   class StartTls : public Feature {
+  private:
+      SSL * m_ssl;
   public:
     StartTls(XMLStream & s) : Feature(s) {}
     class Description : public Feature::Description<StartTls> {
     public:
       Description() : Feature::Description<StartTls>(tls_ns, FEAT_SECURE) {};
-      virtual void offer(xml_node<> * node, XMLStream &) override {
+      virtual void offer(xml_node<> * node, XMLStream & s) override {
+        if (s.secured()) return;
         xml_document<> * d = node->document();
         auto feature = d->allocate_node(node_element, "starttls");
         feature->append_attribute(d->allocate_attribute("xmlns", tls_ns.c_str()));
@@ -86,8 +90,48 @@ namespace {
       m_stream.send(d);
       return true;
     }
+
+      SSL * ssl() {
+          return m_ssl;
+      }
   };
 
   bool s2s_declared = Feature::declare<StartTls>(S2S);
   bool c2s_declared = Feature::declare<StartTls>(C2S);
+}
+
+namespace Metre {
+    bool verify_tls(XMLStream & stream, std::string const & hostname) {
+        SSL * ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
+        if (!ssl) return false; // No TLS.
+        if (X509_V_OK != SSL_get_verify_result(ssl)) {
+            METRE_LOG("Cert failed verification but rechecking anyway.");
+        } // TLS failed basic verification.
+        X509 * cert = SSL_get_peer_certificate(ssl);
+        if (!cert) {
+            METRE_LOG("No cert, so no auth");
+            return false;
+        }
+        METRE_LOG("[Re]verifying TLS for " + hostname);
+        STACK_OF(X509) * chain = SSL_get_peer_cert_chain(ssl);
+        SSL_CTX * ctx = SSL_get_SSL_CTX(ssl);
+        X509_STORE * store = SSL_CTX_get_cert_store(ctx);
+        // TODO : Can I free ctx now?
+        X509_VERIFY_PARAM * vpm = X509_VERIFY_PARAM_new();
+        X509_VERIFY_PARAM_set1_host(vpm, hostname.c_str(), hostname.size());
+        // X509_VERIFY_PARAM_set_auth_level(vpm, 1); // OpenSSL 1.1.0 only, maybe?
+        // TODO add additional names and DANE here.
+        X509_STORE_CTX * st = X509_STORE_CTX_new();
+        X509_STORE_CTX_init(st, store, cert, chain);
+        // TODO : can I free some of this stuff now?
+        //X509_STORE_free(store);
+        //X509_free(cert);
+        //sk_X509_free(chain); // Not pop free, apparently.
+        X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
+        ///X509_VERIFY_PARAM_free(vpm);
+        int result = X509_verify_cert(st);
+        X509_STORE_CTX_free(st);
+        METRE_LOG(std::string("[Re]verify was ") + (result == X509_V_OK ? "SUCCESS" : "FAILURE"));
+        return result == X509_V_OK;
+    }
 }

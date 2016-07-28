@@ -37,6 +37,7 @@ namespace Metre {
 		} Error;
 	protected:
 		const char * m_name;
+		std::string const m_stream_id;
 		std::optional<Jid> m_from;
 		std::optional<Jid> m_to;
 		std::string m_type_str;
@@ -45,7 +46,7 @@ namespace Metre {
 		std::string m_payload_str;
 		const char * m_payload;
 		size_t m_payload_l;
-		std::string const m_stream_id;
+		rapidxml::xml_node<> const * m_node;
 	public:
 		Stanza(const char * name, rapidxml::xml_node<> const * node, XMLStream & s);
 		Stanza(const char * name, XMLStream & s);
@@ -71,6 +72,10 @@ namespace Metre {
 
 		std::string const & lang() const {
 			return m_lang;
+		}
+
+		rapidxml::xml_node<> const * node() const {
+			return m_node;
 		}
 
 		void render(rapidxml::xml_document<> & d);

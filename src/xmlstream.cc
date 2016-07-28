@@ -4,6 +4,7 @@
 #include "server.h"
 #include "netsession.h"
 #include "feature.h"
+#include "filter.h"
 #include "router.h"
 #include "config.h"
 #include "log.h"
@@ -14,20 +15,24 @@
 #define VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(ptr,len) 0
 #endif
 
+namespace Metre {
+	bool verify_tls(XMLStream & stream, std::string const & hostname);
+}
+
 using namespace Metre;
 
 XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_closed(false), m_secured(false), m_authready(false), m_compressed(false) {
+	: m_session(n), m_server(s), m_dir(dir), m_type(t) {
 }
 
 XMLStream::XMLStream(NetSession * n, Server * s, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const & stream_local, std::string const & stream_remote)
-	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_local(stream_local), m_stream_remote(stream_remote), m_closed(false), m_secured(false), m_authready(false), m_compressed(false) {
+	: m_session(n), m_server(s), m_dir(dir), m_type(t), m_stream_local(stream_local), m_stream_remote(stream_remote) {
 }
 
 size_t XMLStream::process(unsigned char * p, size_t len) {
 	using namespace rapidxml;
 	if (len == 0) return 0;
-	VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
+	(void)VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
 	size_t spaces = 0;
 	for (unsigned char * sp{p}; len != 0; ++sp, --len, ++spaces) {
 		switch (*sp) {
@@ -132,6 +137,30 @@ const char * XMLStream::content_namespace() const {
 	return p;
 }
 
+void XMLStream::check_domain_pair(std::string const & from, std::string const & domainname) const {
+	Config::Domain const & domain = Config::config().domain(domainname);
+	if (domain.block()) {
+		throw Metre::host_unknown("Requested domain is blocked.");
+	}
+	if (m_type == COMP && domain.transport_type() != COMP) {
+		throw Metre::host_unknown("That would be me.");
+	}
+	Config::Domain const & from_domain = Config::config().domain(from);
+	if (!from.empty()) {
+		if (from_domain.block()) {
+			throw Metre::host_unknown("Requesting domain is blocked");
+		}
+		if ((domain.transport_type() != COMP) && (from_domain.forward() == domain.forward())) {
+			throw Metre::host_unknown("Will not forward between those domains");
+		}
+		if (from_domain.transport_type() == COMP) {
+			if (m_type != COMP) {
+				throw Metre::host_unknown("Seems unlikely.");
+			}
+		}
+	}
+}
+
 void XMLStream::stream_open() {
 	/**
 	 * We may be able to change our minds on what stream type this is, here,
@@ -167,27 +196,7 @@ void XMLStream::stream_open() {
 		from.assign(fromat->value(), fromat->value_size());
 	}
 	METRE_LOG("Requesting domain is " << from);
-	Config::Domain const & domain = Config::config().domain(domainname);
-	if (domain.block()) {
-		throw Metre::host_unknown("Requested domain is blocked.");
-	}
-	if (m_type == COMP && domain.transport_type() != COMP) {
-		throw Metre::host_unknown("That would be me.");
-	}
-	Config::Domain const & from_domain = Config::config().domain(from);
-	if (!from.empty()) {
-		if (from_domain.block()) {
-			throw Metre::host_unknown("Requesting domain is blocked");
-		}
-		if (from_domain.forward() != domain.forward()) {
-			throw Metre::host_unknown("Will not forward between those domains");
-		}
-		if (from_domain.transport_type() == COMP) {
-			if (m_type != COMP) {
-				throw Metre::host_unknown("Seems unlikely.");
-			}
-		}
-	}
+	check_domain_pair(from, domainname);
 	if (!stream->xmlns()) {
 		throw Metre::bad_format("Missing namespace for stream");
 	}
@@ -222,6 +231,12 @@ void XMLStream::stream_open() {
 			m_session->send(doc);
 		}
 	} else if (m_dir == OUTBOUND) {
+		if (m_type == S2S) {
+			auto id_att = stream->first_attribute("id");
+			if (id_att) {
+				m_stream_id = id_att->value();
+			}
+		}
 		return;
 		auto so = m_stream.first_node();
 		auto dbatt = so->first_attribute("xmlns:db");
@@ -240,27 +255,28 @@ void XMLStream::send_stream_open(bool with_version, bool with_id) {
 	*   We write this out as a string, to avoid trying to make rapidxml
 	* write out only the open tag.
 	*/
-	m_session->send("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='");
-	m_session->send(content_namespace());
+	std::string open = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
+	open += content_namespace();
 	if (m_type == S2S) {
-		m_session->send("' xmlns:db='jabber:server:dialback");
+		open += "' xmlns:db='jabber:server:dialback";
 		if (m_stream_remote != "") {
-			m_session->send("' to='");
-			m_session->send(m_stream_remote);
+			open += "' to='";
+			open += m_stream_remote;
 		}
 	}
-	m_session->send("' from='");
-	m_session->send(m_stream_local);
+	open += "' from='";
+	open += m_stream_local;
 	if (with_id) {
-		m_session->send("' id='");
+		open += "' id='";
 		generate_stream_id();
-		m_session->send(m_stream_id);
+		open += m_stream_id;
 	}
 	if (with_version) {
-		m_session->send("' version='1.0'>");
+		open += "' version='1.0'>";
 	} else {
-		m_session->send("'>");
+		open += "'>";
 	}
+	m_session->send(open);
 	m_opened = true;
 }
 
@@ -303,8 +319,12 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						continue;
 					case Feature::Type::FEAT_SECURE:
 						if (m_secured) continue;
+							break;
 					case Feature::Type::FEAT_COMP:
 						if (m_compressed) continue;
+							break;
+					default:
+						/* pass */;
 					}
 					if (feature_type < offer_type) {
 						METRE_LOG("I'll keep {" << offer_ns << "} instead of {" << feature_xmlns << "}");
@@ -313,24 +333,26 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						feature_type = offer_type;
 					}
 				}
+				METRE_LOG("Processing feature {" << feature_xmlns << "}");
 				if (feature_type == Feature::Type::FEAT_NONE) {
 					if (m_features.find("urn:xmpp:features:dialback") == m_features.end()) {
 						auto so = m_stream.first_node();
 						auto dbatt = so->first_attribute("xmlns:db");
 						if (dbatt && dbatt->value() == std::string("jabber:server:dialback")) {
 							feature_xmlns = "urn:xmpp:features:dialback";
-						} else {
-							return;
 						}
-					} else {
-						return;
+					} else if (s2s_auth_pair(local_domain(), remote_domain(), OUTBOUND) == AUTHORIZED) {
+						set_auth_ready();
+						onAuthenticated.emit(*this);
 					}
+					return;
 				}
 				Feature * f = Feature::feature(feature_xmlns, *this);
 				assert(f);
 				try {
 					bool escape = f->negotiate(feature_offer);
 					m_features[feature_xmlns] = f;
+					METRE_LOG("Feature negotiated, stream restart is " << escape);
 					if (escape) return; // We've done a stream restart or something.
 				} catch(...) {
 					delete f;
@@ -362,6 +384,14 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 			throw Metre::unsupported_stanza_type();
 		}
 	}
+}
+
+Feature & XMLStream::feature(const std::string & ns) {
+	auto i = m_features.find(ns);
+	if (i == m_features.end()) {
+		throw std::runtime_error("Expected feature " + ns + " not found");
+	}
+	return *(i->second);
 }
 
 void XMLStream::restart() {
@@ -419,7 +449,86 @@ XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::s
 	AUTH_STATE current = m[key];
 	if (current < state) {
 		m[key] = state;
+		if (state == XMLStream::AUTHORIZED) METRE_LOG(std::string("Authorized ") + (dir == INBOUND ? "INBOUND" : "OUTBOUND") +  " session local:" + local + " remote:" + remote );
 		onAuthenticated.emit(*this);
 	}
 	return m[key];
+}
+
+bool XMLStream::filter(Stanza & s) {
+	rapidxml::xml_node<> const * node = s.node();
+	if (!node) {
+		// Synthetic Stanza. Probably a bounce, or similar.
+		return false;
+	}
+	std::set<std::string> xmlnses = {""};
+	// For each child element::
+	for (auto child = node->first_node(); child; child = child->next_sibling()) {
+		// If the namespace is the content namespace, use the empty string in lieu of the namespace.
+		std::string xmlns;
+		auto xmlns_v = child->xmlns();
+		if (xmlns_v) {
+			xmlns.assign(xmlns_v, child->xmlns_size());
+			if (xmlns == content_namespace()) {
+				xmlns = "";
+			}
+		}
+		xmlnses.insert(std::move(xmlns));
+	}
+	for (auto const & xmlns : xmlnses) {
+		// Then look to see if we have an active Filter for that element.
+		auto i = m_filters.lower_bound(xmlns);
+		// If we do not, check the Filter::Descriptions for one to create.
+		if (i == m_filters.end() || (*i).first != xmlns) {
+			Filter::instantiate(xmlns, *this);
+			i = m_filters.lower_bound(xmlns);
+		}
+		auto i2 = m_filters.upper_bound(xmlns);
+		// If we (now) do, for each matching Filter::
+		for (; i != i2; ++i) {
+			// pass the stanza to it. If it returns true, exit true. (It may also throw).
+			if ((*i).second) {
+				if ((*i).second->apply(true, s)) return true;
+			}
+		}
+	}
+	// If the stanza if a Message or Iq(non-result), and is now empty, we should bounce.
+	return false;
+}
+
+bool XMLStream::process(Stanza & s) {
+	try {
+		try {
+			Jid const & from = s.from();
+			Jid const & to = s.to();
+			// Check auth state.
+			if (s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
+				throw not_authorized();
+			}
+			// Apply filters
+			if (filter(s)) {
+				throw Metre::stanza_service_unavailable("Stanza rejected by filter");
+			}
+			// Forward everything.
+			std::unique_ptr<Stanza> copy(s.create_forward(*this));
+			std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
+			route->transmit(std::move(copy));
+		} catch(Metre::base::xmpp_exception) {
+			throw;
+		} catch(Metre::base::stanza_exception) {
+			throw;
+		} catch(std::runtime_error & e) {
+			throw Metre::stanza_undefined_condition(e.what());
+		}
+	} catch (Metre::base::stanza_exception const & stanza_error) {
+		std::unique_ptr<Stanza> st = s.create_bounce(stanza_error, *this);
+		std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
+		route->transmit(std::move(st));
+	}
+	return true;
+}
+
+bool XMLStream::tls_auth_ok(std::string const & hostname) {
+	if (!m_secured) return false;
+	return verify_tls(*this, hostname);
 }

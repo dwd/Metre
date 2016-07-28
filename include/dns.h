@@ -85,7 +85,7 @@ namespace Metre {
 			typedef sigslot::signal<sigslot::thread::mt, Tlsa const*> tlsa_callback_t;
 			virtual srv_callback_t & SrvLookup(std::string const & domain) = 0;
 			virtual addr_callback_t & AddressLookup(std::string const & domain, std::string const & hostname) = 0;
-			virtual tlsa_callback_t & TlsaLookup(std::string const & domain, short unsigned int port, std::string const & hostname) = 0;
+			virtual tlsa_callback_t & TlsaLookup(short unsigned int port, std::string const & hostname) = 0;
 			static Resolver & resolver();
 		};
 	}

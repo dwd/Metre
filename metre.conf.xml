@@ -35,7 +35,7 @@
       </transport>
       <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/>
     </any>
-    <domain name='dave.cridland.net' forward='true'>
+    <domain name='XXXdave.cridland.net' forward='true'>
       <transport type='s2s' sec='tls'/>
       <dns><!-- Override DNS records. -->
         <srv host='peirce.dave.cridland.net' port='5269'/>

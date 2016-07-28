@@ -51,10 +51,7 @@ bool NetSession::drain() {
 	// If we can't consume it all, try pullup(), then return.
 	if ((len = evbuffer_get_length(buf)) > 0) {
 		if (!m_xml_stream->closed()) {
-			size_t used = m_xml_stream->process(evbuffer_pullup(buf, -1), len);
-			/*if (used != 0) {
-				evbuffer_drain(buf, used);
-			}*/
+			m_xml_stream->process(evbuffer_pullup(buf, -1), len);
 		} else {
 			METRE_LOG("Stuff left after close: {" << len << "}");
 			return true;

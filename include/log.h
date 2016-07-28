@@ -52,6 +52,6 @@ template<typename T> Metre::Log & operator << (Metre::Log & log, T const * t) {
 }
 */
 
-#define METRE_LOG(x) if (Metre::Log::log().active()) { Metre::Log::log().stream() << Metre::Log::timestamp() << ' ' << __FILE__ << ':' << __LINE__ << " : " << x << std::endl; } 0
+#define METRE_LOG(x) if (Metre::Log::log().active()) { Metre::Log::log().stream() << Metre::Log::timestamp() << ' ' << __FILE__ << ':' << __LINE__ << " : " << x << std::endl; } (void) 0
 
 #endif

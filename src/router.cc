@@ -161,7 +161,7 @@ void Route::SessionDialback(XMLStream & stream) {
   auto vrfy = m_vrfy.lock();
   METRE_LOG("Stream is ready for dialback.");
   if (vrfy && &stream.session() == &*vrfy) {
-    METRE_LOG("This is the droid I am looking for.");
+    METRE_LOG("Stream is verify.");
     for (auto & v : m_dialback) {
       vrfy->xml_stream().send(std::move(v));
     }
@@ -173,17 +173,20 @@ void Route::SessionDialback(XMLStream & stream) {
   }
   auto to = m_to.lock();
   if (to) {
-    if (&stream.session() == &*to && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
+    if (&stream.session() == &*to) { //] && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
       METRE_LOG("Stream is to; needs dialback.");
+      check_to(*this, to);
     }
   }
 }
 
 void Route::SessionAuthenticated(XMLStream & stream) {
   auto to = m_to.lock();
-  METRE_LOG("Stream is ready for stanzas.");
-  if (&stream.session() == &*to && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::AUTHORIZED) {
-    METRE_LOG("This is the droid I am looking for.");
+  if (stream.auth_ready()
+      && !m_stanzas.empty()
+      && &stream.session() == &*to
+      && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::AUTHORIZED) {
+    METRE_LOG("Stream now ready for stanzas.");
     for (auto & s : m_stanzas) {
       to->xml_stream().send(std::move(s));
     }

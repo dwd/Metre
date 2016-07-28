@@ -24,6 +24,7 @@
 #include <arpa/inet.h>
 #include "config.h"
 #include "log.h"
+#include <functional>
 
 namespace Metre {
 	class Mainloop : public sigslot::has_slots<> {
@@ -41,6 +42,7 @@ namespace Metre {
 		struct evconnlistener * m_component_listener;
 		static std::atomic<unsigned long long> s_serial;
 		std::list<std::shared_ptr<NetSession>> m_closed_sessions;
+		std::list<std::function<void()>> m_pending_actions;
 	public:
 		static Mainloop * s_mainloop;
 		Mainloop(Server & server) : m_event_base(0), m_listen(0), m_server(server), m_sessions(), m_ub_event(0) {
@@ -204,7 +206,18 @@ namespace Metre {
 			while(true) {
 				event_base_dispatch(m_event_base);
 				m_closed_sessions.clear();
+				while (!m_pending_actions.empty()) {
+					std::list<std::function<void()>> pending;
+					std::swap(pending, m_pending_actions);
+					for (auto &f : pending) {
+						f();
+					}
+				}
 			}
+		}
+
+		void do_later(std::function<void()> && fn) {
+			m_pending_actions.emplace_back(std::move(fn));
 		}
 
 		static void unbound_cb(evutil_socket_t, short, void * arg) {
@@ -386,7 +399,7 @@ namespace Metre {
 			if (it != m_srv_pending.end()) {
 				return (*it).second;
 			}
-			int retval = ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
+			ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
 				domain.c_str(),
 				33, /* SRV */
 				1,  /* IN */
@@ -397,7 +410,7 @@ namespace Metre {
 			return m_srv_pending[domain];
 		}
 
-		virtual Resolver::tlsa_callback_t & TlsaLookup(std::string const & fordomain, unsigned short port, std::string const & base_domain) {
+		virtual Resolver::tlsa_callback_t & TlsaLookup(unsigned short port, std::string const & base_domain) {
 			std::ostringstream out;
 			out << "_" << port << "._tcp." << base_domain;
 			std::string domain = out.str();
@@ -406,7 +419,7 @@ namespace Metre {
 			if (it != m_tlsa_pending.end()) {
 				return (*it).second;
 			}
-			int retval = ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
+			ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
 				domain.c_str(),
 				52, /* TLSA */
 				1,  /* IN */
@@ -419,18 +432,25 @@ namespace Metre {
 
 		virtual Resolver::addr_callback_t & AddressLookup(std::string const & domain, std::string const & hostname) {
 			METRE_LOG("A/AAAA lookup for " << hostname);
-			auto it = m_a_pending.find(hostname);
-			if (it != m_a_pending.end()) {
-				return (*it).second;
+			DNS::Address * addr = Config::config().domain(domain).host_lookup(hostname);
+			if (addr) {
+				Mainloop::s_mainloop->do_later([addr,this] () {
+					m_a_pending[addr->hostname].emit(addr);
+				});
+			} else {
+				auto it = m_a_pending.find(hostname);
+				if (it != m_a_pending.end()) {
+					return (*it).second;
+				}
+				ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
+											  hostname.c_str(),
+											  1, /* A */
+											  1,  /* IN */
+											  this,
+											  a_lookup_done_cb,
+											  NULL); /* int * async_id */
+				Mainloop::s_mainloop->check_dns_setup();
 			}
-			int retval = ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
-				hostname.c_str(),
-				1, /* A */
-				1,  /* IN */
-				this,
-				a_lookup_done_cb,
-				NULL); /* int * async_id */
-			Mainloop::s_mainloop->check_dns_setup();
 			return m_a_pending[hostname];
 		}
 	};
