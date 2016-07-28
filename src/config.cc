@@ -152,9 +152,20 @@ DNS::Address * Config::Domain::host_lookup(std::string const &hostname) const {
   return &*((*i).second);
 }
 
-int Config::Domain::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *) {
+int Config::Domain::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st * st) {
   if (!preverify_ok) {
-    METRE_LOG("Cert failed basic verification");
+    const int name_sz = 256;
+    std::string cert_name;
+    cert_name.resize(name_sz);
+    X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)), const_cast<char *>(cert_name.data()), name_sz);
+    METRE_LOG("Cert failed basic verification: " + cert_name);
+    METRE_LOG(std::string("Error is ") + X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
+  } else {
+    const int name_sz = 256;
+    std::string cert_name;
+    cert_name.resize(name_sz);
+    X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)), const_cast<char *>(cert_name.data()), name_sz);
+    METRE_LOG("Cert passed basic verification: " + cert_name);
   }
   return 1;
 }
@@ -187,6 +198,7 @@ void Config::Domain::x509(std::string const & chain, std::string const & pkey) {
     throw std::runtime_error("Private key mismatch");
   }
   SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
+  SSL_CTX_set_default_verify_paths(m_ssl_ctx);
 }
 
 Config::Config(std::string const & filename) : m_config_str(), m_dialback_secret(random_identifier()) {

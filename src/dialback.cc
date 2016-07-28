@@ -21,7 +21,7 @@ namespace {
 		NewDialback(XMLStream & s) : Feature(s) {}
 		class Description : public Feature::Description<NewDialback> {
 		public:
-			Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH) {};
+			Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH_FALLBACK) {};
 			virtual void offer(xml_node<> * node, XMLStream &) {
 				xml_document<> * d = node->document();
 				auto feature = d->allocate_node(node_element, "dialback");
@@ -76,11 +76,11 @@ namespace {
 			}
 			m_stream.check_domain_pair(fromjid.domain(), tojid.domain());
 			// Shortcuts here.
-			if (m_stream.tls_auth_ok() && tojid.domain() == m_stream.local_domain() && fromjid.domain() == m_stream.remote_domain()) {
+			if (m_stream.tls_auth_ok(fromjid.domain())) {
 				xml_document<> d;
 				auto result = d.allocate_node(node_element, "db:result");
-				result->append_attribute(d.allocate_attribute("from", m_stream.local_domain().c_str()));
-				result->append_attribute(d.allocate_attribute("to", m_stream.remote_domain().c_str()));
+				result->append_attribute(d.allocate_attribute("from", tojid.domain().c_str()));
+				result->append_attribute(d.allocate_attribute("to", fromjid.domain().c_str()));
 				result->append_attribute(d.allocate_attribute("type", "valid"));
 				d.append_node(result);
 				m_stream.send(d);
@@ -89,6 +89,7 @@ namespace {
 			if (!from_domain.auth_dialback()) {
 				throw Metre::host_unknown("Will not perform dialback with you.");
 			}
+			m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), INBOUND, XMLStream::REQUESTED);
 			// With syntax done, we should send the key:
 			std::shared_ptr<Route> route = RouteTable::routeTable(tojid).route(fromjid);
 			route->transmit(std::unique_ptr<Verify>(new Verify(fromjid, tojid, m_stream.stream_id(), key, m_stream)));
@@ -102,7 +103,7 @@ namespace {
 			auto from_att = node->first_attribute("from");
 			if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on db:result:valid");
 			std::string from = from_att->value();
-			if (m_stream.s2s_auth_pair(to, from, OUTBOUND) == XMLStream::REQUESTED) {
+			if (m_stream.s2s_auth_pair(to, from, OUTBOUND) >= XMLStream::REQUESTED) {
 				m_stream.s2s_auth_pair(to, from, OUTBOUND, XMLStream::AUTHORIZED);
 			}
 		}
@@ -140,6 +141,7 @@ namespace {
 		}
 
 		void verify_valid(rapidxml::xml_node<> * node) {
+			if (m_stream.direction() != OUTBOUND) throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
 			auto id_att = node->first_attribute("id");
 			if (!id_att || !id_att->value()) throw std::runtime_error("Missing id on verify");
 			std::string id = id_att->value();
@@ -153,14 +155,16 @@ namespace {
 			auto from_att = node->first_attribute("from");
 			if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on verify");
 			std::string from = from_att->value();
-			xml_document<> d;
-			auto result = d.allocate_node(node_element, "db:result");
-			result->append_attribute(d.allocate_attribute("from", to.c_str()));
-			result->append_attribute(d.allocate_attribute("to", from.c_str()));
-			result->append_attribute(d.allocate_attribute("type", "valid"));
-			d.append_node(result);
-			stream.send(d);
-			stream.s2s_auth_pair(to, from, INBOUND, XMLStream::AUTHORIZED);
+			if (stream.s2s_auth_pair(to, from, INBOUND) >= XMLStream::REQUESTED) {
+				xml_document<> d;
+				auto result = d.allocate_node(node_element, "db:result");
+				result->append_attribute(d.allocate_attribute("from", to.c_str()));
+				result->append_attribute(d.allocate_attribute("to", from.c_str()));
+				result->append_attribute(d.allocate_attribute("type", "valid"));
+				d.append_node(result);
+				stream.send(d);
+				stream.s2s_auth_pair(to, from, INBOUND, XMLStream::AUTHORIZED);
+			}
 		}
 
 		void verify_invalid(rapidxml::xml_node<> * node) {

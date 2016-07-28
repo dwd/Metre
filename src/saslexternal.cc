@@ -21,7 +21,8 @@ namespace {
         public:
             Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
             virtual void offer(xml_node<> * node, XMLStream & stream) override {
-                if (stream.tls_auth_ok()) {
+                if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) == XMLStream::AUTHORIZED) return;
+                if (stream.tls_auth_ok(stream.remote_domain())) {
                     xml_document<> *d = node->document();
                     auto feature = d->allocate_node(node_element, "mechanisms");
                     feature->append_attribute(d->allocate_attribute("xmlns", sasl_ns.c_str()));
@@ -61,15 +62,15 @@ namespace {
                 m_stream.send(d);
                 return;
             }
-            if (m_stream.tls_auth_ok() && (m_stream.remote_domain() == authzid)) {
+            if (m_stream.tls_auth_ok(authzid)) {
                 xml_document<> d;
                 auto n = d.allocate_node(node_element, "success");
                 n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
                 d.append_node(n);
                 m_stream.send(d);
-                m_stream.restart();
-                m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), INBOUND, XMLStream::AUTHORIZED);
+                m_stream.s2s_auth_pair(m_stream.local_domain(), authzid, INBOUND, XMLStream::AUTHORIZED);
                 m_stream.set_auth_ready();
+                m_stream.restart();
             }
         }
 
@@ -86,9 +87,8 @@ namespace {
 
         void success(rapidxml::xml_node<> * node) {
             // Good-oh.
-            m_stream.restart();
             m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), OUTBOUND, XMLStream::AUTHORIZED);
-            m_stream.set_auth_ready();
+            m_stream.restart();
         }
 
         bool handle(rapidxml::xml_node<> * node) override {
@@ -116,9 +116,15 @@ namespace {
         bool negotiate(rapidxml::xml_node<> * feat) override {
             bool external_found = false;
             for (auto external = feat->first_node("mechanism"); external; external = external->next_sibling("mechanism")) {
-                if (std::string(external->name()) == "EXTERNAL") {
-                    external_found = true;
-                    break;
+                if (external->value()) {
+                    std::string mechanism{external->value(), external->value_size()};
+                    for (auto & c : mechanism) {
+                        c = std::toupper(c);
+                    }
+                    if (mechanism == "EXTERNAL") {
+                        external_found = true;
+                        break;
+                    }
                 }
             }
             if (!external_found) return false;
@@ -127,7 +133,8 @@ namespace {
             n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
             auto mech = d.allocate_attribute("mechanism", "EXTERNAL");
             n->append_attribute(mech);
-            n->value(m_stream.local_domain().c_str());
+            std::string authzid = base64_encode(m_stream.local_domain());
+            n->value(authzid.c_str());
             d.append_node(n);
             m_stream.send(d);
             return true;

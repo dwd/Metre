@@ -16,7 +16,7 @@
 #endif
 
 namespace Metre {
-	bool verify_tls(Feature & tls_feature);
+	bool verify_tls(XMLStream & stream, std::string const & hostname);
 }
 
 using namespace Metre;
@@ -255,27 +255,28 @@ void XMLStream::send_stream_open(bool with_version, bool with_id) {
 	*   We write this out as a string, to avoid trying to make rapidxml
 	* write out only the open tag.
 	*/
-	m_session->send("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='");
-	m_session->send(content_namespace());
+	std::string open = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
+	open += content_namespace();
 	if (m_type == S2S) {
-		m_session->send("' xmlns:db='jabber:server:dialback");
+		open += "' xmlns:db='jabber:server:dialback";
 		if (m_stream_remote != "") {
-			m_session->send("' to='");
-			m_session->send(m_stream_remote);
+			open += "' to='";
+			open += m_stream_remote;
 		}
 	}
-	m_session->send("' from='");
-	m_session->send(m_stream_local);
+	open += "' from='";
+	open += m_stream_local;
 	if (with_id) {
-		m_session->send("' id='");
+		open += "' id='";
 		generate_stream_id();
-		m_session->send(m_stream_id);
+		open += m_stream_id;
 	}
 	if (with_version) {
-		m_session->send("' version='1.0'>");
+		open += "' version='1.0'>";
 	} else {
-		m_session->send("'>");
+		open += "'>";
 	}
+	m_session->send(open);
 	m_opened = true;
 }
 
@@ -332,24 +333,26 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						feature_type = offer_type;
 					}
 				}
+				METRE_LOG("Processing feature {" << feature_xmlns << "}");
 				if (feature_type == Feature::Type::FEAT_NONE) {
 					if (m_features.find("urn:xmpp:features:dialback") == m_features.end()) {
 						auto so = m_stream.first_node();
 						auto dbatt = so->first_attribute("xmlns:db");
 						if (dbatt && dbatt->value() == std::string("jabber:server:dialback")) {
 							feature_xmlns = "urn:xmpp:features:dialback";
-						} else {
-							return;
 						}
-					} else {
-						return;
+					} else if (s2s_auth_pair(local_domain(), remote_domain(), OUTBOUND) == AUTHORIZED) {
+						set_auth_ready();
+						onAuthenticated.emit(*this);
 					}
+					return;
 				}
 				Feature * f = Feature::feature(feature_xmlns, *this);
 				assert(f);
 				try {
 					bool escape = f->negotiate(feature_offer);
 					m_features[feature_xmlns] = f;
+					METRE_LOG("Feature negotiated, stream restart is " << escape);
 					if (escape) return; // We've done a stream restart or something.
 				} catch(...) {
 					delete f;
@@ -446,7 +449,7 @@ XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::s
 	AUTH_STATE current = m[key];
 	if (current < state) {
 		m[key] = state;
-		if (state == XMLStream::AUTHORIZED) METRE_LOG("Authenticated session from " + local + " to " + remote );
+		if (state == XMLStream::AUTHORIZED) METRE_LOG(std::string("Authorized ") + (dir == INBOUND ? "INBOUND" : "OUTBOUND") +  " session local:" + local + " remote:" + remote );
 		onAuthenticated.emit(*this);
 	}
 	return m[key];
@@ -525,11 +528,7 @@ bool XMLStream::process(Stanza & s) {
 	return true;
 }
 
-bool XMLStream::tls_auth_ok() {
+bool XMLStream::tls_auth_ok(std::string const & hostname) {
 	if (!m_secured) return false;
-	auto i = m_features.find("urn:ietf:params:xml:ns:xmpp-tls");
-	if (i != m_features.end()) {
-		return verify_tls(*(i->second));
-	}
-	return false;
+	return verify_tls(*this, hostname);
 }

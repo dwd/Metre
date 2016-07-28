@@ -22,6 +22,9 @@ namespace Metre {
 		Jid(std::string const & local, std::string const & domain, std::string const & resource)
 			: m_local(local), m_domain(domain), m_resource(resource) {
 		}
+		Jid(Jid const & jid)
+				: m_local(jid.m_local), m_domain(jid.m_domain), m_resource(jid.m_resource) {
+		}
 		std::string const & full() const;
 		std::string const & bare() const;
 		std::string const & domain() const {
