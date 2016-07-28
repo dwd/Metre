@@ -13,14 +13,16 @@ It's also barely started. So don't use it unless you're a bleeding-edge trunk mo
 Currently working:
 * Component hosting (XEP-0114)
 * TLS
+* X.509 auth (PKIX)
 * Dialback and S2S
 * Basic forwarding/routing
+* DNSSEC
 
 Currently poorly tested:
-* X.509 auth
 * S2S <-> S2S proxying
 * Basic Filtering
 
 Currently unimplemented but planned:
 * DNS overrides
 * Semantic filtering
+* DANE
