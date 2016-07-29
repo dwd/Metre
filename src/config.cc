@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <dns.h>
+#include <dhparams.h>
 
 #include "log.h"
 
@@ -36,15 +37,26 @@ namespace {
     return false;
   }
 
-  std::unique_ptr<Config::Domain> parse_domain(xml_node<> * domain, SESSION_TYPE def) {
+  std::unique_ptr<Config::Domain> parse_domain(Config::Domain const * any, xml_node<> * domain, SESSION_TYPE def) {
     std::string name;
     bool forward = (def == INT || def == COMP);
     SESSION_TYPE sess = def;
     bool tls_required = true;
     bool block = false;
-    bool auth_pkix = false;
+    bool auth_pkix = (def == S2S);
     bool auth_dialback = false;
+    bool dnssec_required = false;
+    std::string dhparam = "4096";
+    std::string cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
     std::optional<std::string> auth_secret;
+    if (any) {
+      auth_pkix = any->auth_pkix();
+      auth_dialback = any->auth_dialback();
+      tls_required = any->require_tls();
+      dnssec_required = any->dnssec_required();
+      dhparam = any->dhparam();
+      cipherlist = any->cipherlist();
+    }
     if (any_element == domain->name()) {
       name = "";
     } else {
@@ -78,6 +90,7 @@ namespace {
       if (tls_a) {
         tls_required = xmlbool(tls_a->value());
       }
+
       for (auto auth = transport->first_node("auth"); auth; auth = auth->next_sibling("auth")) {
         auto type_a = auth->first_attribute("type");
         if (type_a) {
@@ -105,8 +118,23 @@ namespace {
         }
       }
     }
+    auto dhparama = domain->first_node("dhparam");
+    if (dhparama) {
+      auto sza = dhparama->first_attribute("size");
+      if (sza && sza->value()) dhparam = sza->value();
+    }
+    dom->dhparam(dhparam);
+    auto ciphersa = domain->first_node("ciphers");
+    if (ciphersa) {
+      if (ciphersa->value()) cipherlist = ciphersa->value();
+    }
+    dom->cipherlist(cipherlist);
     auto dnst = domain->first_node("dns");
     if (dnst) {
+      auto dnssec = dnst->first_attribute("dnssec");
+      if (dnssec && dnssec->value()) {
+        dnssec_required = (dnssec->value()[0] == 't');
+      }
       for (auto hostt = dnst->first_node("host"); hostt; hostt = hostt->next_sibling("host")) {
         auto hosta = hostt->first_attribute("name");
         if (!hosta) continue;
@@ -119,6 +147,7 @@ namespace {
         }
       }
     }
+    dom->dnssec_required(dnssec_required);
     return dom;
   }
 
@@ -229,18 +258,24 @@ void Config::load(std::string const & filename) {
       }
     }
   }
-  auto internal = root_node->first_node("local");
-  if (internal) {
-    for (auto domain = internal->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
-      std::unique_ptr<Config::Domain> dom = std::move(parse_domain(domain, INT));
+  Config::Domain * any_domain = nullptr;
+  auto external = root_node->first_node("remote");
+  if (external) {
+    auto any = external->first_node("any");
+    if (any) {
+      std::unique_ptr<Config::Domain> dom = std::move(parse_domain(nullptr, any, S2S));
+      any_domain = &*dom; // Save this pointer.
+      m_domains[dom->domain()] = std::move(dom);
+    }
+    for (auto domain = external->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
+      std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, S2S));
       m_domains[dom->domain()] = std::move(dom);
     }
   }
-  auto external = root_node->first_node("remote");
-  if (external) {
-    for (auto domain = external->first_node(); domain; domain = domain->next_sibling()) {
-      if (domain->type() == rapidxml::node_comment) continue;
-      std::unique_ptr<Config::Domain> dom = std::move(parse_domain(domain, S2S));
+  auto internal = root_node->first_node("local");
+  if (internal) {
+    for (auto domain = internal->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
+      std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, INT));
       m_domains[dom->domain()] = std::move(dom);
     }
   }

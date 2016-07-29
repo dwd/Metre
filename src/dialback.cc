@@ -8,6 +8,7 @@
 
 #include <openssl/sha.h>
 #include <openssl/sha.h>
+#include <log.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -22,7 +23,10 @@ namespace {
 		class Description : public Feature::Description<NewDialback> {
 		public:
 			Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH_FALLBACK) {};
-			virtual void offer(xml_node<> * node, XMLStream &) {
+			virtual void offer(xml_node<> * node, XMLStream & s) {
+				if (!s.secured() && (Config::config().domain(s.local_domain()).require_tls() || Config::config().domain(s.remote_domain()).require_tls())) {
+					return;
+				}
 				xml_document<> * d = node->document();
 				auto feature = d->allocate_node(node_element, "dialback");
 				feature->append_attribute(d->allocate_attribute("xmlns", db_feat_ns.c_str()));
@@ -32,6 +36,10 @@ namespace {
 			}
 		};
 		bool negotiate(rapidxml::xml_node<> *) override { // Note that this offer, unusually, can be nullptr.
+			if (!m_stream.secured() && (Config::config().domain(m_stream.local_domain()).require_tls() || Config::config().domain(m_stream.remote_domain()).require_tls())) {
+				METRE_LOG("Supressed dialback due to missing required TLS");
+				return false;
+			}
 			m_stream.set_auth_ready();
 			return false;
 		}
@@ -75,6 +83,9 @@ namespace {
 				throw Metre::host_unknown("Nice try.");
 			}
 			m_stream.check_domain_pair(fromjid.domain(), tojid.domain());
+			if (!m_stream.secured() && Config::config().domain(tojid.domain()).require_tls()) {
+				throw Metre::host_unknown("Domain requires TLS");
+			}
 			// Shortcuts here.
 			if (m_stream.tls_auth_ok(fromjid.domain())) {
 				xml_document<> d;
@@ -96,7 +107,6 @@ namespace {
 		}
 
 		void result_valid(rapidxml::xml_node<> * node) {
-			// TODO : Validate stream to/from
 			auto to_att = node->first_attribute("to");
 			if (!to_att || !to_att->value()) throw std::runtime_error("Missing to on db:result:valid");
 			std::string to = to_att->value();

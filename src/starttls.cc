@@ -11,9 +11,44 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
+#include <dhparams.h>
 
 using namespace Metre;
 using namespace rapidxml;
+namespace {
+    DH * dh_callback(SSL *, int, int keylength) {
+        if (keylength < 2048) {
+            METRE_LOG("DH used 1024");
+            return get_dh1024();
+        } else if (keylength < 4096) {
+            METRE_LOG("DH used 2048");
+            return get_dh2048();
+        } else {
+            METRE_LOG("DH used 4096");
+            return get_dh4096();
+        }
+    }
+    template<int minkey> DH * dh_callback(SSL *, int, int keylength) {
+        METRE_LOG("DH params requested, keylength " << keylength << ", min " << minkey);
+        return dh_callback(nullptr, 0, keylength < minkey ? minkey : keylength);
+    }
+
+    void setup_session(SSL * ssl, std::string const & remote_domain) {
+        Config::Domain const & domain = Config::config().domain(remote_domain);
+        SSL_set_cipher_list(ssl, domain.cipherlist().c_str());
+        std::string const & dhparam = domain.dhparam();
+        if (dhparam == "4096") {
+            SSL_set_tmp_dh_callback(ssl, dh_callback<4096>);
+        } else if (dhparam == "1024") {
+            SSL_set_tmp_dh_callback(ssl, dh_callback<1024>);
+        } else if (dhparam == "2048") {
+            SSL_set_tmp_dh_callback(ssl, dh_callback<2048>);
+        } else {
+            METRE_LOG("Don't know what dhparam size " << dhparam << " means, using 2048");
+            SSL_set_tmp_dh_callback(ssl, dh_callback<2048>);
+        }
+    }
+}
 
 namespace {
   const std::string tls_ns = "urn:ietf:params:xml:ns:xmpp-tls";
@@ -31,7 +66,7 @@ namespace {
         xml_document<> * d = node->document();
         auto feature = d->allocate_node(node_element, "starttls");
         feature->append_attribute(d->allocate_attribute("xmlns", tls_ns.c_str()));
-        if (false) {
+        if (Config::config().domain(s.local_domain()).require_tls()) {
           auto required = d->allocate_node(node_element, "required");
           feature->append_node(required);
         }
@@ -56,6 +91,7 @@ namespace {
         SSL_CTX * ctx = context();
         if (!ctx) throw new std::runtime_error("Failed to load certificates");
         SSL * ssl = SSL_new(ctx);
+        setup_session(ssl, m_stream.remote_domain());
         if (!ssl) throw std::runtime_error("Failure to initiate TLS, sorry!");
         bufferevent_ssl_state st = BUFFEREVENT_SSL_ACCEPTING;
         if (m_stream.direction() == INBOUND) {

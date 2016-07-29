@@ -9,6 +9,8 @@
     <datadir>/home/dwd/src/metre/data/</datadir>
     <!-- Data directory root; currently unused -->
 
+    <defaults>
+    </defaults>
   </globals>
   <inbound>
     <!-- The Inbound stanza lists all domains the server will respond to over external connectivity.
@@ -18,9 +20,10 @@
   <local>
     <!-- Domains actually serviced by this instance are listed in the Local stanza.
           This could be empty if the server is acting purely as a forwarding agent.
+          All internal domains do, currently, it respond to XEP-0199 pings...
           -->
     <domain name='cridland.im'>
-      <x509 chain='./cridland.im.stuffs' key='./cridland.im.key'/>
+      <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
     </domain>
   </local>
   <remote>
@@ -28,15 +31,25 @@
           There is a special "default" entry which is used to connect to unlisted domains - if this
           is not present, it will simply not connect to unlisted domains.
         -->
-    <any> <!-- Special entry for any domain -->
+    <any>
+      <!-- This is a special catch-all.
+            If the code needs a domain and there isn't one, it'll use this.-->
+      <transport type='s2s' sec='tls'> <!-- Transport blocks contain a transport type (s2s or 114), and required security level (none or tls) -->
+        <!-- <any/> contains defaults, so these authentication methods will be used unless a domain specifies something else. -->
+        <auth type="pkix"/><!-- PKIX authentication is SASL EXTERNAL based, X.509 Strong Authentication. Certificates, basically. -->
+        <auth type="dialback"/><!-- Dialback authentication is reliant on DNS. Metre always checks DNSSEC, but not all domains have it and it won't enforce.. -->
+      </transport>
+      <!-- Defaults for what local domains will offer over TLS -->
+      <dhparam size='4096'/><!-- DH Parameter sizes - some domains will not support higher than 2048, others no higher than 1024. -->
+      <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
+    </any>
+    <domain name='dave.cridland.net' forward='true'><!-- Domains set to forward will be responded to locally, and the stanzas passed through. -->
       <transport type='s2s' sec='tls'>
-        <auth type='pkix'/>
-        <auth type='dialback'/>
+        <!-- If there's any auth options here this will override defaults. -->
+        <auth type='pkix'/><!-- PKIX authentication is SASL EXTERNAL based, X.509 Strong Authentication. Certificates, basically. -->
       </transport>
       <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/>
-    </any>
-    <domain name='XXXdave.cridland.net' forward='true'>
-      <transport type='s2s' sec='tls'/>
+      <dhparam size='1024'/>
       <dns><!-- Override DNS records. -->
         <srv host='peirce.dave.cridland.net' port='5269'/>
         <host name='peirce.dave.cridland.net' a='217.155.137.60'/>
@@ -45,9 +58,12 @@
         </tlsa>
       </dns>
     </domain>
-    <domain name='channels.cridland.im' forward='true'> <!-- Component. -->
+    <domain name="surevine.com">
+      <dns dnssec="true"/><!-- Setting DNSSEC to true means Metre rejects any unsigned records. -->
+    </domain>
+    <domain name='channels.cridland.im' forward='true'> <!-- Components are also domains - but use a different transport. -->
       <transport type='114' sec='none'>
-        <auth type='secret'>secret</auth>
+        <auth type='secret'>secret</auth><!-- XEP-0114 components authentication with a shared secret. -->
       </transport>
     </domain>
     <domain name='topics.cridland.im' forward='true'> <!-- Component. -->

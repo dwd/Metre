@@ -22,6 +22,9 @@ set(SOURCE_FILES
     include/tests.h
     include/xmlstream.h
     include/xmppexcept.h
+        gen/dh1024.cc
+        gen/dh2048.cc
+        gen/dh4096.cc
     src/auth.cc
     src/base64.cc
     src/client.cc
@@ -38,7 +41,7 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc
-    src/xmlstream.cc src/saslexternal.cc src/spiffing.cc)
+    src/xmlstream.cc src/saslexternal.cc src/spiffing.cc include/dhparams.h)
 
 add_executable(metre ${SOURCE_FILES})
 target_link_libraries(metre event_core ssl crypto event_openssl unbound)

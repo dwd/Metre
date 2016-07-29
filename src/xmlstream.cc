@@ -159,7 +159,7 @@ void XMLStream::check_domain_pair(std::string const & from, std::string const & 
 		if (from_domain.block()) {
 			throw Metre::host_unknown("Requesting domain is blocked");
 		}
-		if ((domain.transport_type() != COMP) && (from_domain.forward() == domain.forward())) {
+		if ((domain.transport_type() != COMP) && ((from_domain.forward() == domain.forward()) && domain.transport_type() != INT)) {
 			throw Metre::host_unknown("Will not forward between those domains");
 		}
 		if (from_domain.transport_type() == COMP) {
@@ -448,6 +448,9 @@ XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::s
 }
 
 XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION dir, XMLStream::AUTH_STATE state) {
+	if (state == AUTHORIZED && !m_secured && (Config::config().domain(local).require_tls() || Config::config().domain(remote).require_tls())) {
+		throw Metre::not_authorized("Authorization attempt without TLS");
+	}
 	auto & m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
 	auto key = std::make_pair(local, remote);
 	AUTH_STATE current = m[key];

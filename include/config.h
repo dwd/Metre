@@ -43,6 +43,25 @@ namespace Metre {
       bool auth_dialback() const {
         return m_auth_dialback;
       }
+      bool dnssec_required() const {
+          return m_dnssec_required;
+      }
+      bool dnssec_required(bool d) {
+          m_dnssec_required = d;
+          return d;
+      }
+      std::string const & dhparam() const {
+        return m_dhparam;
+      }
+      std::string const & dhparam(std::string const & d) {
+        return m_dhparam = d;
+      }
+      std::string const & cipherlist() const {
+        return m_cipherlist;
+      }
+      std::string const & cipherlist(std::string const & c) {
+        return m_cipherlist = c;
+      }
       std::optional<std::string> const & auth_secret() const {
         return m_auth_secret;
       }
@@ -52,7 +71,7 @@ namespace Metre {
       DNS::Address * host_lookup(std::string const & hostname) const;
 
       /* Loading functions */
-      void x509(std::string const & chain, std::string const &);
+      void x509(std::string const & chain, std::string const & key);
       void host(std::string const & hostname, uint32_t inaddr);
 
       Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool auth_pkix, bool auth_dialback, std::optional<std::string> && m_auth_secret);
@@ -68,6 +87,9 @@ namespace Metre {
       bool m_block;
       bool m_auth_pkix;
       bool m_auth_dialback;
+      bool m_dnssec_required = false;
+      std::string m_dhparam;
+      std::string m_cipherlist;
       std::optional<std::string> m_auth_secret;
       struct ssl_ctx_st * m_ssl_ctx;
       std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
