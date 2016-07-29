@@ -36,7 +36,6 @@ namespace Metre {
 		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_id;
 		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_domain;
 		std::map<std::pair<std::string,unsigned short>, std::weak_ptr<NetSession>> m_sessions_by_address;
-		struct ub_ctx * m_ub_ctx;
 		struct event * m_ub_event;
 		struct evconnlistener * m_server_listener;
 		struct evconnlistener * m_component_listener;
@@ -47,9 +46,6 @@ namespace Metre {
 		static Mainloop * s_mainloop;
 		Mainloop(Server & server) : m_event_base(0), m_listen(0), m_server(server), m_sessions(), m_ub_event(0) {
 			s_mainloop = this;
-		}
-		struct ub_ctx * ub_ctx() {
-			return m_ub_ctx;
 		}
 		bool init() {
 			if (m_event_base) throw std::runtime_error("I'm already initialized!");
@@ -69,18 +65,6 @@ namespace Metre {
 					throw std::runtime_error(std::string("Cannot bind to component port: ") + strerror(errno));
 				}
 				METRE_LOG("Listening to component.");
-			}
-			METRE_LOG("Setting up DNS");
-			m_ub_ctx = ub_ctx_create();
-			if (!m_ub_ctx) {
-				throw std::runtime_error("DNS context creation failure.");
-			}
-			int retval;
-			if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
-				throw std::runtime_error(ub_strerror(retval));
-			}
-			if ((retval = ub_ctx_add_ta_file(m_ub_ctx, "keys")) != 0) {
-				throw std::runtime_error(ub_strerror(retval));
 			}
 			return true;
 		}
@@ -203,6 +187,7 @@ namespace Metre {
 		}
 
 		void run() {
+			dns_setup();
 			while(true) {
 				event_base_dispatch(m_event_base);
 				m_closed_sessions.clear();
@@ -218,15 +203,16 @@ namespace Metre {
 
 		void do_later(std::function<void()> && fn) {
 			m_pending_actions.emplace_back(std::move(fn));
+			event_base_loopbreak(m_event_base);
 		}
 
 		static void unbound_cb(evutil_socket_t, short, void * arg) {
 			ub_process(reinterpret_cast<struct ub_ctx *>(arg));
 		}
 
-		void check_dns_setup() {
+		void dns_setup() {
 			if (!m_ub_event) {
-				m_ub_event = event_new(m_event_base, ub_fd(m_ub_ctx), EV_READ|EV_PERSIST, unbound_cb, m_ub_ctx);
+				m_ub_event = event_new(m_event_base, ub_fd(Config::config().ub_ctx()), EV_READ|EV_PERSIST, unbound_cb, Config::config().ub_ctx());
 				event_add(m_ub_event, NULL);
 			}
 		}
@@ -241,230 +227,8 @@ namespace Metre {
 		}
 	};
 
-	class ResolverImpl : public Metre::DNS::Resolver {
-	private:
-		std::map<std::string, DNS::Resolver::srv_callback_t> m_srv_pending;
-		std::map<std::string, DNS::Resolver::addr_callback_t> m_a_pending;
-		std::map<std::string, DNS::Resolver::tlsa_callback_t> m_tlsa_pending;
-	public:
-		void tlsa_lookup_done(int err, struct ub_result * result) {
-			std::string error;
-			if (err != 0) {
-				error = ub_strerror(err);
-				return;
-			} else if (!result->havedata) {
-				error = "No TLSA records present";
-			} else if (result->bogus) {
-				error = std::string("Bogus: ") + result->why_bogus;
-			} else {
-				DNS::Tlsa tlsa;
-				tlsa.dnssec = result->secure;
-				tlsa.domain = result->qname;
-				for (int i = 0; result->data[i]; ++i) {
-					DNS::TlsaRR rr;
-					rr.certUsage = static_cast<DNS::TlsaRR::CertUsage>(result->data[i][0]);
-					rr.selector = static_cast<DNS::TlsaRR::Selector>(result->data[i][1]);
-					rr.matchType = static_cast<DNS::TlsaRR::MatchType>(result->data[i][2]);
-					rr.matchData.assign(result->data[i] + 3, result->len[i] - 3);
-					tlsa.rrs.push_back(rr);
-					METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
-						<< rr.certUsage << ":"
-						<< rr.selector << ":"
-						<< rr.matchType << "::"
-						<< rr.matchData);
-				}
-				auto it = m_tlsa_pending.find(tlsa.domain);
-				if (it != m_tlsa_pending.end()) {
-					(*it).second.emit(&tlsa);
-					m_tlsa_pending.erase(it);
-				}
-				return;
-			}
-			METRE_LOG("DNS Error: " << error);
-			auto it = m_tlsa_pending.find(result->qname);
-			if (it != m_tlsa_pending.end()) {
-				DNS::Tlsa tlsa;
-				tlsa.error = error;
-				tlsa.domain = result->qname;
-				(*it).second.emit(&tlsa);
-				m_tlsa_pending.erase(it);
-			}
-		}
-		void srv_lookup_done(int err, struct ub_result * result) {
-			std::string error;
-			if (err != 0) {
-				error = ub_strerror(err);
-				return;
-			} else if (!result->havedata) {
-				error = "No SRV records present";
-			} else if (result->bogus) {
-				error = std::string("Bogus: ") + result->why_bogus;
-			} else {
-				DNS::Srv srv;
-				srv.dnssec = result->secure;
-				srv.domain = result->qname;
-				for (int i = 0; result->data[i]; ++i) {
-					DNS::SrvRR rr;
-					rr.priority = ntohs(*reinterpret_cast<short*>(result->data[i]));
-					rr.weight = ntohs(*reinterpret_cast<short*>(result->data[i]+2));
-					rr.port = ntohs(*reinterpret_cast<short*>(result->data[i]+4));
-					for (int x = 6; result->data[i][x]; x += result->data[i][x] + 1) {
-						rr.hostname.append(result->data[i]+x+1, result->data[i][x]);
-						rr.hostname += ".";
-					}
-					srv.rrs.push_back(rr);
-					METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
-						<< rr.priority << ":"
-						<< rr.weight << ":"
-						<< rr.port << "::"
-						<< rr.hostname);
-				}
-				auto it = m_srv_pending.find(srv.domain);
-				if (it != m_srv_pending.end()) {
-					(*it).second.emit(&srv);
-					m_srv_pending.erase(it);
-				}
-				return;
-			}
-			METRE_LOG("DNS Error: " << error);
-			auto it = m_srv_pending.find(result->qname);
-			if (it != m_srv_pending.end()) {
-				DNS::Srv srv;
-				srv.error = error;
-				srv.domain = result->qname;
-				(*it).second.emit(&srv);
-				m_srv_pending.erase(it);
-			}
-		}
-		void a_lookup_done(int err, struct ub_result * result) {
-			std::string error;
-			if (err != 0) {
-				error = ub_strerror(err);
-				return;
-			} else if (!result->havedata) {
-				error = "No A records present";
-			} else if (result->bogus) {
-				error = std::string("Bogus: ") + result->why_bogus;
-			} else {
-				DNS::Address a;
-				a.dnssec = result->secure;
-				a.hostname = result->qname;
-				for (int i = 0; result->data[i]; ++i) {
-					a.addr4.push_back(*reinterpret_cast<uint32_t *>(result->data[0]));
-				}
-				auto it = m_a_pending.find(a.hostname);
-				if (it != m_a_pending.end()) {
-					(*it).second.emit(&a);
-					m_a_pending.erase(it);
-				}
-				return;
-			}
-			auto it = m_a_pending.find(result->qname);
-			if (it != m_a_pending.end()) {
-				DNS::Address a;
-				a.error = error;
-				a.hostname = result->qname;
-				(*it).second.emit(&a);
-				m_a_pending.erase(it);
-			}
-		}
-
-		class UBResult {
-			/* Quick guard class. */
-		public:
-			struct ub_result * result;
-			UBResult(struct ub_result * r) : result(r) {}
-			~UBResult() { ub_resolve_free(result); }
-		};
-
-		static void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
-			UBResult r{result};
-			reinterpret_cast<ResolverImpl *>(x)->srv_lookup_done(err, result);
-		}
-
-		static void a_lookup_done_cb(void * x, int err, struct ub_result * result) {
-			UBResult r{result};
-			reinterpret_cast<ResolverImpl *>(x)->a_lookup_done(err, result);
-		}
-
-		static void tlsa_lookup_done_cb(void * x, int err, struct ub_result * result) {
-			UBResult r{result};
-			reinterpret_cast<ResolverImpl *>(x)->tlsa_lookup_done(err, result);
-		}
-
-		virtual Resolver::srv_callback_t & SrvLookup(std::string const & base_domain) {
-			std::string domain = "_xmpp-server._tcp." + base_domain;
-			METRE_LOG("SRV lookup for " << domain);
-			auto it = m_srv_pending.find(domain);
-			if (it != m_srv_pending.end()) {
-				return (*it).second;
-			}
-			ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
-				domain.c_str(),
-				33, /* SRV */
-				1,  /* IN */
-				this,
-				srv_lookup_done_cb,
-				NULL); /* int * async_id */
-			Mainloop::s_mainloop->check_dns_setup();
-			return m_srv_pending[domain];
-		}
-
-		virtual Resolver::tlsa_callback_t & TlsaLookup(unsigned short port, std::string const & base_domain) {
-			std::ostringstream out;
-			out << "_" << port << "._tcp." << base_domain;
-			std::string domain = out.str();
-			METRE_LOG("SRV lookup for " << domain);
-			auto it = m_tlsa_pending.find(domain);
-			if (it != m_tlsa_pending.end()) {
-				return (*it).second;
-			}
-			ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
-				domain.c_str(),
-				52, /* TLSA */
-				1,  /* IN */
-				this,
-				tlsa_lookup_done_cb,
-				NULL); /* int * async_id */
-			Mainloop::s_mainloop->check_dns_setup();
-			return m_tlsa_pending[domain];
-		}
-
-		virtual Resolver::addr_callback_t & AddressLookup(std::string const & domain, std::string const & hostname) {
-			METRE_LOG("A/AAAA lookup for " << hostname);
-			DNS::Address * addr = Config::config().domain(domain).host_lookup(hostname);
-			if (addr) {
-				Mainloop::s_mainloop->do_later([addr,this] () {
-					m_a_pending[addr->hostname].emit(addr);
-				});
-			} else {
-				auto it = m_a_pending.find(hostname);
-				if (it != m_a_pending.end()) {
-					return (*it).second;
-				}
-				ub_resolve_async(Mainloop::s_mainloop->ub_ctx(),
-											  hostname.c_str(),
-											  1, /* A */
-											  1,  /* IN */
-											  this,
-											  a_lookup_done_cb,
-											  NULL); /* int * async_id */
-				Mainloop::s_mainloop->check_dns_setup();
-			}
-			return m_a_pending[hostname];
-		}
-	};
-
 	Mainloop * Mainloop::s_mainloop{nullptr};
 	std::atomic<unsigned long long> Mainloop::s_serial{0};
-	ResolverImpl * s_resolver{nullptr};
-
-	namespace DNS {
-		Resolver & Resolver::resolver() {
-			if (!s_resolver) s_resolver = new ResolverImpl;
-			return *s_resolver;
-		}
-	}
 
 	namespace Router {
 		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, uint32_t addr, unsigned short port) {
@@ -489,14 +253,17 @@ namespace Metre {
 		std::shared_ptr<NetSession> session_by_address(std::string const & id, unsigned short p) {
 			return Mainloop::s_mainloop->session_by_address(id, p);
 		}
+		void defer(std::function<void()> && fn) {
+			Mainloop::s_mainloop->do_later(std::move(fn));
+		}
 	}
 }
 
 int main(int argc, char *argv[]) {
 	Metre::Server server;
 	Metre::Mainloop loop(server);
-	new Metre::Config("./metre.conf.xml");
 	new Metre::Log("./metre.log");
+	new Metre::Config("./metre.conf.xml");
 
 	if (!loop.init()) {
 		return 1;

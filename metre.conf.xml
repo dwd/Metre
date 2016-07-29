@@ -9,8 +9,11 @@
     <datadir>/home/dwd/src/metre/data/</datadir>
     <!-- Data directory root; currently unused -->
 
-    <defaults>
-    </defaults>
+    <logfile>/home/dwd/src/metre/metre.log</logfile>
+    <!-- Logfile -->
+
+    <dnssec>/home/dwd/src/metre/keys</dnssec>
+    <!-- DNSSEC root keys file. -->
   </globals>
   <inbound>
     <!-- The Inbound stanza lists all domains the server will respond to over external connectivity.
@@ -52,7 +55,7 @@
       <dhparam size='1024'/>
       <dns><!-- Override DNS records. -->
         <srv host='peirce.dave.cridland.net' port='5269'/>
-        <host name='peirce.dave.cridland.net' a='217.155.137.60'/>
+        <host name='peirce.dave.cridland.net' a='217.155.137.61'/>
         <tlsa hostname='peirce.dave.cridland.net' port='5269' certusage='DomainCert' selector='SubjectPublicKeyInfo' matchtype='Sha512'>
             <!-- ... -->
         </tlsa>

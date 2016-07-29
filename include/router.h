@@ -69,6 +69,8 @@ namespace Metre {
 		std::shared_ptr<NetSession> session_by_stream_id(std::string const & stream_id);
 		void register_stream_id(std::string const &, NetSession &);
 		void unregister_stream_id(std::string const &);
+
+		void defer(std::function<void()> &&);
 	}
 }
 

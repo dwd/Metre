@@ -68,7 +68,7 @@ void Route::transmit(std::unique_ptr<Verify> v) {
     // TODO Look for an existing session and use that.
     // Otherwise, start SRV lookups.
     m_dialback.push_back(std::move(v));
-    DNS::Resolver::resolver().SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+    Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
   }
 
 }
@@ -99,7 +99,7 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
     // TODO : Timeout.
     Config::Domain const & conf = Config::config().domain(m_domain.domain());
     if (conf.transport_type() == S2S) {
-      DNS::Resolver::resolver().SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+      Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
     }
     // Otherwise wait.
   } else { // Got a to but it's not ready yet.
@@ -120,7 +120,6 @@ void Route::SrvResult(DNS::Srv const * srv) {
     return;
   }
   m_rr = m_srv.rrs.begin();
-  // TODO Look for an existing host/port session and use that.
   METRE_LOG("Should look for " << (*m_rr).hostname << ":" << (*m_rr).port);
   std::shared_ptr<NetSession> sesh = Router::session_by_address((*m_rr).hostname, (*m_rr).port);
   if (sesh) {
@@ -130,13 +129,11 @@ void Route::SrvResult(DNS::Srv const * srv) {
     check_to(*this, sesh);
     return;
   }
-  // TODO Otherwise, start address lookups.
-  DNS::Resolver::resolver().AddressLookup(m_domain.domain(), (*m_rr).hostname).connect(this, &Route::AddressResult);
+  Config::config().domain(m_domain.domain()).AddressLookup((*m_rr).hostname).connect(this, &Route::AddressResult);
 }
 
 void Route::AddressResult(DNS::Address const * addr) {
   auto vrfy = m_vrfy.lock();
-  METRE_LOG("Now what?");
   if (vrfy) {
     return;
   }

@@ -13,6 +13,9 @@
 #include <arpa/inet.h>
 #include <dns.h>
 #include <dhparams.h>
+#include <router.h>
+#include <unbound.h>
+#include <sstream>
 
 #include "log.h"
 
@@ -66,10 +69,6 @@ namespace {
       }
       name = name_a->value();
     }
-    auto forward_a = domain->first_attribute("forward");
-    if (forward_a) {
-      forward = xmlbool(forward_a->value());
-    }
     auto block_a = domain->first_attribute("block");
     if (block_a) {
       block = xmlbool(block_a->value());
@@ -84,11 +83,16 @@ namespace {
         } else if (type == "114") {
           sess = COMP;
           tls_required = false;
+          forward = true;
         }
       }
       auto tls_a = transport->first_attribute("sec");
       if (tls_a) {
         tls_required = xmlbool(tls_a->value());
+      }
+      auto forward_a = domain->first_attribute("forward");
+      if (forward_a) {
+        forward = xmlbool(forward_a->value());
       }
 
       for (auto auth = transport->first_node("auth"); auth; auth = auth->next_sibling("auth")) {
@@ -133,7 +137,7 @@ namespace {
     if (dnst) {
       auto dnssec = dnst->first_attribute("dnssec");
       if (dnssec && dnssec->value()) {
-        dnssec_required = (dnssec->value()[0] == 't');
+        dnssec_required = xmlbool(dnssec->value());
       }
       for (auto hostt = dnst->first_node("host"); hostt; hostt = hostt->next_sibling("host")) {
         auto hosta = hostt->first_attribute("name");
@@ -170,15 +174,9 @@ Config::Domain::~Domain() {
 void Config::Domain::host(std::string const &hostname, uint32_t inaddr) {
   std::unique_ptr<DNS::Address> address(new DNS::Address);
   address->dnssec = true;
-  address->hostname = hostname;
+  address->hostname = hostname + ".";
   address->addr4.push_back(inaddr);
-  m_host_arecs[hostname] = std::move(address);
-}
-
-DNS::Address * Config::Domain::host_lookup(std::string const &hostname) const {
-  auto i = m_host_arecs.find(hostname);
-  if (i == m_host_arecs.end()) return 0;
-  return &*((*i).second);
+  m_host_arecs[hostname + "."] = std::move(address);
 }
 
 int Config::Domain::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st * st) {
@@ -233,6 +231,18 @@ void Config::Domain::x509(std::string const & chain, std::string const & pkey) {
 Config::Config(std::string const & filename) : m_config_str(), m_dialback_secret(random_identifier()) {
   load(filename);
   s_config = this;
+  METRE_LOG("Setting up DNS");
+  m_ub_ctx = ub_ctx_create();
+  if (!m_ub_ctx) {
+    throw std::runtime_error("DNS context creation failure.");
+  }
+  int retval;
+  if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
+    throw std::runtime_error(ub_strerror(retval));
+  }
+  if ((retval = ub_ctx_add_ta_file(m_ub_ctx, "keys")) != 0) {
+    throw std::runtime_error(ub_strerror(retval));
+  }
 }
 
 void Config::load(std::string const & filename) {
@@ -323,4 +333,232 @@ std::string Config::dialback_key(std::string const & id, std::string const & loc
 
 Config const & Config::config() {
   return *s_config;
+}
+
+
+/*
+ * DNS resolver functions.
+ */
+
+namespace {
+    class UBResult {
+        /* Quick guard class. */
+    public:
+        struct ub_result * result;
+        UBResult(struct ub_result * r) : result(r) {}
+        ~UBResult() { ub_resolve_free(result); }
+    };
+
+    void srv_lookup_done_cb(void * x, int err, struct ub_result * result) {
+      UBResult r{result};
+      reinterpret_cast<Config::Domain *>(x)->srv_lookup_done(err, result);
+    }
+
+    void a_lookup_done_cb(void * x, int err, struct ub_result * result) {
+      UBResult r{result};
+      reinterpret_cast<Config::Domain *>(x)->a_lookup_done(err, result);
+    }
+
+    void tlsa_lookup_done_cb(void * x, int err, struct ub_result * result) {
+      UBResult r{result};
+      reinterpret_cast<Config::Domain *>(x)->tlsa_lookup_done(err, result);
+    }
+}
+
+void Config::Domain::tlsa(std::string const & hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage, DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const & value) {
+  std::ostringstream out;
+  out << "_" << port << "._tcp." << hostname;
+  std::string domain = out.str();
+  DNS::Tlsa tlsa;
+}
+void Config::Domain::tlsa_lookup_done(int err, struct ub_result * result) {
+  std::string error;
+  if (err != 0) {
+    error = ub_strerror(err);
+    return;
+  } else if (!result->havedata) {
+    error = "No TLSA records present";
+  } else if (result->bogus) {
+    error = std::string("Bogus: ") + result->why_bogus;
+  } else if (!result->secure && m_dnssec_required) {
+    error = "DNSSEC required but unsigned";
+  } else {
+    DNS::Tlsa tlsa;
+    tlsa.dnssec = !!result->secure;
+    tlsa.domain = result->qname;
+    for (int i = 0; result->data[i]; ++i) {
+      DNS::TlsaRR rr;
+      rr.certUsage = static_cast<DNS::TlsaRR::CertUsage>(result->data[i][0]);
+      rr.selector = static_cast<DNS::TlsaRR::Selector>(result->data[i][1]);
+      rr.matchType = static_cast<DNS::TlsaRR::MatchType>(result->data[i][2]);
+      rr.matchData.assign(result->data[i] + 3, result->len[i] - 3);
+      tlsa.rrs.push_back(rr);
+      METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
+                << rr.certUsage << ":"
+                << rr.selector << ":"
+                << rr.matchType << "::"
+                << rr.matchData);
+    }
+    m_tlsa_pending.emit(&tlsa);
+    return;
+  }
+  METRE_LOG("DNS Error: " << error);
+  DNS::Tlsa tlsa;
+  tlsa.error = error;
+  tlsa.domain = result->qname;
+  m_tlsa_pending.emit(&tlsa);
+}
+
+void Config::Domain::srv(std::string const & hostname, unsigned short priority, unsigned short weight, unsigned short port) {
+  DNS::Srv * srv;
+  std::string domain = "_xmpp-server._tcp." + m_domain;
+  auto it = m_srvrecs.find(domain);
+  if (it == m_srvrecs.end()) {
+    std::unique_ptr<DNS::Srv> s(new DNS::Srv);
+    s->dnssec = true;
+    s->domain = domain;
+    srv = &*s;
+    m_srvrecs[hostname] = std::move(s);
+  } else {
+    srv = &*(it->second);
+  }
+  DNS::SrvRR rr;
+  rr.priority = priority;
+  rr.weight = weight;
+  rr.port = port;
+  rr.hostname = hostname;
+  srv->rrs.push_back(rr);
+}
+void Config::Domain::srv_lookup_done(int err, struct ub_result * result) {
+  std::string error;
+  if (err != 0) {
+    error = ub_strerror(err);
+    return;
+  } else if (!result->havedata) {
+    error = "No SRV records present";
+  } else if (result->bogus) {
+    error = std::string("Bogus: ") + result->why_bogus;
+  } else if (!result->secure && m_dnssec_required) {
+    error = "DNSSEC required but unsigned";
+  } else {
+    DNS::Srv srv;
+    srv.dnssec = !!result->secure;
+    srv.domain = result->qname;
+    for (int i = 0; result->data[i]; ++i) {
+      DNS::SrvRR rr;
+      rr.priority = ntohs(*reinterpret_cast<unsigned short*>(result->data[i]));
+      rr.weight = ntohs(*reinterpret_cast<unsigned short*>(result->data[i]+2));
+      rr.port = ntohs(*reinterpret_cast<unsigned short*>(result->data[i]+4));
+      for (int x = 6; result->data[i][x]; x += result->data[i][x] + 1) {
+        rr.hostname.append(result->data[i]+x+1, result->data[i][x]);
+        rr.hostname += ".";
+      }
+      srv.rrs.push_back(rr);
+      METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
+                << rr.priority << ":"
+                << rr.weight << ":"
+                << rr.port << "::"
+                << rr.hostname);
+    }
+    m_srv_pending.emit(&srv);
+    return;
+  }
+  METRE_LOG("DNS Error: " << error);
+  DNS::Srv srv;
+  srv.error = error;
+  srv.domain = result->qname;
+  m_srv_pending.emit(&srv);
+}
+void Config::Domain::a_lookup_done(int err, struct ub_result * result) {
+  std::string error;
+  if (err != 0) {
+    error = ub_strerror(err);
+    return;
+  } else if (!result->havedata) {
+    error = "No A records present";
+  } else if (result->bogus) {
+    error = std::string("Bogus: ") + result->why_bogus;
+  } else if (!result->secure && m_dnssec_required) {
+    error = "DNSSEC required but unsigned";
+  } else {
+    DNS::Address a;
+    a.dnssec = !!result->secure;
+    a.hostname = result->qname;
+    for (int i = 0; result->data[i]; ++i) {
+      a.addr4.push_back(*reinterpret_cast<uint32_t *>(result->data[0]));
+    }
+    m_a_pending.emit(&a);
+    return;
+  }
+  DNS::Address a;
+  a.error = error;
+  a.hostname = result->qname;
+  m_a_pending.emit(&a);
+}
+
+Config::addr_callback_t & Config::Domain::AddressLookup(std::string const & hostname) const {
+  METRE_LOG("A/AAAA lookup for " << hostname);
+  auto it = m_host_arecs.find(hostname);
+  if (it != m_host_arecs.end()) {
+    auto addr = &*(it->second);
+    Router::defer([addr,this] () {
+        m_a_pending.emit(addr);
+    });
+    METRE_LOG("Using DNS override");
+  } else {
+    ub_resolve_async(Config::config().ub_ctx(),
+                     hostname.c_str(),
+                     1, /* A */
+                     1,  /* IN */
+                     const_cast<void *>(reinterpret_cast<const void *>(this)),
+                     a_lookup_done_cb,
+                     NULL); /* int * async_id */
+  }
+  return m_a_pending;
+}
+
+Config::srv_callback_t & Config::Domain::SrvLookup(std::string const & base_domain) const {
+  std::string domain = "_xmpp-server._tcp." + base_domain + ".";
+  METRE_LOG("SRV lookup for " << domain);
+  auto it = m_srvrecs.find(domain);
+  if (it != m_srvrecs.end()) {
+    auto addr = &*(it->second);
+    Router::defer([addr,this] () {
+        m_srv_pending.emit(addr);
+    });
+    METRE_LOG("Using DNS override");
+  } else {
+    ub_resolve_async(Config::config().ub_ctx(),
+                     domain.c_str(),
+                     33, /* SRV */
+                     1,  /* IN */
+                     const_cast<void *>(reinterpret_cast<const void *>(this)),
+                     srv_lookup_done_cb,
+                     NULL); /* int * async_id */
+  }
+  return m_srv_pending;
+}
+
+Config::tlsa_callback_t & Config::Domain::TlsaLookup(unsigned short port, std::string const & base_domain) const {
+  std::ostringstream out;
+  out << "_" << port << "._tcp." << base_domain;
+  std::string domain = out.str();
+  METRE_LOG("TLSA lookup for " << domain);
+  auto it = m_tlsarecs.find(domain);
+  if (it != m_tlsarecs.end()) {
+    auto addr = &*(it->second);
+    Router::defer([addr,this] () {
+        m_tlsa_pending.emit(addr);
+    });
+    METRE_LOG("Using DNS override");
+  } else {
+    ub_resolve_async(Config::config().ub_ctx(),
+                     domain.c_str(),
+                     52, /* TLSA */
+                     1,  /* IN */
+                     const_cast<void *>(reinterpret_cast<const void *>(this)),
+                     tlsa_lookup_done_cb,
+                     NULL); /* int * async_id */
+  }
+  return m_tlsa_pending;
 }

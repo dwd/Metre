@@ -17,10 +17,22 @@
 struct ssl_ctx_st; // SSL_CTX
 struct x509_store_ctx_st; // X509_STORE_CTX;
 
+/**
+ * Lib unbound.
+ */
+
+struct ub_ctx;
+struct ub_result;
+
 namespace Metre {
   class Config {
   public:
-    class Domain {
+      /* DNS */
+      typedef sigslot::signal<sigslot::thread::mt, DNS::Srv const*> srv_callback_t;
+      typedef sigslot::signal<sigslot::thread::mt, DNS::Address const*> addr_callback_t;
+      typedef sigslot::signal<sigslot::thread::mt, DNS::Tlsa const*> tlsa_callback_t;
+
+      class Domain {
     public:
       std::string const & domain() const {
         return m_domain;
@@ -68,13 +80,24 @@ namespace Metre {
       struct ssl_ctx_st * ssl_ctx() const {
         return m_ssl_ctx;
       }
-      DNS::Address * host_lookup(std::string const & hostname) const;
 
       /* Loading functions */
       void x509(std::string const & chain, std::string const & key);
       void host(std::string const & hostname, uint32_t inaddr);
+      void srv(std::string const &, unsigned short, unsigned short, unsigned short);
+      void tlsa(std::string const & hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage, DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const & value);
 
-      Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool auth_pkix, bool auth_dialback, std::optional<std::string> && m_auth_secret);
+        /* DNS */
+        srv_callback_t & SrvLookup(std::string const & domain) const;
+        addr_callback_t & AddressLookup(std::string const & hostname) const;
+        tlsa_callback_t & TlsaLookup(short unsigned int port, std::string const & hostname) const;
+
+          /* DNS callbacks */
+          void a_lookup_done(int err, struct ub_result * result);
+          void srv_lookup_done(int err, struct ub_result * result);
+          void tlsa_lookup_done(int err, struct ub_result * result);
+
+        Domain(std::string const & domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool auth_pkix, bool auth_dialback, std::optional<std::string> && m_auth_secret);
       Domain(Domain const &) = delete;
       Domain(Domain &&) = delete;
       ~Domain();
@@ -91,10 +114,13 @@ namespace Metre {
       std::string m_dhparam;
       std::string m_cipherlist;
       std::optional<std::string> m_auth_secret;
-      struct ssl_ctx_st * m_ssl_ctx;
+      struct ssl_ctx_st * m_ssl_ctx = nullptr;
       std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
       std::map<std::string, std::unique_ptr<DNS::Srv>> m_srvrecs;
       std::map<std::string, std::unique_ptr<DNS::Tlsa>> m_tlsarecs;
+          mutable srv_callback_t m_srv_pending;
+          mutable addr_callback_t m_a_pending;
+          mutable tlsa_callback_t m_tlsa_pending;
     };
     Config(std::string const & filename);
 
@@ -103,8 +129,11 @@ namespace Metre {
     std::string const & default_domain() const {
       return m_default_domain;
     }
-    std::string const & runtime_dir() const;
+    std::string const & runtime_dir() const {
+      return m_runtime_dir;
+    }
     Domain const & domain(std::string const & domain) const;
+    Domain const & domain(int domain) const;
 
     void load(std::string const & filename);
 
@@ -114,6 +143,9 @@ namespace Metre {
       return m_dialback_secret;
     }
     std::string dialback_key(std::string const & id, std::string const & local_domain, std::string const & remote_domain) const;
+      struct ub_ctx * ub_ctx() const {
+          return m_ub_ctx;
+      }
 
   private:
     std::string m_config_str;
@@ -121,6 +153,7 @@ namespace Metre {
     std::string m_runtime_dir;
     std::string m_dialback_secret;
     std::map<std::string, std::unique_ptr<Domain>> m_domains;
+      struct ub_ctx * m_ub_ctx = nullptr;
   };
 }
 
