@@ -83,6 +83,15 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 			throw;
 		} catch(rapidxml::eof_error & e) {
 			return spaces + len - buf.length();
+		} catch(rapidxml::parse_error & e) {
+			if (buf == "</stream:stream>") {
+				m_session->send("</stream:stream>");
+				m_closed = true;
+				m_session->used(buf.size());
+				buf.clear();
+			} else {
+				throw;
+			}
 		} catch(std::runtime_error & e) {
 			throw Metre::undefined_condition(e.what());
 		}
@@ -291,13 +300,6 @@ void XMLStream::send(std::unique_ptr<Stanza> s) {
 }
 
 void XMLStream::handle(rapidxml::xml_node<> * element) {
-	if (element->prefix() && element->prefix()[0] == '/') {
-		// Odd case; it's a closing stream tag. Probably. Actually any closing tag will do this.
-		m_session->send("</stream:stream>");
-		m_session->close();
-		m_closed = true;
-		return;
-	}
 	std::string xmlns(element->xmlns(), element->xmlns_size());
 	if (xmlns == "http://etherx.jabber.org/streams") {
 		std::string elname(element->name(), element->name_size());
@@ -340,6 +342,7 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 						auto dbatt = so->first_attribute("xmlns:db");
 						if (dbatt && dbatt->value() == std::string("jabber:server:dialback")) {
 							feature_xmlns = "urn:xmpp:features:dialback";
+							goto try_feature;
 						}
 					} else if (s2s_auth_pair(local_domain(), remote_domain(), OUTBOUND) == AUTHORIZED) {
 						set_auth_ready();
@@ -347,6 +350,7 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 					}
 					return;
 				}
+			try_feature:
 				Feature * f = Feature::feature(feature_xmlns, *this);
 				assert(f);
 				try {
@@ -449,7 +453,7 @@ XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const & local, std::s
 	AUTH_STATE current = m[key];
 	if (current < state) {
 		m[key] = state;
-		if (state == XMLStream::AUTHORIZED) METRE_LOG(std::string("Authorized ") + (dir == INBOUND ? "INBOUND" : "OUTBOUND") +  " session local:" + local + " remote:" + remote );
+		if (state == XMLStream::AUTHORIZED) METRE_LOG("Authorized " << (dir == INBOUND ? "INBOUND" : "OUTBOUND") <<  " session local:" << local << " remote:" << remote);
 		onAuthenticated.emit(*this);
 	}
 	return m[key];
