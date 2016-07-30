@@ -62,7 +62,7 @@
       </dns>
     </domain>
     <domain name="surevine.com">
-      <dns dnssec="true"/><!-- Setting DNSSEC to true means Metre rejects any unsigned records. -->
+      <!-- <dns dnssec="true"/><!-- Setting DNSSEC to true means Metre rejects any unsigned records. -->
     </domain>
     <domain name='channels.cridland.im' forward='true'> <!-- Components are also domains - but use a different transport. -->
       <transport type='114' sec='none'>

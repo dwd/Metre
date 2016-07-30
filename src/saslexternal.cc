@@ -62,6 +62,9 @@ namespace {
                 m_stream.send(d);
                 return;
             }
+            if (authzid != m_stream.remote_domain()) {
+                throw Metre::not_authorized("Authzid and stream from differ");
+            }
             if (m_stream.tls_auth_ok(authzid)) {
                 xml_document<> d;
                 auto n = d.allocate_node(node_element, "success");
@@ -71,7 +74,9 @@ namespace {
                 m_stream.s2s_auth_pair(m_stream.local_domain(), authzid, INBOUND, XMLStream::AUTHORIZED);
                 m_stream.set_auth_ready();
                 m_stream.restart();
+                return;
             }
+            throw Metre::not_authorized("Authorization failure.");
         }
 
         void challenge(rapidxml::xml_node<> * node) {

@@ -74,7 +74,7 @@ namespace Metre {
 		bool auth_ready() { return m_authready; }
 		std::string const & local_domain() { return m_stream_local; }
 		std::string const & remote_domain() { return m_stream_remote; }
-		bool tls_auth_ok(std::string const & domain);
+		bool tls_auth_ok(Route & domain);
 
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION) const;
 		AUTH_STATE s2s_auth_pair(std::string const & local, std::string const & remote, SESSION_DIRECTION, AUTH_STATE auth);
@@ -100,8 +100,8 @@ namespace Metre {
 		Feature & feature(std::string const &);
 
 		// Signals:
-		sigslot::signal<sigslot::thread::mt, XMLStream &> onAuthReady;
-		sigslot::signal<sigslot::thread::mt, XMLStream &> onAuthenticated;
+		sigslot::signal<sigslot::thread::st, XMLStream &> onAuthReady;
+		sigslot::signal<sigslot::thread::st, XMLStream &> onAuthenticated;
 
 	private:
 		void handle(rapidxml::xml_node<> *);

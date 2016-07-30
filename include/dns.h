@@ -1,6 +1,7 @@
 #ifndef METRE_DNS_H
 #define METRE_DNS_H
 
+#include "defs.h"
 #include <sigslot/sigslot.h>
 #include <string>
 #include <vector>
@@ -80,9 +81,9 @@ namespace Metre {
 
 		class Resolver {
 		public:
-			typedef sigslot::signal<sigslot::thread::mt, Srv const*> srv_callback_t;
-			typedef sigslot::signal<sigslot::thread::mt, Address const*> addr_callback_t;
-			typedef sigslot::signal<sigslot::thread::mt, Tlsa const*> tlsa_callback_t;
+			typedef sigslot::signal<sigslot::thread::st, Srv const*> srv_callback_t;
+			typedef sigslot::signal<sigslot::thread::st, Address const*> addr_callback_t;
+			typedef sigslot::signal<sigslot::thread::st, Tlsa const*> tlsa_callback_t;
 			virtual srv_callback_t & SrvLookup(std::string const & domain) = 0;
 			virtual addr_callback_t & AddressLookup(std::string const & domain, std::string const & hostname) = 0;
 			virtual tlsa_callback_t & TlsaLookup(short unsigned int port, std::string const & hostname) = 0;

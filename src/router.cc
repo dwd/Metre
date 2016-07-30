@@ -99,7 +99,7 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
     // TODO : Timeout.
     Config::Domain const & conf = Config::config().domain(m_domain.domain());
     if (conf.transport_type() == S2S) {
-      Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+      doSrvLookup();
     }
     // Otherwise wait.
   } else { // Got a to but it's not ready yet.
@@ -108,22 +108,56 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
   }
 }
 
+void Route::doSrvLookup() {
+  if (m_srv.domain.empty() || !m_srv.error.empty()) {
+    Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+  } else {
+    SrvResult(&m_srv);
+  }
+}
+
+void Route::collateNames() {
+  if (m_srv.domain.empty() || !m_srv.error.empty()) {
+    // No SRV record yet, look it up.
+    doSrvLookup();
+  } else {
+    // Have a SRV. Was it DNSSEC signed?
+    if (!m_srv.dnssec) {
+      onNamesCollated.emit(*this);
+    }
+    // Do we have TLSAs yet?
+    if (m_tlsa.size() == m_srv.rrs.size()) {
+      onNamesCollated.emit(*this);
+    }
+  }
+}
+
 void Route::SrvResult(DNS::Srv const * srv) {
-  auto vrfy = m_vrfy.lock();
   METRE_LOG("Got SRV");
-  if (vrfy) {
+  if (!srv->error.empty()) {
+    METRE_LOG("Got an error during DNS: " << srv->error);
     return;
   }
   m_srv = *srv;
-  if (!m_srv.error.empty()) {
-    METRE_LOG("Got an error during DNS: " << m_srv.error);
+  // Scan through TLSA records if DNSSEC has been used.
+  if (m_srv.dnssec) {
+    for (auto & rr : m_srv.rrs) {
+      Config::config().domain(m_domain.domain()).TlsaLookup(rr.port, rr.hostname).connect(this, &Route::TlsaResult);
+    }
+  } else {
+    onNamesCollated.emit(*this);
+  }
+  auto vrfy = m_vrfy.lock();
+  if (vrfy) {
+    if (m_to.expired()) m_to = vrfy;
+    check_to(*this, m_to.lock());
     return;
   }
   m_rr = m_srv.rrs.begin();
   METRE_LOG("Should look for " << (*m_rr).hostname << ":" << (*m_rr).port);
   std::shared_ptr<NetSession> sesh = Router::session_by_address((*m_rr).hostname, (*m_rr).port);
   if (sesh) {
-    m_vrfy = sesh;
+    if (m_vrfy.expired()) m_vrfy = sesh;
     check_verify(*this, sesh);
     if (m_to.expired()) m_to = sesh;
     check_to(*this, sesh);
@@ -152,6 +186,11 @@ void Route::AddressResult(DNS::Address const * addr) {
     check_to(*this, vrfy);
   }
   // m_vrfy->connected.connect(...);
+}
+
+void Route::TlsaResult(const DNS::Tlsa * tlsa) {
+  m_tlsa.push_back(*tlsa);
+  collateNames();
 }
 
 void Route::SessionDialback(XMLStream & stream) {

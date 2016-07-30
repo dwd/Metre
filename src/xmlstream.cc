@@ -16,7 +16,7 @@
 #endif
 
 namespace Metre {
-	bool verify_tls(XMLStream & stream, std::string const & hostname);
+	bool verify_tls(XMLStream & stream, Route & hostname);
 }
 
 using namespace Metre;
@@ -47,7 +47,7 @@ size_t XMLStream::process(unsigned char * p, size_t len) {
 	}
 	if (len == 0) return 0;
 	std::string buf{reinterpret_cast<char *>(p + spaces), len};
-	METRE_LOG("Got [" << len << "] : " << buf);
+	METRE_LOG(m_session << " - Got [" << len << "] : " << buf);
 	try {
 		try {
 			if (m_stream_buf.empty()) {
@@ -535,7 +535,7 @@ bool XMLStream::process(Stanza & s) {
 	return true;
 }
 
-bool XMLStream::tls_auth_ok(std::string const & hostname) {
+bool XMLStream::tls_auth_ok(Route & route) {
 	if (!m_secured) return false;
-	return verify_tls(*this, hostname);
+	return verify_tls(*this, route);
 }

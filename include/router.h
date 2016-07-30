@@ -26,6 +26,7 @@ namespace Metre {
 		std::vector<DNS::SrvRR>::const_iterator m_rr;
 		DNS::Address m_addr;
 		std::vector<uint32_t>::const_iterator m_arr;
+		std::vector<DNS::Tlsa> m_tlsa;
 	public:
 		Route(Jid const & from, Jid const & to);
 		std::string const & domain() {
@@ -37,13 +38,25 @@ namespace Metre {
 		void transmit(std::unique_ptr<Stanza>);
 		void transmit(std::unique_ptr<Verify>);
 
+		void doSrvLookup();
+
 	// Callbacks:
 		void SrvResult(DNS::Srv const *);
 		void AddressResult(DNS::Address const *);
+		void TlsaResult(DNS::Tlsa const *);
 
 	// Slots
 		void SessionDialback(XMLStream &);
 		void SessionAuthenticated(XMLStream &);
+
+		void collateNames();
+		sigslot::signal<sigslot::thread::st, Route &> onNamesCollated;
+		std::vector<DNS::Tlsa> const & tlsa() const {
+			return m_tlsa;
+		}
+		DNS::Srv const & srv() const {
+			return m_srv;
+		}
 	};
 
 	class RouteTable {

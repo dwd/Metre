@@ -48,7 +48,7 @@ namespace {
 		}
 	};
 
-	class Dialback : public Feature {
+	class Dialback : public Feature, public sigslot::has_slots<> {
 	public:
 		Dialback(XMLStream & s) : Feature(s) {}
 		class Description : public Feature::Description<Dialback> {
@@ -59,6 +59,28 @@ namespace {
 		/**
 		 * Inbound handling.
 		 */
+		void result_step(Route & route, std::string const & key) {
+			route.onNamesCollated.disconnect(this);
+			// Shortcuts here.
+			if (m_stream.tls_auth_ok(route)) {
+				xml_document<> d;
+				auto result = d.allocate_node(node_element, "db:result");
+				result->append_attribute(d.allocate_attribute("from", route.local().c_str()));
+				result->append_attribute(d.allocate_attribute("to", route.domain().c_str()));
+				result->append_attribute(d.allocate_attribute("type", "valid"));
+				d.append_node(result);
+				m_stream.send(d);
+				m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::AUTHORIZED);
+			}
+			Config::Domain const & from_domain = Config::config().domain(route.domain());
+			if (!from_domain.auth_dialback()) {
+				// TODO !!!!!
+				throw Metre::host_unknown("Will not perform dialback with you.");
+			}
+			m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::REQUESTED);
+			// With syntax done, we should send the key:
+			route.transmit(std::unique_ptr<Verify>(new Verify(route.local(), route.domain(), m_stream.stream_id(), key, m_stream)));
+		}
 
 		void result(rapidxml::xml_node<> * node) {
 			/*
@@ -70,6 +92,7 @@ namespace {
 			if (!key || !key[0]) {
 				throw Metre::unsupported_stanza_type("Missing key");
 			}
+			std::string keystr{key};
 			// And a from/to:
 			auto from = node->first_attribute("from");
 			auto to = node->first_attribute("to");
@@ -86,24 +109,12 @@ namespace {
 			if (!m_stream.secured() && Config::config().domain(tojid.domain()).require_tls()) {
 				throw Metre::host_unknown("Domain requires TLS");
 			}
-			// Shortcuts here.
-			if (m_stream.tls_auth_ok(fromjid.domain())) {
-				xml_document<> d;
-				auto result = d.allocate_node(node_element, "db:result");
-				result->append_attribute(d.allocate_attribute("from", tojid.domain().c_str()));
-				result->append_attribute(d.allocate_attribute("to", fromjid.domain().c_str()));
-				result->append_attribute(d.allocate_attribute("type", "valid"));
-				d.append_node(result);
-				m_stream.send(d);
-				m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), INBOUND, XMLStream::AUTHORIZED);
-			}
-			if (!from_domain.auth_dialback()) {
-				throw Metre::host_unknown("Will not perform dialback with you.");
-			}
-			m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), INBOUND, XMLStream::REQUESTED);
-			// With syntax done, we should send the key:
-			std::shared_ptr<Route> route = RouteTable::routeTable(tojid).route(fromjid);
-			route->transmit(std::unique_ptr<Verify>(new Verify(fromjid, tojid, m_stream.stream_id(), key, m_stream)));
+			// Need to perform name collation:
+			std::shared_ptr<Route> & route = RouteTable::routeTable(tojid).route(fromjid);
+			route->onNamesCollated.connect(this, [this,keystr](Route & r) {
+				result_step(r, keystr);
+			});
+			route->collateNames();
 		}
 
 		void result_valid(rapidxml::xml_node<> * node) {

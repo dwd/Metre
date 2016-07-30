@@ -28,9 +28,9 @@ namespace Metre {
   class Config {
   public:
       /* DNS */
-      typedef sigslot::signal<sigslot::thread::mt, DNS::Srv const*> srv_callback_t;
-      typedef sigslot::signal<sigslot::thread::mt, DNS::Address const*> addr_callback_t;
-      typedef sigslot::signal<sigslot::thread::mt, DNS::Tlsa const*> tlsa_callback_t;
+      typedef sigslot::signal<sigslot::thread::st, DNS::Srv const*> srv_callback_t;
+      typedef sigslot::signal<sigslot::thread::st, DNS::Address const*> addr_callback_t;
+      typedef sigslot::signal<sigslot::thread::st, DNS::Tlsa const*> tlsa_callback_t;
 
       class Domain {
     public:

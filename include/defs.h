@@ -19,6 +19,8 @@ namespace Metre {
 	class Filter;
 	class Stanza;
 	class XMLStream;
+	class Route;
 }
 
+#define SIGSLOT_PURE_ISO
 #endif
