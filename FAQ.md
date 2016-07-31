@@ -21,7 +21,7 @@ sort of servers anyway). It can offer services - but it actually only provides X
 ping responses which are useful for diagnostics and testing. I might add version.
 
 What it's for is for hosting components outside of a full server, and for letting two
-servers which cannot talk to each other directly connect through it "back to back".
+servers which cannot, or must not, talk to each other directly connect through it "back to back".
 
 So if you have a number of internal services which cannot be exposed, or cannot perform
 the required security, you can have those setup as "forwarded" domains, and Metre will respond
@@ -30,7 +30,9 @@ your service `example.com` to the world, but you don't want to risk having it di
 then you'd put Metre in your DMZ, have `example.com` connect to it, instead of the internet,
 and then the world will connect to Metre.
 
-Metre does need your TLS certificate and private key, however. Something like:
+Metre does need your TLS certificate and private key, however. It is acting as a "Man in
+the middle", joining two security domains - the world (the outer domain) sees Metre as
+being your XMPP Server, whereas your XMPP Server sees Metre as being, in effect, the world.
 
 Example:
 
@@ -74,7 +76,7 @@ Even now, you'll need to lower DH parameter sizes for that server - you can do t
 with either `<dhparam size='1024'/>` or `<dhparam size='2048'/>` (for Java7 and Java8)
 within the `<domain/>` stanza for the Java server. Metre picks the DH parameter size
 based on the minimum of the requested, and the minimum configured size. Allowable
-sizes are 1024, 2048 and 4096 - the latter si the default.
+sizes are 1024, 2048 and 4096 - the latter is the default.
 
 Frustratingly, servers ask for low keylengths by default - OpenSSL asks for 1024, for
 example, even when it will cheerfully support higher.
@@ -162,6 +164,7 @@ I use DNSSEC! What does Metre do?
 That's great. DNSSEC support in Metre is fairly slim, currently. It will:
 
 * Throw away DNS records that are incorrectly [un]signed.
+* Use DNSSEC-signed SRV records to gather more reference identifiers for certificates.
 * You can also throw away all unsigned records for some server lookups.
 
 To do the latter, add a `<dns dnssec='true'/>` element to the domain stanza (or any
