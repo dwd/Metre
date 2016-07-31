@@ -22,7 +22,8 @@ namespace {
             Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
             virtual void offer(xml_node<> * node, XMLStream & stream) override {
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) == XMLStream::AUTHORIZED) return;
-                if (stream.tls_auth_ok(stream.remote_domain())) {
+                std::shared_ptr<Route> & route = RouteTable::routeTable(stream.local_domain()).route(stream.remote_domain());
+                if (stream.tls_auth_ok(*route)) {
                     xml_document<> *d = node->document();
                     auto feature = d->allocate_node(node_element, "mechanisms");
                     feature->append_attribute(d->allocate_attribute("xmlns", sasl_ns.c_str()));
@@ -65,7 +66,8 @@ namespace {
             if (authzid != m_stream.remote_domain()) {
                 throw Metre::not_authorized("Authzid and stream from differ");
             }
-            if (m_stream.tls_auth_ok(authzid)) {
+            std::shared_ptr<Route> & route = RouteTable::routeTable(m_stream.local_domain()).route(m_stream.remote_domain());
+            if (m_stream.tls_auth_ok(*route)) {
                 xml_document<> d;
                 auto n = d.allocate_node(node_element, "success");
                 n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
