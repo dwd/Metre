@@ -1,0 +1,6 @@
+[submodule "deps/rapidxml"]
+	path = deps/rapidxml
+	url = http://github.com/dwd/rapidxml
+[submodule "deps/sigslot"]
+	path = deps/sigslot
+	url = http://github.com/dwd/sigslot

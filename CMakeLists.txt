@@ -46,6 +46,6 @@ set(SOURCE_FILES
 add_executable(metre ${SOURCE_FILES})
 target_link_libraries(metre event_core ssl crypto event_openssl unbound)
 include_directories(include)
-include_directories(../rapidxml-1.13)
-include_directories(../SigSlot)
+include_directories(./deps/rapidxml)
+include_directories(./deps/sigslot)
 
