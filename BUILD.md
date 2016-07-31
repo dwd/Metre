@@ -9,10 +9,10 @@ Approximately one minute.
 Ingredients
 ----
 
-libunbound 2.0
-OpenSSL 1.0.2
-git
-CMake 2.8 (or so)
+* libunbound 2.0
+* OpenSSL 1.0.2
+* git
+* CMake 2.8 (or so)
 
 Method
 ----
