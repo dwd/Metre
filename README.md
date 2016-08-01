@@ -24,10 +24,10 @@ Currently working:
 Currently poorly tested:
 * S2S <-> S2S proxying
 * Basic Filtering
+* DNS overrides (SRV, A, and TLSA per-domain)
+* DANE (including via TLSA overrides as above)
+* Daemonizing
 
 Currently unimplemented but planned:
-* DNS overrides (although A records are done)
 * Semantic filtering
-* DANE
 * IPv6
-* Daemonizing

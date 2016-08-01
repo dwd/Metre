@@ -12,6 +12,7 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <dhparams.h>
+#include <openssl/x509v3.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -232,14 +233,18 @@ namespace Metre {
                             goto tlsa_done;
                         }
                         break;
-                    case DNS::TlsaRR::TrustAnchorAssertion:
-                        if (result != X509_V_OK) continue;
                     case DNS::TlsaRR::CAConstraint:
+                        if (result != X509_V_OK) continue;
+                    case DNS::TlsaRR::TrustAnchorAssertion:
                         if (sk_X509_num(verified) == 0) continue; // Problem there.
                         X509 *ta = sk_X509_value(verified, sk_X509_num(verified) - 1);
                         if (tlsa_matches(rr, ta)) {
-                            dane_ok = true;
-                            goto tlsa_done;
+                            if (rr.certUsage == DNS::TlsaRR::TrustAnchorAssertion) {
+                                dane_ok = (1 == X509_check_host(cert, route.domain().c_str(), route.domain().size(), 0, NULL));
+                            } else {
+                                dane_ok = true;
+                            }
+                            if (dane_ok) goto tlsa_done;
                         }
                 }
             }

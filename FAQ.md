@@ -161,7 +161,7 @@ will want components available to external servers - but you can change this if 
 I use DNSSEC! What does Metre do?
 ----
 
-That's great. DNSSEC support in Metre is fairly slim, currently. It will:
+That's great. Metre will:
 
 * Throw away DNS records that are incorrectly [un]signed.
 * Use DNSSEC-signed SRV records to gather more reference identifiers for certificates.
@@ -169,6 +169,57 @@ That's great. DNSSEC support in Metre is fairly slim, currently. It will:
 
 To do the latter, add a `<dns dnssec='true'/>` element to the domain stanza (or any
 stanza, if you're in an all-DNSSEC environment).
+
+I want to override DNS / my peer doesn't do DNS properly.
+----
+
+You can override the SRV, A, and TLSA DNS lookups in the `<dns/>` element. Such overrides
+are treated as if they were DNSSEC signed (since we assume your config file is a secure source),
+so you can specify `dnssec='true'` if you override everything. Note that you'll need to override
+both SRV and A records, typically.
+
+```xml
+<domain name='no-dns.example.com'>
+  <dns>
+    <srv host='xmpp-server.example.com' port=5269'/>
+    <host name='xmpp-server.example.com' a='192.168.0.1'/>
+  </dns>
+</domain>
+```
+
+I hate CAs! Tell me it does DANE! Please, tell me it does DANE!
+----
+
+OK, than. It does DANE.
+
+No, really, it does, but it's poorly tested, particularly for the DomainCert and
+TrustAnchorAssertion. As a CA-hating person, therefore, you may be out of luck.
+
+I suspect the CAConstraint and CertConstraint ones work OK.
+
+It'll do both SubjectPublicKeyInfo and FullCert matching, but I've not tested hashes yet - though
+they should work OK.
+
+I run a private CA internally and/or my partner organisation doesn't use a CA I recognise.
+----
+
+That's fine. Specifying a TLSA record override will work (subject to caveats above). TLSA
+records overridden are always used, even if there isn't an (otherwise) secure DNS path
+to them. The hostname/port are always ignored (long story, but it's safe), but still need
+specifying (which is stupid, probably).
+
+Match data can be given as either a filename (which must contain at least one '/') or as
+base64 encoded data, for "Full" matchtype. The file (or data) must be a DER encoded object.
+
+For the two hashes, you can just put the hash in hex form. Colons optional.
+
+```xml
+<domain name='shifty.example.com'>
+  <dns>
+    <tlsa hostname='shifty.example.com' port='5269' matchtype='Full' certusage='TrustAnchorAssertion' selector='FullCert'>./some-cert.der</tlsa>
+  </dns>
+</domain>
+```
 
 Does Metre pass through all traffic unchanged?
 ----
