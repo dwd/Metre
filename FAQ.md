@@ -67,7 +67,8 @@ Does it score OK on the IM Observatory?
 
 It can get an A without much effort; the defaults are designed around this. 
 
-* I'm connecting a Java server and...
+I'm connecting a Java server and...
+----
 
 Java, until recently, couldn't handle reasonable DH parameters used for Perfect
 Forward Secrecy, and would choke.
@@ -78,8 +79,7 @@ within the `<domain/>` stanza for the Java server. Metre picks the DH parameter 
 based on the minimum of the requested, and the minimum configured size. Allowable
 sizes are 1024, 2048 and 4096 - the latter is the default.
 
-Frustratingly, servers ask for low keylengths by default - OpenSSL asks for 1024, for
-example, even when it will cheerfully support higher.
+It may well be that the OpenSSL API used always asks for 1024 bits, mind...
 
 Example:
 
@@ -136,7 +136,10 @@ have basic ciphers, and so on.
 In particular, the authentication methods (pkix, dialback, and secret) are how Metre will
 authenticate the remote domain, and not how it will authenticate itself *to* the remote domain.
 
-However the `<509/>` identity is how Metre will behave for the domain when it's hosting it, and not what it'll
+Similarly, the `<dns/>` stanza controls lookups associated with the remote domain (so you can
+override host lookups for just one domain, even if the host is also used by another).
+
+However the `<x509/>` identity is how Metre will behave for the domain when it's hosting it, and not what it'll
 be using when connecting remotely.
 
 How are XEP-0114 components hosted?
@@ -144,7 +147,7 @@ How are XEP-0114 components hosted?
 
 XEP-0114 components are, to Metre, just another kind of remote server, albeit one it
 cannot initiate a connection to. The difference is that you'll need to define the `<transport/>` type as "114",
-and set a secret for the authentication with a child element of `<auth type='secret'/>`, like so:
+and set a secret for the authentication with a child element of `<auth type='secret'/>`, containing the dialback secret, like so:
 
 ```xml
 <domain name='component.example.com'>
@@ -157,6 +160,9 @@ and set a secret for the authentication with a child element of `<auth type='sec
 Most component libraries will not negotiate TLS, so Metre will change the default for the `sec` attribute to false here,
 but you can override it. Similarly, it will change the default for the `forward` attribute on the domain, since most people
 will want components available to external servers - but you can change this if you want.
+
+There's actually code present for connecting to another server as a component - if anyone would find that useful
+let me know.
 
 I use DNSSEC! What does Metre do?
 ----
@@ -181,11 +187,14 @@ both SRV and A records, typically.
 ```xml
 <domain name='no-dns.example.com'>
   <dns>
-    <srv host='xmpp-server.example.com' port=5269'/>
+    <srv host='xmpp-server.example.com' port='5269'/>
     <host name='xmpp-server.example.com' a='192.168.0.1'/>
   </dns>
 </domain>
 ```
+
+DNS overrides only affect those lookups performed for that domain. Loosely,
+the internal API uses the remote domain as context for all lookups.
 
 I hate CAs! Tell me it does DANE! Please, tell me it does DANE!
 ----
@@ -198,7 +207,10 @@ TrustAnchorAssertion. As a CA-hating person, therefore, you may be out of luck.
 I suspect the CAConstraint and CertConstraint ones work OK.
 
 It'll do both SubjectPublicKeyInfo and FullCert matching, but I've not tested hashes yet - though
-they should work OK.
+they should work OK. (So matchtype='Full' is tested, but Sha256 and Sha512 aren't yet).
+
+Note that there are an almost obscene number of permutations of DANE parameters and
+potential inputs, so testing these will not be trivial.
 
 I run a private CA internally and/or my partner organisation doesn't use a CA I recognise.
 ----
