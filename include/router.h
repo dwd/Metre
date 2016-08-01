@@ -51,9 +51,7 @@ namespace Metre {
 
 		void collateNames();
 		sigslot::signal<sigslot::thread::st, Route &> onNamesCollated;
-		std::vector<DNS::Tlsa> const & tlsa() const {
-			return m_tlsa;
-		}
+		std::vector<DNS::Tlsa> const & tlsa() const;
 		DNS::Srv const & srv() const {
 			return m_srv;
 		}

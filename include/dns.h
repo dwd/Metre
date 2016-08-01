@@ -58,7 +58,7 @@ namespace Metre {
 				SubjectPublicKeyInfo=1
 			} Selector;
 			typedef enum {
-				NoHash=0,
+				Full=0,
 				Sha256=1,
 				Sha512=2
 			} MatchType;
@@ -69,8 +69,6 @@ namespace Metre {
 		};
 		class Tlsa {
 		public:
-			short unsigned int port;
-			std::string protocol;
 			std::string domain;
 			std::string error;
 			bool dnssec;

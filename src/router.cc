@@ -230,6 +230,11 @@ void Route::SessionAuthenticated(XMLStream & stream) {
   }
 }
 
+std::vector<DNS::Tlsa> const& Route::tlsa() const {
+  if (m_tlsa.size()) return m_tlsa;
+  return Config::config().domain(m_domain.domain()).tlsa();
+}
+
 RouteTable & RouteTable::routeTable(std::string const & d) {
   static std::unordered_map<std::string,RouteTable> rt;
   auto it = rt.find(d);

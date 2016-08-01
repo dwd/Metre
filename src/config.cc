@@ -16,6 +16,7 @@
 #include <router.h>
 #include <unbound.h>
 #include <sstream>
+#include <base64.h>
 
 #include "log.h"
 
@@ -141,14 +142,72 @@ namespace {
       }
       for (auto hostt = dnst->first_node("host"); hostt; hostt = hostt->next_sibling("host")) {
         auto hosta = hostt->first_attribute("name");
-        if (!hosta) continue;
+        if (!hosta || !hosta->value()) continue;
         std::string host = hosta->value();
         auto aa = hostt->first_attribute("a");
-        if (!aa) continue;
+        if (!aa || !aa->value()) continue;
         struct in_addr ina;
         if (inet_aton(aa->value(), &ina)) {
           dom->host(host, ina.s_addr);
         }
+      }
+      for (auto srvt = dnst->first_node("srv"); srvt; srvt = srvt->next_sibling("srv")) {
+        auto hosta = srvt->first_attribute("host");
+        if (!hosta || !hosta->value()) continue;
+        std::string host = hosta->value();
+        auto porta = srvt->first_attribute("port");
+        if (porta && porta->value()) {
+          std::istringstream ports(porta->value());
+          unsigned short port;
+          ports >> port;
+          dom->srv(host, 0, 0, port);
+        }
+      }
+      for (auto tlsa = dnst->first_node("tlsa"); tlsa; tlsa = tlsa->next_sibling("tlsa")) {
+        auto hosta = tlsa->first_attribute("hostname");
+        if (!hosta || !hosta->value()) continue;
+        std::string host = hosta->value();
+        auto porta = tlsa->first_attribute("port");
+        if (!porta || !porta->value()) continue;
+        std::istringstream ports(porta->value());
+        unsigned short port;
+        ports >> port;
+        auto certusagea = tlsa->first_attribute("certusage");
+        if (!certusagea || !certusagea->value()) continue;
+        DNS::TlsaRR::CertUsage certUsage;
+        std::string certusages = certusagea->value();
+        if (certusages == "CAConstraint") {
+          certUsage = DNS::TlsaRR::CAConstraint;
+        } else if (certusages == "CertConstraint") {
+          certUsage = DNS::TlsaRR::CertConstraint;
+        } else if (certusages == "TrustAnchorAssertion") {
+          certUsage = DNS::TlsaRR::TrustAnchorAssertion;
+        } else if (certusages == "DomainCert") {
+          certUsage = DNS::TlsaRR::DomainCert;
+        } else {
+          continue;
+        }
+        auto matchtypea = tlsa->first_attribute("matchtype");
+        if (!matchtypea || !matchtypea->value()) continue;
+        DNS::TlsaRR::MatchType matchType;
+        std::string matchtypes = matchtypea->value();
+        if (matchtypes == "Full") {
+          matchType = DNS::TlsaRR::Full;
+        } else if (matchtypes == "Sha256") {
+          matchType = DNS::TlsaRR::Sha256;
+        } else if (matchtypes == "Sha512") {
+          matchType = DNS::TlsaRR::Sha512;
+        }
+        auto selectora = tlsa->first_attribute("selector");
+        if (!selectora || !selectora->value()) continue;
+        DNS::TlsaRR::Selector selector;
+        std::string sel = selectora->value();
+        if (sel == "FullCert") {
+          selector = DNS::TlsaRR::FullCert;
+        } else if (matchtypes == "SubjectPublicKeyInfo") {
+          selector = DNS::TlsaRR::SubjectPublicKeyInfo;
+        }
+        dom->tlsa(host, port, certUsage, selector, matchType, tlsa->value());
       }
     }
     dom->dnssec_required(dnssec_required);
@@ -398,7 +457,71 @@ void Config::Domain::tlsa(std::string const & hostname, unsigned short port, DNS
   std::ostringstream out;
   out << "_" << port << "._tcp." << hostname;
   std::string domain = out.str();
-  DNS::Tlsa tlsa;
+  auto tlsait = m_tlsarecs.find(domain);
+  DNS::Tlsa * tlsa;
+  if (tlsait == m_tlsarecs.end()) {
+    std::unique_ptr<DNS::Tlsa> tlsan(new DNS::Tlsa);
+    tlsan->dnssec = true;
+    tlsan->domain = domain;
+    tlsa = tlsan.get();
+    m_tlsarecs[domain] = std::move(tlsan);
+  } else {
+    tlsa = tlsait->second.get();
+  }
+  DNS::TlsaRR rr;
+  rr.certUsage = certUsage;
+  rr.matchType = matchType;
+  rr.selector = selector;
+  // Match data. Annoying.
+  // If the match type was a hash, it'll be an inline hash.
+  switch (matchType) {
+    case DNS::TlsaRR::Sha256:
+    case DNS::TlsaRR::Sha512: {
+      unsigned char byte = 0;
+      bool flip = false;
+      for (auto c : value) {
+        if (std::isdigit(c)) {
+          byte += (c - '0');
+        } else if (c >= 'A' && c <= 'F') {
+          byte += (c - 'A' + 0xA);
+        } else if (c >= 'a' && c <= 'f') {
+          byte += (c - 'a' + 0xA);
+        } else {
+          continue;
+        }
+        if (flip) {
+          rr.matchData += byte;
+          byte = 0;
+          flip = false;
+        } else {
+          byte <<= 4;
+          flip = true;
+        }
+      }
+    }
+    default: {
+      bool read_ok = false;
+      if (value.find('\n') == std::string::npos && value.find('/') != std::string::npos) {
+        std::ifstream in(value);
+        rr.matchData.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        if (!rr.matchData.empty()) {
+          read_ok = true;
+        }
+      }
+      if (!read_ok) {
+        rr.matchData = base64_decode(value);
+      }
+    }
+  }
+  tlsa->rrs.push_back(rr);
+}
+std::vector<DNS::Tlsa> const & Config::Domain::tlsa() const {
+  if (m_tlsa_all.empty()) {
+    for (auto & item : m_tlsarecs) {
+      m_tlsa_all.push_back(*item.second);
+    }
+  }
+  return m_tlsa_all;
 }
 void Config::Domain::tlsa_lookup_done(int err, struct ub_result * result) {
   std::string error;

@@ -144,6 +144,40 @@ namespace {
 }
 
 namespace Metre {
+    bool tlsa_matches(DNS::TlsaRR const & rr, X509 * cert) {
+        unsigned char * freeme = nullptr;
+        unsigned char * matchdata;
+        unsigned char digest[SHA512_DIGEST_LENGTH];
+        int len = 0;
+        bool retval = false;
+        if (rr.selector == DNS::TlsaRR::FullCert) {
+            len = i2d_X509(cert, &freeme);
+        } else if (rr.selector == DNS::TlsaRR::SubjectPublicKeyInfo) {
+            X509_PUBKEY * pubkey = X509_get_X509_PUBKEY(cert);
+            len = i2d_X509_PUBKEY(pubkey, &freeme);
+            X509_PUBKEY_free(pubkey);
+        } else {
+            goto match_fail;
+        }
+        if (len <= 0) goto match_fail;
+        matchdata = freeme;
+        if (rr.matchType == DNS::TlsaRR::Sha256) {
+            SHA256(freeme, len, digest);
+            matchdata = digest;
+            len = SHA256_DIGEST_LENGTH;
+        } else if (rr.matchType == DNS::TlsaRR::Sha512) {
+            SHA256(freeme, len, digest);
+            matchdata = digest;
+            len = SHA256_DIGEST_LENGTH;
+        } else if (rr.matchType != DNS::TlsaRR::Full) {
+            goto match_fail;
+        }
+        if (rr.matchData == std::string(reinterpret_cast<char *>(matchdata), static_cast<unsigned long>(len))) retval = true;
+    match_fail:
+        OPENSSL_free(freeme);
+        return retval;
+    }
+
     bool verify_tls(XMLStream & stream, Route & route) {
         SSL * ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
         if (!ssl) return false; // No TLS.
@@ -183,8 +217,37 @@ namespace Metre {
         X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
         ///X509_VERIFY_PARAM_free(vpm);
         int result = X509_verify_cert(st);
+        STACK_OF(X509) * verified = X509_STORE_CTX_get1_chain(st);
+        // If we have DANE records, iterate through them to find one that works.
+        bool dane_ok = true;
+        if (route.tlsa().size() > 0) dane_ok = false; // At least one must pass.
+        for (auto & tlsa : route.tlsa()) {
+            for (auto & rr : tlsa.rrs) {
+                switch (rr.certUsage) {
+                    case DNS::TlsaRR::CertConstraint:
+                        if (result != X509_V_OK) continue;
+                    case DNS::TlsaRR::DomainCert:
+                        if (tlsa_matches(rr, sk_X509_value(verified, 0))) {
+                            dane_ok = true;
+                            goto tlsa_done;
+                        }
+                        break;
+                    case DNS::TlsaRR::TrustAnchorAssertion:
+                        if (result != X509_V_OK) continue;
+                    case DNS::TlsaRR::CAConstraint:
+                        if (sk_X509_num(verified) == 0) continue; // Problem there.
+                        X509 *ta = sk_X509_value(verified, sk_X509_num(verified) - 1);
+                        if (tlsa_matches(rr, ta)) {
+                            dane_ok = true;
+                            goto tlsa_done;
+                        }
+                }
+            }
+        }
+    tlsa_done:
+        sk_X509_pop_free(verified, &X509_free);
         X509_STORE_CTX_free(st);
-        METRE_LOG(Metre::Log::INFO, std::string("[Re]verify was ") + (result == X509_V_OK ? "SUCCESS" : "FAILURE"));
-        return result == X509_V_OK;
+        METRE_LOG(Metre::Log::INFO, std::string("[Re]verify was ") + (dane_ok && result == X509_V_OK ? "SUCCESS" : "FAILURE"));
+        return dane_ok && result == X509_V_OK;
     }
 }

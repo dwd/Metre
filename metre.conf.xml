@@ -56,9 +56,7 @@
       <dns><!-- Override DNS records. -->
         <srv host='peirce.dave.cridland.net' port='5269'/>
         <host name='peirce.dave.cridland.net' a='217.155.137.61'/>
-        <tlsa hostname='peirce.dave.cridland.net' port='5269' certusage='DomainCert' selector='SubjectPublicKeyInfo' matchtype='Sha512'>
-            <!-- ... -->
-        </tlsa>
+        <tlsa hostname='peirce.dave.cridland.net' port='5269' certusage='DomainCert' selector='FullCert' matchtype='Full'>./cridland.der</tlsa>
       </dns>
     </domain>
     <domain name="surevine.com">

@@ -87,6 +87,7 @@ namespace Metre {
       void host(std::string const & hostname, uint32_t inaddr);
       void srv(std::string const &, unsigned short, unsigned short, unsigned short);
       void tlsa(std::string const & hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage, DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const & value);
+      std::vector<DNS::Tlsa> const & tlsa() const;
 
         /* DNS */
         srv_callback_t & SrvLookup(std::string const & domain) const;
@@ -119,6 +120,7 @@ namespace Metre {
       std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
       std::map<std::string, std::unique_ptr<DNS::Srv>> m_srvrecs;
       std::map<std::string, std::unique_ptr<DNS::Tlsa>> m_tlsarecs;
+      mutable std::vector<DNS::Tlsa> m_tlsa_all;
           mutable srv_callback_t m_srv_pending;
           mutable addr_callback_t m_a_pending;
           mutable tlsa_callback_t m_tlsa_pending;
