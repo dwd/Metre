@@ -8,7 +8,6 @@
 #include "rapidxml.hpp"
 #include <optional> // Uses the supplied optional by default.
 #include "xmppexcept.h"
-#include "server.h"
 #include "netsession.h"
 #include <event2/event.h>
 #include <event2/listener.h>
@@ -31,7 +30,6 @@ namespace Metre {
 	private:
 		struct event_base * m_event_base;
 		struct event * m_listen;
-		Server & m_server;
 		std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;
 		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_id;
 		std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_domain;
@@ -42,10 +40,17 @@ namespace Metre {
 		static std::atomic<unsigned long long> s_serial;
 		std::list<std::shared_ptr<NetSession>> m_closed_sessions;
 		std::list<std::function<void()>> m_pending_actions;
+		bool m_shutdown = false;
+		bool m_shutdown_now = false;
 	public:
 		static Mainloop * s_mainloop;
-		Mainloop(Server & server) : m_event_base(0), m_listen(0), m_server(server), m_sessions(), m_ub_event(0) {
+		Mainloop() : m_event_base(0), m_listen(0), m_sessions(), m_ub_event(0) {
 			s_mainloop = this;
+		}
+		~Mainloop() {
+			event_del(m_ub_event);
+			event_free(m_ub_event);
+			event_base_free(m_event_base);
 		}
 		bool init() {
 			if (m_event_base) throw std::runtime_error("I'm already initialized!");
@@ -56,7 +61,7 @@ namespace Metre {
 				if (!m_server_listener) {
 					throw std::runtime_error(std::string("Cannot bind to server port: ") + strerror(errno));
 				}
-				METRE_LOG("Listening to server.");
+				METRE_LOG(Metre::Log::INFO, "Listening to server.");
 			}
 			{
 				sockaddr_in6 sin = { AF_INET6, htons(5347), 0, { {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0} }, 0 };
@@ -64,7 +69,7 @@ namespace Metre {
 				if (!m_component_listener) {
 					throw std::runtime_error(std::string("Cannot bind to component port: ") + strerror(errno));
 				}
-				METRE_LOG("Listening to component.");
+				METRE_LOG(Metre::Log::INFO, "Listening to component.");
 			}
 			return true;
 		}
@@ -133,12 +138,16 @@ namespace Metre {
 		}
 
 		void new_session_inbound(evutil_socket_t sock, struct sockaddr * sin, int sinlen, SESSION_TYPE stype) {
+			if (m_shutdown || m_shutdown_now) {
+				evutil_closesocket(sock);
+				return;
+			}
 			struct bufferevent * bev = bufferevent_socket_new(m_event_base, sock, BEV_OPT_CLOSE_ON_FREE);
-			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, stype, &m_server));
+			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, stype));
 			auto it = m_sessions.find(session->serial());
 			if (it != m_sessions.end()) {
 				// We already have one for this socket. This seems unlikely to be safe.
-				METRE_LOG("Session already in ownership table; corruption.");
+				METRE_LOG(Metre::Log::CRIT, "Session already in ownership table; corruption.");
 				assert(false);
 			}
 			m_sessions[session->serial()] = session;
@@ -151,7 +160,7 @@ namespace Metre {
 			sin.sin_addr.s_addr = addr;
 			sin.sin_port = htons(port);
 			char buf[25];
-			METRE_LOG("Connecting to " << inet_ntop(AF_INET, &sin.sin_addr, buf, 25) << ":" << ntohs(sin.sin_port)  << ":" << port);
+			METRE_LOG(Metre::Log::DEBUG, "Connecting to " << inet_ntop(AF_INET, &sin.sin_addr, buf, 25) << ":" << ntohs(sin.sin_port)  << ":" << port);
 			std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin), port);
 			m_sessions_by_address[std::make_pair(hostname,port)] = sesh;
 			auto it = m_sessions_by_domain.find(tod);
@@ -165,20 +174,20 @@ namespace Metre {
 		std::shared_ptr<NetSession> connect(std::string const & fromd, std::string const & tod, std::string const & hostname, struct sockaddr * sin, size_t addrlen, unsigned short port) {
 			struct bufferevent * bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
 			if (!bev) {
-				METRE_LOG("Error creating BEV");
+				METRE_LOG(Metre::Log::CRIT, "Error creating BEV");
 				// TODO ARGH!
 			}
 			if(0 > bufferevent_socket_connect(bev, sin, addrlen)) {
-				METRE_LOG("Error connecting BEV");
+				METRE_LOG(Metre::Log::ERR, "Error connecting BEV");
 				// TODO Something bad happened.
 				bufferevent_free(bev);
 			}
-			METRE_LOG("BEV fd is " << bufferevent_getfd(bev));
-			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, &m_server));
+			METRE_LOG(Metre::Log::DEBUG, "BEV fd is " << bufferevent_getfd(bev));
+			std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod));
 			auto it = m_sessions.find(session->serial());
 			if (it != m_sessions.end()) {
 				// We already have one for this socket. This seems unlikely to be safe.
-				METRE_LOG("Session already in ownership table; corruption.");
+				METRE_LOG(Metre::Log::CRIT, "Session already in ownership table; corruption.");
 				assert(false);
 			}
 			m_sessions[session->serial()] = session;
@@ -190,6 +199,9 @@ namespace Metre {
 			dns_setup();
 			while(true) {
 				event_base_dispatch(m_event_base);
+				if (m_shutdown_now && m_sessions.empty()) {
+					return;
+				}
 				m_closed_sessions.clear();
 				while (!m_pending_actions.empty()) {
 					std::list<std::function<void()>> pending;
@@ -198,12 +210,31 @@ namespace Metre {
 						f();
 					}
 				}
+				if (m_shutdown) {
+					METRE_LOG(Metre::Log::INFO, "Closing sessions.");
+					evconnlistener_disable(m_component_listener);
+					evconnlistener_disable(m_server_listener);
+					evconnlistener_free(m_component_listener);
+					evconnlistener_free(m_server_listener);
+					for (auto & it : m_sessions) {
+						it.second->send("<stream:error><system-shutdown xmlns='urn:ietf:params:xml:ns:xmpp-streams'/></stream:error></stream:close>");
+						it.second->close();
+					}
+					m_shutdown_now = true;
+					event_base_loopexit(m_event_base, NULL);
+					METRE_LOG(Metre::Log::INFO, "Closed all sessions.");
+				}
 			}
 		}
 
 		void do_later(std::function<void()> && fn) {
 			m_pending_actions.emplace_back(std::move(fn));
-			event_base_loopbreak(m_event_base);
+			event_base_loopexit(m_event_base, NULL);
+		}
+
+		void shutdown() {
+			m_shutdown = true;
+			event_base_loopexit(m_event_base, NULL);
 		}
 
 		static void unbound_cb(evutil_socket_t, short, void * arg) {
@@ -215,6 +246,12 @@ namespace Metre {
 				m_ub_event = event_new(m_event_base, ub_fd(Config::config().ub_ctx()), EV_READ|EV_PERSIST, unbound_cb, Config::config().ub_ctx());
 				event_add(m_ub_event, NULL);
 			}
+		}
+
+		void reload() {
+			event_del(m_ub_event);
+			event_free(m_ub_event);
+			dns_setup();
 		}
 
 		void session_closed(NetSession & ns) {
@@ -256,19 +293,24 @@ namespace Metre {
 		void defer(std::function<void()> && fn) {
 			Mainloop::s_mainloop->do_later(std::move(fn));
 		}
+
+		void main() {
+			Metre::Mainloop loop;
+			if (!loop.init()) {
+				METRE_LOG(Metre::Log::CRIT, "Loop initialization failure");
+				return;
+			}
+			loop.run();
+			METRE_LOG(Metre::Log::INFO, "Shutdown complete");
+		}
+
+		void quit() {
+			METRE_LOG(Metre::Log::INFO, "Shutting down...");
+			Mainloop::s_mainloop->shutdown();
+		}
+
+		void reload() {
+			Mainloop::s_mainloop->reload();
+		}
 	}
-}
-
-int main(int argc, char *argv[]) {
-	Metre::Server server;
-	Metre::Mainloop loop(server);
-	new Metre::Log("./metre.log");
-	new Metre::Config("./metre.conf.xml");
-
-	if (!loop.init()) {
-		return 1;
-	}
-	loop.run();
-
-	return 0;
 }

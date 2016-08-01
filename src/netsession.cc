@@ -12,13 +12,13 @@
 
 using namespace Metre;
 
-NetSession::NetSession(long long unsigned serial, struct bufferevent * bev, SESSION_TYPE type, Server * server)
-	: m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, server, INBOUND, type)), m_server(server) {
+NetSession::NetSession(long long unsigned serial, struct bufferevent * bev, SESSION_TYPE type)
+	: m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, INBOUND, type)) {
 		bufferevent(bev);
 }
 
-NetSession::NetSession(long long unsigned serial, struct bufferevent * bev, std::string const & stream_from, std::string const & stream_to, Server * server)
-	: m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, server, OUTBOUND, S2S, stream_from, stream_to)), m_server(server) {
+NetSession::NetSession(long long unsigned serial, struct bufferevent * bev, std::string const & stream_from, std::string const & stream_to)
+	: m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, OUTBOUND, S2S, stream_from, stream_to)) {
 	bufferevent(bev);
 }
 
@@ -53,7 +53,7 @@ bool NetSession::drain() {
 		if (!m_xml_stream->closed()) {
 			m_xml_stream->process(evbuffer_pullup(buf, -1), len);
 		} else {
-			METRE_LOG("Stuff left after close: {" << len << "}");
+			if (len > 0) METRE_LOG(Metre::Log::WARNING, "Stuff left after close: {" << len << "}");
 			return true;
 		}
 	}
@@ -69,12 +69,12 @@ void NetSession::send(rapidxml::xml_document<> & d) {
 	std::string tmp;
 	rapidxml::print(std::back_inserter(tmp), d, rapidxml::print_no_indenting);
 	struct evbuffer * buf = bufferevent_get_output(m_bev);
-	METRE_LOG(this << " - Send: "  << m_xml_stream << ": " << tmp);
+	METRE_LOG(Metre::Log::DEBUG, this << " - Send: "  << m_xml_stream << ": " << tmp);
 	evbuffer_add(buf, tmp.data(), tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
 }
 void NetSession::send(std::string const & s) {
 	struct evbuffer * buf = bufferevent_get_output(m_bev);
-	METRE_LOG(this << " - Send: "  << m_xml_stream << ": " << s);
+	METRE_LOG(Metre::Log::DEBUG, this << " - Send: "  << m_xml_stream << ": " << s);
 	evbuffer_add(buf, s.data(), s.length());
 }
 void NetSession::send(const char * p) {
@@ -98,14 +98,14 @@ void NetSession::bev_connected() {
 }
 
 void NetSession::event_cb(struct bufferevent *, short events, void * arg) {
-	METRE_LOG("Events have happened.");
+	METRE_LOG(Metre::Log::DEBUG, "Events have happened.");
 	NetSession & ns = *reinterpret_cast<NetSession *>(arg);
 	if (events & BEV_EVENT_ERROR) {
 		ns.bev_closed();
 	} else if (events & BEV_EVENT_EOF) {
 		ns.bev_closed();
 	} else if (events & BEV_EVENT_CONNECTED) {
-		METRE_LOG("Connected.");
+		METRE_LOG(Metre::Log::DEBUG, "Connected.");
 		ns.bev_connected();
 	}
 }

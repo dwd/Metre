@@ -9,6 +9,7 @@
 
 #include "defs.h"
 #include "dns.h"
+#include "log.h"
 
 /**
  * OpenSSL forward declarations.
@@ -123,6 +124,7 @@ namespace Metre {
           mutable tlsa_callback_t m_tlsa_pending;
     };
     Config(std::string const & filename);
+    ~Config();
 
     std::string asString();
 
@@ -132,6 +134,13 @@ namespace Metre {
     std::string const & runtime_dir() const {
       return m_runtime_dir;
     }
+    std::string const & pidfile() const {
+        return m_pidfile;
+    }
+    std::string boot_method() const {
+        return m_boot;
+    }
+    void log_init(bool systemd=false);
     Domain const & domain(std::string const & domain) const;
     Domain const & domain(int domain) const;
 
@@ -151,9 +160,13 @@ namespace Metre {
     std::string m_config_str;
     std::string m_default_domain;
     std::string m_runtime_dir;
+    std::string m_pidfile;
     std::string m_dialback_secret;
+    std::string m_logfile;
+    std::string m_boot;
     std::map<std::string, std::unique_ptr<Domain>> m_domains;
-      struct ub_ctx * m_ub_ctx = nullptr;
+    struct ub_ctx * m_ub_ctx = nullptr;
+    std::unique_ptr<Metre::Log> m_log;
   };
 }
 

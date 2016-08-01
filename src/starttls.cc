@@ -18,18 +18,18 @@ using namespace rapidxml;
 namespace {
     DH * dh_callback(SSL *, int, int keylength) {
         if (keylength < 2048) {
-            METRE_LOG("DH used 1024");
+            METRE_LOG(Metre::Log::DEBUG, "DH used 1024");
             return get_dh1024();
         } else if (keylength < 4096) {
-            METRE_LOG("DH used 2048");
+            METRE_LOG(Metre::Log::DEBUG, "DH used 2048");
             return get_dh2048();
         } else {
-            METRE_LOG("DH used 4096");
+            METRE_LOG(Metre::Log::DEBUG, "DH used 4096");
             return get_dh4096();
         }
     }
     template<int minkey> DH * dh_callback(SSL *, int, int keylength) {
-        METRE_LOG("DH params requested, keylength " << keylength << ", min " << minkey);
+        METRE_LOG(Metre::Log::DEBUG, "DH params requested, keylength " << keylength << ", min " << minkey);
         return dh_callback(nullptr, 0, keylength < minkey ? minkey : keylength);
     }
 
@@ -44,7 +44,7 @@ namespace {
         } else if (dhparam == "2048") {
             SSL_set_tmp_dh_callback(ssl, dh_callback<2048>);
         } else {
-            METRE_LOG("Don't know what dhparam size " << dhparam << " means, using 2048");
+            METRE_LOG(Metre::Log::DEBUG, "Don't know what dhparam size " << dhparam << " means, using 2048");
             SSL_set_tmp_dh_callback(ssl, dh_callback<2048>);
         }
     }
@@ -148,14 +148,14 @@ namespace Metre {
         SSL * ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
         if (!ssl) return false; // No TLS.
         if (X509_V_OK != SSL_get_verify_result(ssl)) {
-            METRE_LOG("Cert failed verification but rechecking anyway.");
+            METRE_LOG(Metre::Log::INFO, "Cert failed verification but rechecking anyway.");
         } // TLS failed basic verification.
         X509 * cert = SSL_get_peer_certificate(ssl);
         if (!cert) {
-            METRE_LOG("No cert, so no auth");
+            METRE_LOG(Metre::Log::INFO, "No cert, so no auth");
             return false;
         }
-        METRE_LOG("[Re]verifying TLS for " + route.domain());
+        METRE_LOG(Metre::Log::DEBUG, "[Re]verifying TLS for " + route.domain());
         STACK_OF(X509) * chain = SSL_get_peer_cert_chain(ssl);
         SSL_CTX * ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE * store = SSL_CTX_get_cert_store(ctx);
@@ -165,7 +165,7 @@ namespace Metre {
         // Add RFC 6125 additional names.
         DNS::Srv const & srv = route.srv();
         if (srv.domain.empty()) {
-            METRE_LOG("Trying to validate TLS before SRV available!");
+            METRE_LOG(Metre::Log::WARNING, "Trying to validate TLS before SRV available!");
         }
         if (srv.dnssec) {
             for (auto & rr : srv.rrs) {
@@ -184,7 +184,7 @@ namespace Metre {
         ///X509_VERIFY_PARAM_free(vpm);
         int result = X509_verify_cert(st);
         X509_STORE_CTX_free(st);
-        METRE_LOG(std::string("[Re]verify was ") + (result == X509_V_OK ? "SUCCESS" : "FAILURE"));
+        METRE_LOG(Metre::Log::INFO, std::string("[Re]verify was ") + (result == X509_V_OK ? "SUCCESS" : "FAILURE"));
         return result == X509_V_OK;
     }
 }

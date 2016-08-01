@@ -17,7 +17,6 @@ set(SOURCE_FILES
     include/optional.h
     include/router.h
     include/sasl.h
-    include/server.h
     include/stanza.h
     include/tests.h
     include/xmlstream.h
@@ -41,7 +40,7 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc
-    src/xmlstream.cc src/saslexternal.cc src/spiffing.cc include/dhparams.h)
+    src/xmlstream.cc src/saslexternal.cc src/spiffing.cc include/dhparams.h src/linuxmain.cc)
 
 add_executable(metre ${SOURCE_FILES})
 target_link_libraries(metre event_core ssl crypto event_openssl unbound)

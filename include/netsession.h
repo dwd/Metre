@@ -24,10 +24,9 @@ namespace Metre {
 		unsigned long long m_serial;
 		struct bufferevent * m_bev;
 		XMLStream * m_xml_stream;
-		Server * m_server;
 	public:
-		NetSession(unsigned long long serial, struct bufferevent * bev, SESSION_TYPE type, Server * server); /* Inbound */
-		NetSession(unsigned long long serial, struct bufferevent * bev, std::string const & stream_from, std::string const & stream_to, Server * server); /* Outbound S2S */
+		NetSession(unsigned long long serial, struct bufferevent * bev, SESSION_TYPE type); /* Inbound */
+		NetSession(unsigned long long serial, struct bufferevent * bev, std::string const & stream_from, std::string const & stream_to); /* Outbound S2S */
 
 		// Scary stuff only used for buffer juggling.
 		struct bufferevent * bufferevent() {

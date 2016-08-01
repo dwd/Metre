@@ -10,7 +10,7 @@
 using namespace Metre;
 
 Route::Route(Jid const & from, Jid const & to) : m_local(from), m_domain(to) {
-  METRE_LOG("Route created, local is " << m_local.domain() << " remote is " << m_domain.domain());
+  METRE_LOG(Metre::Log::DEBUG, "Route created, local is " << m_local.domain() << " remote is " << m_domain.domain());
 }
 
 namespace {
@@ -95,7 +95,7 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
       return;
     }
     m_stanzas.push_back(std::move(s));
-    METRE_LOG("Queued stanza (fallback) for " << m_local.domain() << "=>" << m_domain.domain());
+    METRE_LOG(Metre::Log::DEBUG, "Queued stanza (fallback) for " << m_local.domain() << "=>" << m_domain.domain());
     // TODO : Timeout.
     Config::Domain const & conf = Config::config().domain(m_domain.domain());
     if (conf.transport_type() == S2S) {
@@ -103,7 +103,7 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
     }
     // Otherwise wait.
   } else { // Got a to but it's not ready yet.
-    METRE_LOG("Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain());
+    METRE_LOG(Metre::Log::DEBUG, "Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain());
     m_stanzas.push_back(std::move(s));
   }
 }
@@ -133,9 +133,9 @@ void Route::collateNames() {
 }
 
 void Route::SrvResult(DNS::Srv const * srv) {
-  METRE_LOG("Got SRV");
+  METRE_LOG(Metre::Log::DEBUG, "Got SRV");
   if (!srv->error.empty()) {
-    METRE_LOG("Got an error during DNS: " << srv->error);
+    METRE_LOG(Metre::Log::WARNING, "Got an error during SRV: " << srv->error);
     return;
   }
   m_srv = *srv;
@@ -154,7 +154,7 @@ void Route::SrvResult(DNS::Srv const * srv) {
     return;
   }
   m_rr = m_srv.rrs.begin();
-  METRE_LOG("Should look for " << (*m_rr).hostname << ":" << (*m_rr).port);
+  METRE_LOG(Metre::Log::DEBUG, "Should look for " << (*m_rr).hostname << ":" << (*m_rr).port);
   std::shared_ptr<NetSession> sesh = Router::session_by_address((*m_rr).hostname, (*m_rr).port);
   if (sesh) {
     if (m_vrfy.expired()) m_vrfy = sesh;
@@ -172,13 +172,13 @@ void Route::AddressResult(DNS::Address const * addr) {
     return;
   }
   if (!addr->error.empty()) {
-    METRE_LOG("Got an error during DNS: ");
+    METRE_LOG(Metre::Log::DEBUG, "Got an error during DNS: ");
     return;
   }
   m_addr = *addr;
   m_arr = m_addr.addr4.begin();
   vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname, *m_arr, (*m_rr).port);
-  METRE_LOG("Connected, " << &*vrfy);
+  METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
   vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
   m_vrfy = vrfy;
   if (m_to.expired()) {
@@ -195,9 +195,9 @@ void Route::TlsaResult(const DNS::Tlsa * tlsa) {
 
 void Route::SessionDialback(XMLStream & stream) {
   auto vrfy = m_vrfy.lock();
-  METRE_LOG("Stream is ready for dialback.");
+  METRE_LOG(Metre::Log::DEBUG, "Stream is ready for dialback.");
   if (vrfy && &stream.session() == &*vrfy) {
-    METRE_LOG("Stream is verify.");
+    METRE_LOG(Metre::Log::DEBUG, "Stream is verify.");
     for (auto & v : m_dialback) {
       vrfy->xml_stream().send(std::move(v));
     }
@@ -210,7 +210,7 @@ void Route::SessionDialback(XMLStream & stream) {
   auto to = m_to.lock();
   if (to) {
     if (&stream.session() == &*to) { //] && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
-      METRE_LOG("Stream is to; needs dialback.");
+      METRE_LOG(Metre::Log::DEBUG, "Stream is to; needs dialback.");
       check_to(*this, to);
     }
   }
@@ -222,7 +222,7 @@ void Route::SessionAuthenticated(XMLStream & stream) {
       && !m_stanzas.empty()
       && &stream.session() == &*to
       && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::AUTHORIZED) {
-    METRE_LOG("Stream now ready for stanzas.");
+    METRE_LOG(Metre::Log::DEBUG, "Stream now ready for stanzas.");
     for (auto & s : m_stanzas) {
       to->xml_stream().send(std::move(s));
     }

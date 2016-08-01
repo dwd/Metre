@@ -1,10 +1,8 @@
 #include "feature.h"
 #include "stanza.h"
 #include "router.h"
-#include "xmppexcept.h"
 #include "log.h"
 #include "config.h"
-#include <rapidxml.hpp>
 #include <openssl/sha.h>
 
 using namespace rapidxml;
@@ -65,17 +63,17 @@ namespace {
       std::string stanza = node->name();
       std::unique_ptr<Stanza> s;
       if (stanza == "message") {
-        s = std::move(std::unique_ptr<Stanza>(new Message(node, m_stream)));
+        s.reset(new Message(node, m_stream));
       } else if (stanza == "iq") {
-        s = std::move(std::unique_ptr<Stanza>(new Iq(node, m_stream)));
+        s.reset(new Iq(node, m_stream));
       } else if (stanza == "presence") {
-        s = std::move(std::unique_ptr<Stanza>(new Presence(node, m_stream)));
+        s.reset(new Presence(node, m_stream));
       } else if (stanza == "handshake") {
         std::string const handshake_offered{node->value(), node->value_size()};
         std::string const handshake_expected{handshake_content()};
         if (handshake_offered != handshake_expected) {
-          METRE_LOG("RX: '" << handshake_offered << "'");
-          METRE_LOG("TX: '" << handshake_expected << "'");
+          METRE_LOG(Metre::Log::DEBUG, "RX: '" << handshake_offered << "'");
+          METRE_LOG(Metre::Log::DEBUG, "TX: '" << handshake_expected << "'");
           throw not_authorized("Component handshake failure");
         }
 

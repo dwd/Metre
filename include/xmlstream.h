@@ -24,7 +24,6 @@ namespace Metre {
 		rapidxml::xml_document<> m_stream;
 		rapidxml::xml_document<> m_stanza; // Not, in fact, always a stanza per-se. //
 		NetSession * m_session;
-		Server * m_server;
 		SESSION_DIRECTION m_dir;
 		SESSION_TYPE m_type;
 		std::string m_stream_buf; // Sort-of-temporary buffer //
@@ -44,8 +43,8 @@ namespace Metre {
 		std::map<std::string,Filter *> m_filters;
 
 	public:
-		XMLStream(NetSession * owner, Server * server, SESSION_DIRECTION dir, SESSION_TYPE type);
-		XMLStream(NetSession * owner, Server * server, SESSION_DIRECTION dir, SESSION_TYPE type, std::string const & stream_from, std::string const & stream_to);
+		XMLStream(NetSession * owner, SESSION_DIRECTION dir, SESSION_TYPE type);
+		XMLStream(NetSession * owner, SESSION_DIRECTION dir, SESSION_TYPE type, std::string const & stream_from, std::string const & stream_to);
 		size_t process(unsigned char *, size_t);
 		const char * content_namespace() const;
 		SESSION_TYPE type() const {

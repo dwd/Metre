@@ -84,6 +84,10 @@ namespace Metre {
 		void unregister_stream_id(std::string const &);
 
 		void defer(std::function<void()> &&);
+
+		void main();
+		void reload();
+		void quit();
 	}
 }
 

@@ -185,14 +185,14 @@ int Config::Domain::verify_callback_cb(int preverify_ok, struct x509_store_ctx_s
     std::string cert_name;
     cert_name.resize(name_sz);
     X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)), const_cast<char *>(cert_name.data()), name_sz);
-    METRE_LOG("Cert failed basic verification: " + cert_name);
-    METRE_LOG(std::string("Error is ") + X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
+    METRE_LOG(Metre::Log::INFO, "Cert failed basic verification: " + cert_name);
+    METRE_LOG(Metre::Log::INFO, std::string("Error is ") + X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
   } else {
     const int name_sz = 256;
     std::string cert_name;
     cert_name.resize(name_sz);
     X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)), const_cast<char *>(cert_name.data()), name_sz);
-    METRE_LOG("Cert passed basic verification: " + cert_name);
+    METRE_LOG(Metre::Log::DEBUG, "Cert passed basic verification: " + cert_name);
   }
   return 1;
 }
@@ -231,7 +231,6 @@ void Config::Domain::x509(std::string const & chain, std::string const & pkey) {
 Config::Config(std::string const & filename) : m_config_str(), m_dialback_secret(random_identifier()) {
   load(filename);
   s_config = this;
-  METRE_LOG("Setting up DNS");
   m_ub_ctx = ub_ctx_create();
   if (!m_ub_ctx) {
     throw std::runtime_error("DNS context creation failure.");
@@ -243,6 +242,10 @@ Config::Config(std::string const & filename) : m_config_str(), m_dialback_secret
   if ((retval = ub_ctx_add_ta_file(m_ub_ctx, "keys")) != 0) {
     throw std::runtime_error(ub_strerror(retval));
   }
+}
+
+Config::~Config() {
+  ub_ctx_delete(m_ub_ctx);
 }
 
 void Config::load(std::string const & filename) {
@@ -267,6 +270,25 @@ void Config::load(std::string const & filename) {
         m_default_domain = name_a->value();
       }
     }
+    auto rundir = globals->first_node("rundir");
+    if (rundir && rundir->value()) {
+      m_runtime_dir = rundir->value();
+    }
+    auto logfile = globals->first_node("logfile");
+    if (logfile && logfile->value()) {
+      m_logfile = logfile->value();
+    }
+    auto bootm = globals->first_node("boot_method");
+    if (bootm && bootm->value()) {
+      m_boot = bootm->value();
+    }
+  }
+  if (m_runtime_dir.empty()) {
+    m_runtime_dir = "/var/run/";
+  }
+  m_pidfile = m_runtime_dir + "/metre.pid";
+  if (m_boot.empty()) {
+    m_boot = "none";
   }
   Config::Domain * any_domain = nullptr;
   auto external = root_node->first_node("remote");
@@ -293,6 +315,13 @@ void Config::load(std::string const & filename) {
   if (it == m_domains.end()) {
     m_domains[""] = std::unique_ptr<Config::Domain>(new Config::Domain("", INT, false, true, true, true, true, std::optional<std::string>()));
   }
+}
+
+void Config::log_init(bool systemd) {
+  if (!systemd && m_logfile.empty()) {
+    m_logfile = "/var/log/metre/metre.log";
+  }
+  m_log.reset(new Metre::Log(m_logfile));
 }
 
 Config::Domain const & Config::domain(std::string const & dom) const {
@@ -327,7 +356,7 @@ std::string Config::dialback_key(std::string const & id, std::string const & loc
     hexoutput += ((low < 0x0A) ? '0' : ('a' - 10)) + low;
   }
   assert(hexoutput.length() == 40);
-  METRE_LOG("Dialback key id " << id << " ::  " << local_domain << " | " << remote_domain);
+  METRE_LOG(Metre::Log::DEBUG, "Dialback key id " << id << " ::  " << local_domain << " | " << remote_domain);
   return hexoutput;
 }
 
@@ -393,7 +422,7 @@ void Config::Domain::tlsa_lookup_done(int err, struct ub_result * result) {
       rr.matchType = static_cast<DNS::TlsaRR::MatchType>(result->data[i][2]);
       rr.matchData.assign(result->data[i] + 3, result->len[i] - 3);
       tlsa.rrs.push_back(rr);
-      METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
+      METRE_LOG(Metre::Log::DEBUG, "Data[" << i << "]: (" << result->len[i] << " bytes) "
                 << rr.certUsage << ":"
                 << rr.selector << ":"
                 << rr.matchType << "::"
@@ -402,7 +431,7 @@ void Config::Domain::tlsa_lookup_done(int err, struct ub_result * result) {
     m_tlsa_pending.emit(&tlsa);
     return;
   }
-  METRE_LOG("DNS Error: " << error);
+  METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
   DNS::Tlsa tlsa;
   tlsa.error = error;
   tlsa.domain = result->qname;
@@ -454,7 +483,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result * result) {
         rr.hostname += ".";
       }
       srv.rrs.push_back(rr);
-      METRE_LOG("Data[" << i << "]: (" << result->len[i] << " bytes) "
+      METRE_LOG(Metre::Log::DEBUG, "Data[" << i << "]: (" << result->len[i] << " bytes) "
                 << rr.priority << ":"
                 << rr.weight << ":"
                 << rr.port << "::"
@@ -463,7 +492,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result * result) {
     m_srv_pending.emit(&srv);
     return;
   }
-  METRE_LOG("DNS Error: " << error);
+  METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
   DNS::Srv srv;
   srv.error = error;
   srv.domain = result->qname;
@@ -497,14 +526,14 @@ void Config::Domain::a_lookup_done(int err, struct ub_result * result) {
 }
 
 Config::addr_callback_t & Config::Domain::AddressLookup(std::string const & hostname) const {
-  METRE_LOG("A/AAAA lookup for " << hostname);
+  METRE_LOG(Metre::Log::DEBUG, "A/AAAA lookup for " << hostname);
   auto it = m_host_arecs.find(hostname);
   if (it != m_host_arecs.end()) {
     auto addr = &*(it->second);
     Router::defer([addr,this] () {
         m_a_pending.emit(addr);
     });
-    METRE_LOG("Using DNS override");
+    METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
   } else {
     ub_resolve_async(Config::config().ub_ctx(),
                      hostname.c_str(),
@@ -519,14 +548,14 @@ Config::addr_callback_t & Config::Domain::AddressLookup(std::string const & host
 
 Config::srv_callback_t & Config::Domain::SrvLookup(std::string const & base_domain) const {
   std::string domain = "_xmpp-server._tcp." + base_domain + ".";
-  METRE_LOG("SRV lookup for " << domain);
+  METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain);
   auto it = m_srvrecs.find(domain);
   if (it != m_srvrecs.end()) {
     auto addr = &*(it->second);
     Router::defer([addr,this] () {
         m_srv_pending.emit(addr);
     });
-    METRE_LOG("Using DNS override");
+    METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
   } else {
     ub_resolve_async(Config::config().ub_ctx(),
                      domain.c_str(),
@@ -543,14 +572,14 @@ Config::tlsa_callback_t & Config::Domain::TlsaLookup(unsigned short port, std::s
   std::ostringstream out;
   out << "_" << port << "._tcp." << base_domain;
   std::string domain = out.str();
-  METRE_LOG("TLSA lookup for " << domain);
+  METRE_LOG(Metre::Log::DEBUG, "TLSA lookup for " << domain);
   auto it = m_tlsarecs.find(domain);
   if (it != m_tlsarecs.end()) {
     auto addr = &*(it->second);
     Router::defer([addr,this] () {
         m_tlsa_pending.emit(addr);
     });
-    METRE_LOG("Using DNS override");
+    METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
   } else {
     ub_resolve_async(Config::config().ub_ctx(),
                      domain.c_str(),
