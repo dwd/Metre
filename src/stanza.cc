@@ -1,6 +1,7 @@
 #include "stanza.h"
 #include "xmlstream.h"
 #include "rapidxml_print.hpp"
+#include "log.h"
 
 using namespace Metre;
 
@@ -19,6 +20,14 @@ Stanza::Stanza(const char * name, rapidxml::xml_node<> const * node, XMLStream &
 Stanza::Stanza(const char * name, XMLStream & s) : m_name(name), m_stream_id(s.stream_id()), m_payload_str(), m_payload{nullptr}, m_payload_l{0} {
 }
 Stanza::Stanza(const char * name, Jid const & from, Jid const & to, std::string const & type_str, std::string const & id, XMLStream & s) : m_name(name), m_stream_id(s.stream_id()), m_from(from), m_to(to), m_type_str(type_str), m_id(id), m_payload{nullptr}, m_payload_l{0} {
+}
+
+void Stanza::freeze() {
+    if (!m_payload_str.empty()) return;
+    if (!m_payload) return;
+    m_payload_str.assign(m_payload, m_payload_l);
+    METRE_LOG(Metre::Log::DEBUG, "Frozen stanza: " + m_payload_str);
+    m_payload = m_payload_str.data();
 }
 
 void Stanza::render(rapidxml::xml_document<> & d) {

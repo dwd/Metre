@@ -56,6 +56,12 @@ namespace {
 			Description() : Feature::Description<Dialback>(db_ns, FEAT_AUTH) {};
 		};
 
+        /*
+         * Temporary store for keys, because - bizarrely - a std::string doesn't
+         * appear to be getting captured by value.
+         */
+        std::set<std::string> m_keys;
+
 		/**
 		 * Inbound handling.
 		 */
@@ -79,7 +85,9 @@ namespace {
 			}
 			m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::REQUESTED);
 			// With syntax done, we should send the key:
-			route.transmit(std::unique_ptr<Verify>(new Verify(route.local(), route.domain(), m_stream.stream_id(), key, m_stream)));
+            route.transmit(std::unique_ptr<Verify>(
+                    new Verify(route.domain(), route.local(), m_stream.stream_id(), key, m_stream)));
+            m_keys.erase(key);
 		}
 
 		void result(rapidxml::xml_node<> * node) {
@@ -92,7 +100,6 @@ namespace {
 			if (!key || !key[0]) {
 				throw Metre::unsupported_stanza_type("Missing key");
 			}
-			std::string keystr{key};
 			// And a from/to:
 			auto from = node->first_attribute("from");
 			auto to = node->first_attribute("to");
@@ -111,8 +118,10 @@ namespace {
 			}
 			// Need to perform name collation:
 			std::shared_ptr<Route> & route = RouteTable::routeTable(tojid).route(fromjid);
-			route->onNamesCollated.connect(this, [this,keystr](Route & r) {
-				result_step(r, keystr);
+            m_keys.insert(key);
+            const char *keytmp = m_keys.find(key)->c_str();
+            route->onNamesCollated.connect(this, [=](Route &r) {
+                result_step(r, keytmp);
 			});
 			route->collateNames();
 		}

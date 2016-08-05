@@ -194,8 +194,10 @@ void XMLStream::stream_open() {
 	auto domainat = stream->first_attribute("to");
 	std::string domainname;
 	if (domainat && domainat->value()) {
-		domainname.assign(domainat->value(), domainat->value_size());
-		METRE_LOG(Metre::Log::DEBUG, "Requested contact domain {" << domainname << "}");
+        domainname.assign(domainat->value(), domainat->value_size());
+        METRE_LOG(Metre::Log::DEBUG, "Requested contact domain {" << domainname << "}");
+    } else if (m_dir == OUTBOUND) {
+        domainname = m_stream_local;
 	} else {
 		domainname = Config::config().default_domain();
 	}
@@ -242,19 +244,14 @@ void XMLStream::stream_open() {
 		if (m_type == S2S) {
 			auto id_att = stream->first_attribute("id");
 			if (id_att) {
+                if (!m_stream_id.empty()) {
+                    Router::unregister_stream_id(m_stream_id);
+                }
 				m_stream_id = id_att->value();
+                Router::register_stream_id(m_stream_id, *m_session);
 			}
 		}
 		return;
-		auto so = m_stream.first_node();
-		auto dbatt = so->first_attribute("xmlns:db");
-		if (dbatt && dbatt->value() == std::string("jabber:server:dialback")) {
-			std::string feature_xmlns = "urn:xmpp:features:dialback";
-			Feature * f = Feature::feature(feature_xmlns, *this);
-			assert(f);
-			f->negotiate(nullptr);
-			m_features[feature_xmlns] = f;
-		}
 	}
 }
 
@@ -377,12 +374,14 @@ void XMLStream::handle(rapidxml::xml_node<> * element) {
 		} else {
 			f = Feature::feature(xmlns, *this);
 			if (f) m_features[xmlns] = f;
+            METRE_LOG(Metre::Log::DEBUG, "Created new feature << " << f);
 		}
 
 		bool handled = false;
 		if (f) {
 			handled = f->handle(element);
 		}
+        METRE_LOG(Metre::Log::DEBUG, "Handled: " << handled);
 		if (!handled) {
 			throw Metre::unsupported_stanza_type();
 		}

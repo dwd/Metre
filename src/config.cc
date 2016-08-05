@@ -559,18 +559,19 @@ void Config::Domain::tlsa_lookup_done(int err, struct ub_result * result) {
   tlsa.error = error;
   tlsa.domain = result->qname;
   m_tlsa_pending.emit(&tlsa);
+    m_tlsa_pending.disconnect_all();
 }
 
 void Config::Domain::srv(std::string const & hostname, unsigned short priority, unsigned short weight, unsigned short port) {
   DNS::Srv * srv;
-  std::string domain = "_xmpp-server._tcp." + m_domain;
+    std::string domain = "_xmpp-server._tcp." + m_domain + ".";
   auto it = m_srvrecs.find(domain);
   if (it == m_srvrecs.end()) {
     std::unique_ptr<DNS::Srv> s(new DNS::Srv);
     s->dnssec = true;
     s->domain = domain;
     srv = &*s;
-    m_srvrecs[hostname] = std::move(s);
+      m_srvrecs[domain] = std::move(s);
   } else {
     srv = &*(it->second);
   }
@@ -620,6 +621,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result * result) {
   srv.error = error;
   srv.domain = result->qname;
   m_srv_pending.emit(&srv);
+    m_srv_pending.disconnect_all();
 }
 void Config::Domain::a_lookup_done(int err, struct ub_result * result) {
   std::string error;
@@ -646,10 +648,11 @@ void Config::Domain::a_lookup_done(int err, struct ub_result * result) {
   a.error = error;
   a.hostname = result->qname;
   m_a_pending.emit(&a);
+    m_a_pending.disconnect_all();
 }
 
 Config::addr_callback_t & Config::Domain::AddressLookup(std::string const & hostname) const {
-  METRE_LOG(Metre::Log::DEBUG, "A/AAAA lookup for " << hostname);
+    METRE_LOG(Metre::Log::DEBUG, "A/AAAA lookup for " << hostname << " context:" << m_domain);
   auto it = m_host_arecs.find(hostname);
   if (it != m_host_arecs.end()) {
     auto addr = &*(it->second);
@@ -671,7 +674,7 @@ Config::addr_callback_t & Config::Domain::AddressLookup(std::string const & host
 
 Config::srv_callback_t & Config::Domain::SrvLookup(std::string const & base_domain) const {
   std::string domain = "_xmpp-server._tcp." + base_domain + ".";
-  METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain);
+    METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain << " context:" << m_domain);
   auto it = m_srvrecs.find(domain);
   if (it != m_srvrecs.end()) {
     auto addr = &*(it->second);

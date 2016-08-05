@@ -6,6 +6,7 @@
 #include "config.h"
 
 #include <unordered_map>
+#include <algorithm>
 
 using namespace Metre;
 
@@ -57,29 +58,35 @@ namespace {
 }
 
 void Route::transmit(std::unique_ptr<Verify> v) {
-  if (!m_dialback.empty()) {
-    m_dialback.push_back(std::move(v));
-    return;
-  }
   auto vrfy = m_vrfy.lock();
   if(check_verify(*this, vrfy)) {
-    vrfy->xml_stream().send(std::move(v));
+      if (!m_dialback.empty()) {
+          v->freeze();
+          m_dialback.push_back(std::move(v));
+          return;
+      } else {
+          vrfy->xml_stream().send(std::move(v));
+      }
   } else {
     // TODO Look for an existing session and use that.
     // Otherwise, start SRV lookups.
+      v->freeze();
     m_dialback.push_back(std::move(v));
     Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
   }
 
 }
 void Route::transmit(std::unique_ptr<Stanza> s) {
-  if (!m_stanzas.empty()) {
-    m_stanzas.push_back(std::move(s));
-    return;
-  }
   auto to = m_to.lock();
   if (check_to(*this, to)) {
-    to->xml_stream().send(std::move(s));
+      if (!m_stanzas.empty()) {
+          s->freeze();
+          m_stanzas.push_back(std::move(s));
+          METRE_LOG(Metre::Log::DEBUG, "Queued stanza (check) for " << m_local.domain() << "=>" << m_domain.domain());
+          return;
+      } else {
+          to->xml_stream().send(std::move(s));
+      }
   } else if (!to) {
     if(!m_vrfy.expired()) {
       std::shared_ptr<NetSession> vrfy(m_vrfy);
@@ -94,6 +101,7 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
       transmit(std::move(s)); // Retry;
       return;
     }
+      s->freeze();
     m_stanzas.push_back(std::move(s));
     METRE_LOG(Metre::Log::DEBUG, "Queued stanza (fallback) for " << m_local.domain() << "=>" << m_domain.domain());
     // TODO : Timeout.
@@ -103,8 +111,9 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
     }
     // Otherwise wait.
   } else { // Got a to but it's not ready yet.
-    METRE_LOG(Metre::Log::DEBUG, "Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain());
+      s->freeze();
     m_stanzas.push_back(std::move(s));
+      METRE_LOG(Metre::Log::DEBUG, "Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain());
   }
 }
 
@@ -189,7 +198,12 @@ void Route::AddressResult(DNS::Address const * addr) {
 }
 
 void Route::TlsaResult(const DNS::Tlsa * tlsa) {
+    METRE_LOG(Metre::Log::DEBUG, "TLSA for " << tlsa->domain << ", currently " << m_tlsa.size());
+    m_tlsa.erase(
+            std::remove_if(m_tlsa.begin(), m_tlsa.end(), [=](DNS::Tlsa const &r) { return r.domain == tlsa->domain; }),
+            m_tlsa.end());
   m_tlsa.push_back(*tlsa);
+    METRE_LOG(Metre::Log::DEBUG, "TLSA for " << tlsa->domain << ", now " << m_tlsa.size());
   collateNames();
 }
 
@@ -227,6 +241,12 @@ void Route::SessionAuthenticated(XMLStream & stream) {
       to->xml_stream().send(std::move(s));
     }
     m_stanzas.clear();
+  } else {
+      METRE_LOG(Metre::Log::DEBUG, "Auth, but not ready: " << stream.auth_ready() << " " << !m_stanzas.empty() << " "
+                                                           << (&stream.session() == to.get()) << " "
+                                                           << (stream.s2s_auth_pair(m_local.domain(), m_domain.domain(),
+                                                                                    OUTBOUND) ==
+                                                               XMLStream::AUTHORIZED));
   }
 }
 

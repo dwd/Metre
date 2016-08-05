@@ -15,15 +15,10 @@
     <dnssec>/home/dwd/src/metre/keys</dnssec>
     <!-- DNSSEC root keys file. -->
   </globals>
-  <inbound>
-    <!-- The Inbound stanza lists all domains the server will respond to over external connectivity.
-          If it's empty, it will populate automatically from <local/> and any component <connections/>.
-        -->
-  </inbound>
   <local>
     <!-- Domains actually serviced by this instance are listed in the Local stanza.
           This could be empty if the server is acting purely as a forwarding agent.
-          All internal domains do, currently, it respond to XEP-0199 pings...
+          All internal domains do, currently, is respond to XEP-0199 pings...
           -->
     <domain name='cridland.im'>
       <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->

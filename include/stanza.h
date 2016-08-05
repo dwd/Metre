@@ -82,6 +82,8 @@ namespace Metre {
 
 		std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const & e, XMLStream & s);
 		std::unique_ptr<Stanza> create_forward(XMLStream & s);
+
+        void freeze(); // Make sure nothing is in volatile storage anymore.
 	};
 
 
@@ -151,15 +153,17 @@ namespace Metre {
 		* Slightly hacky; used for building outbound Verify elements.
 		*/
 	class Verify : public Stanza {
-		std::string m_key;
 	public:
 		static const char * name;
-		Verify(Jid const & to, Jid const & from, std::string const & stream_id, std::string const & key, XMLStream & s) : Stanza(name, s), m_key(key) {
+
+        Verify(Jid const &to, Jid const &from, std::string const &stream_id, std::string const &key, XMLStream &s)
+                : Stanza(name, s) {
 			m_to = to;
 			m_from = from;
 			m_id = stream_id;
-			m_payload = m_key.data();
-			m_payload_l = m_key.length();
+            m_payload_str = key;
+            m_payload = m_payload_str.data();
+            m_payload_l = m_payload_str.length();
 		}
 	};
 }

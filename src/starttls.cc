@@ -84,6 +84,7 @@ namespace {
     }
 
       void collation_ready(Route & route) {
+          METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
           route.onNamesCollated.disconnect(this);
           SSL_CTX * ctx = context();
           if (!ctx) throw new std::runtime_error("Failed to load certificates");
@@ -169,7 +170,7 @@ namespace Metre {
         } else if (rr.matchType == DNS::TlsaRR::Sha512) {
             SHA256(freeme, len, digest);
             matchdata = digest;
-            len = SHA256_DIGEST_LENGTH;
+            len = SHA512_DIGEST_LENGTH;
         } else if (rr.matchType != DNS::TlsaRR::Full) {
             goto match_fail;
         }
@@ -220,9 +221,12 @@ namespace Metre {
         int result = X509_verify_cert(st);
         STACK_OF(X509) * verified = X509_STORE_CTX_get1_chain(st);
         // If we have DANE records, iterate through them to find one that works.
-        bool dane_ok = true;
-        if (route.tlsa().size() > 0) dane_ok = false; // At least one must pass.
+        bool dane_ok = false;
+        bool dane_present = false;
         for (auto & tlsa : route.tlsa()) {
+            if (!tlsa.dnssec) continue;
+            if (!tlsa.error.empty()) continue;
+            dane_present = true;
             for (auto & rr : tlsa.rrs) {
                 switch (rr.certUsage) {
                     case DNS::TlsaRR::CertConstraint:
@@ -252,7 +256,9 @@ namespace Metre {
     tlsa_done:
         sk_X509_pop_free(verified, &X509_free);
         X509_STORE_CTX_free(st);
-        METRE_LOG(Metre::Log::INFO, std::string("[Re]verify was ") + (dane_ok && result == X509_V_OK ? "SUCCESS" : "FAILURE"));
-        return dane_ok && result == X509_V_OK;
+        METRE_LOG(Metre::Log::INFO, "[Re]verify: DANE " << (dane_present ? "Present" : "Not present") << ", checked "
+                                                        << (dane_ok ? "OK" : "Not OK") << ", PKIX "
+                                                        << ((result == X509_V_OK) ? "Passed" : "Failed"));
+        return dane_present ? dane_ok : (result == X509_V_OK);
     }
 }

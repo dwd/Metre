@@ -106,7 +106,13 @@ namespace Metre {
 			}
 			auto it2 = m_sessions_by_id.find(id);
 			if (it2 != m_sessions_by_id.end()) {
-				m_sessions_by_id.erase(it2);
+                std::shared_ptr<NetSession> old = it2->second.lock();
+                if (!old) {
+                    m_sessions_by_id.erase(it2);
+                } else {
+                    if (old->serial() == serial) return;
+                    throw std::runtime_error("Duplicate session id - loopback?");
+                }
 			}
 			m_sessions_by_id.insert(std::make_pair(id, (*it).second));
 		}

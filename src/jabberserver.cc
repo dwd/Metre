@@ -67,7 +67,7 @@ namespace {
 							throw stanza_service_unavailable();
 						}
 					} else {
-						std::shared_ptr<Route> route = RouteTable::routeTable(to).route(to);
+                        std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
 						route->transmit(std::move(s));
 					}
 					// Lookup endpoint.
