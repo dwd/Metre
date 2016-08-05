@@ -16,18 +16,15 @@ set(SOURCE_FILES
     include/optional
     include/optional.h
     include/router.h
-    include/sasl.h
-    include/stanza.h
+        include/stanza.h
     include/tests.h
     include/xmlstream.h
     include/xmppexcept.h
         gen/dh1024.cc
         gen/dh2048.cc
         gen/dh4096.cc
-    src/auth.cc
-    src/base64.cc
-    src/client.cc
-    src/components.cc
+        src/base64.cc
+        src/components.cc
     src/config.cc
     src/dialback.cc
     src/feature.cc

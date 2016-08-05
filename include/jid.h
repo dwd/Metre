@@ -1,3 +1,28 @@
+/***
+
+Copyright 2013-2016 Dave Cridland
+Copyright 2014-2016 Surevine Ltd
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+***/
+
 #ifndef JID__H
 #define JID__H
 
@@ -5,34 +30,41 @@
 #include <optional>
 
 namespace Metre {
-	class Jid {
-		std::optional<std::string> m_local;
-		std::string m_domain;
-		std::optional<std::string> m_resource;
+    class Jid {
+        std::optional<std::string> m_local;
+        std::string m_domain;
+        std::optional<std::string> m_resource;
 
-		mutable std::optional<std::string> m_full;
-		mutable std::optional<std::string> m_bare;
-	public:
-		Jid(std::string const & jid) {
-			parse(jid);
-		}
-		Jid(std::string const & local, std::string const & domain)
-			: m_local(local), m_domain(domain) {
-		}
-		Jid(std::string const & local, std::string const & domain, std::string const & resource)
-			: m_local(local), m_domain(domain), m_resource(resource) {
-		}
-		Jid(Jid const & jid)
-				: m_local(jid.m_local), m_domain(jid.m_domain), m_resource(jid.m_resource) {
-		}
-		std::string const & full() const;
-		std::string const & bare() const;
-		std::string const & domain() const {
-			return m_domain;
-		}
-	protected:
-		void parse(std::string const & s);
-	};
+        mutable std::optional<std::string> m_full;
+        mutable std::optional<std::string> m_bare;
+    public:
+        Jid(std::string const &jid) {
+            parse(jid);
+        }
+
+        Jid(std::string const &local, std::string const &domain)
+                : m_local(local), m_domain(domain) {
+        }
+
+        Jid(std::string const &local, std::string const &domain, std::string const &resource)
+                : m_local(local), m_domain(domain), m_resource(resource) {
+        }
+
+        Jid(Jid const &jid)
+                : m_local(jid.m_local), m_domain(jid.m_domain), m_resource(jid.m_resource) {
+        }
+
+        std::string const &full() const;
+
+        std::string const &bare() const;
+
+        std::string const &domain() const {
+            return m_domain;
+        }
+
+    protected:
+        void parse(std::string const &s);
+    };
 
 }
 

@@ -1,3 +1,28 @@
+/***
+
+Copyright 2013-2016 Dave Cridland
+Copyright 2014-2016 Surevine Ltd
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+***/
+
 #ifndef NETSESSION__HPP
 #define NETSESSION__HPP
 
@@ -10,61 +35,62 @@
 struct bufferevent;
 
 namespace Metre {
-	class XMLStream;
-	class Server;
+    class XMLStream;
 
-	class NetSession {
-		std::string m_buf;
-		static const size_t buflen = 4096;
-		std::string m_outbuf;
-		std::string const m_domain;
-		short m_port;
-		std::string m_hostname;
-		bool m_secure;
-		unsigned long long m_serial;
-		struct bufferevent * m_bev;
-		XMLStream * m_xml_stream;
-	public:
-		NetSession(unsigned long long serial, struct bufferevent * bev, SESSION_TYPE type); /* Inbound */
-		NetSession(unsigned long long serial, struct bufferevent * bev, std::string const & stream_from, std::string const & stream_to); /* Outbound S2S */
+    class Server;
 
-		// Scary stuff only used for buffer juggling.
-		struct bufferevent * bufferevent() {
-			return m_bev;
-		}
-		void bufferevent(struct bufferevent * bev);
-		// Stuff for XMLStream to indicate it's used octets.
-		void used(size_t n);
+    class NetSession {
+        unsigned long long m_serial;
+        struct bufferevent *m_bev;
+        XMLStream *m_xml_stream;
+    public:
+        NetSession(unsigned long long serial, struct bufferevent *bev, SESSION_TYPE type); /* Inbound */
+        NetSession(unsigned long long serial, struct bufferevent *bev, std::string const &stream_from,
+                   std::string const &stream_to); /* Outbound S2S */
 
-		// Signals:
-		mutable sigslot::signal<sigslot::thread::st, NetSession &> onClosed;
-		mutable sigslot::signal<sigslot::thread::st, NetSession &> onConnected;
+        // Scary stuff only used for buffer juggling.
+        struct bufferevent *bufferevent() {
+            return m_bev;
+        }
 
-		bool drain();
-		bool need_push();
-		bool push();
-		void send(rapidxml::xml_document<> & d);
-		void send(std::string const & s);
-		void send(const char * p);
+        void bufferevent(struct bufferevent *bev);
 
-		void close();
+        // Stuff for XMLStream to indicate it's used octets.
+        void used(size_t n);
 
-		unsigned long long serial() const {
-			return m_serial;
-		}
+        // Signals:
+        mutable sigslot::signal<sigslot::thread::st, NetSession &> onClosed;
+        mutable sigslot::signal<sigslot::thread::st, NetSession &> onConnected;
 
-		static void read_cb(struct bufferevent * bev, void * arg);
-		static void event_cb(struct bufferevent * bev, short flags, void * arg);
+        bool drain();
 
-		XMLStream & xml_stream() {
-			return *m_xml_stream;
-		}
+        void send(rapidxml::xml_document<> &d);
 
-		~NetSession();
-	private:
-		void bev_closed();
-		void bev_connected();
-	};
+        void send(std::string const &s);
+
+        void send(const char *p);
+
+        void close();
+
+        unsigned long long serial() const {
+            return m_serial;
+        }
+
+        static void read_cb(struct bufferevent *bev, void *arg);
+
+        static void event_cb(struct bufferevent *bev, short flags, void *arg);
+
+        XMLStream &xml_stream() {
+            return *m_xml_stream;
+        }
+
+        ~NetSession();
+
+    private:
+        void bev_closed();
+
+        void bev_connected();
+    };
 }
 
 #endif
