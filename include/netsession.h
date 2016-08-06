@@ -72,6 +72,8 @@ namespace Metre {
 
         void close();
 
+        void read();
+
         unsigned long long serial() const {
             return m_serial;
         }

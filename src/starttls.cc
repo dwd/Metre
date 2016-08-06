@@ -138,6 +138,7 @@ namespace {
             if (!bev_ssl) throw std::runtime_error("Cannot create OpenSSL filter");
             m_stream.session().bufferevent(bev_ssl);
             m_stream.set_secured();
+            m_stream.thaw();
             // m_stream.restart(); // Will delete *this.
         }
 
@@ -150,6 +151,7 @@ namespace {
                 std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                         m_stream.remote_domain());
                 route->onNamesCollated.connect(this, &StartTls::collation_ready);
+                m_stream.freeze();
                 route->collateNames();
                 return true;
             } else {

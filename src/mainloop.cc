@@ -195,6 +195,17 @@ namespace Metre {
                 METRE_LOG(Metre::Log::CRIT, "Session already in ownership table; corruption.");
                 assert(false);
             }
+            char addrbuf[1024];
+            addrbuf[0] = '\0';
+            if (sin->sa_family == AF_INET) {
+                inet_ntop(AF_INET, reinterpret_cast<void *>(&reinterpret_cast<struct sockaddr_in *>(sin)->sin_addr),
+                          addrbuf, 1024);
+            } else if (sin->sa_family == AF_INET6) {
+                inet_ntop(AF_INET6, reinterpret_cast<void *>(&reinterpret_cast<struct sockaddr_in6 *>(sin)->sin6_addr),
+                          addrbuf, 1024);
+            }
+            METRE_LOG(Metre::Log::INFO,
+                      "New session on " << (stype == S2S ? "S2S" : "COMP") << " port from " << addrbuf);
             m_sessions[session->serial()] = session;
             session->onClosed.connect(this, &Mainloop::session_closed);
         }

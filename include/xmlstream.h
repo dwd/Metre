@@ -69,6 +69,7 @@ namespace Metre {
         bool m_secured = false; // Crypto in place via TLS. //
         bool m_authready = false; // Channel is ready for dialback/SASL //
         bool m_compressed = false; // Channel has compression enabled, by TLS or XEP-0138 //
+        bool m_frozen = false;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_rx;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
         std::map<std::string, Filter *> m_filters;
@@ -80,6 +81,12 @@ namespace Metre {
                   std::string const &stream_to);
 
         size_t process(unsigned char *, size_t);
+
+        void freeze() {
+            m_frozen = true;
+        }
+
+        void thaw();
 
         const char *content_namespace() const;
 

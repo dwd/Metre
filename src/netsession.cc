@@ -112,9 +112,13 @@ void NetSession::send(const char *p) {
     //evbuffer_add(buf, p, std::strlen(p));
 }
 
+void NetSession::read() {
+    if (drain()) onClosed.emit(*this);
+}
+
 void NetSession::read_cb(struct bufferevent *, void *arg) {
     NetSession &ns = *reinterpret_cast<NetSession *>(arg);
-    if (ns.drain()) ns.onClosed.emit(ns);
+    ns.read();
 }
 
 void NetSession::bev_closed() {

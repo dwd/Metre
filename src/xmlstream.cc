@@ -54,6 +54,11 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
         : m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local), m_stream_remote(stream_remote) {
 }
 
+void XMLStream::thaw() {
+    m_frozen = false;
+    m_session->read();
+}
+
 size_t XMLStream::process(unsigned char *p, size_t len) {
     using namespace rapidxml;
     if (len == 0) return 0;
@@ -104,6 +109,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 handle(element);
                 buf.erase(0, end - buf.data());
                 m_stanza.clear();
+                if (m_frozen) return spaces + len - buf.length();
             }
         } catch (Metre::base::xmpp_exception) {
             throw;
@@ -116,7 +122,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 m_session->used(buf.size());
                 buf.clear();
             } else {
-                throw;
+                throw Metre::not_well_formed(e.what()); // TODO Also, need to freeze processing during pre-TLS lookups.
             }
         } catch (std::runtime_error &e) {
             throw Metre::undefined_condition(e.what());

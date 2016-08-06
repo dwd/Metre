@@ -63,6 +63,8 @@ namespace Metre {
 
     METRE_XMPP_EXCEPT(unsupported_stanza_type, "Couldn't understand that element", "unsupported-stanza-type");
 
+    METRE_XMPP_EXCEPT(not_well_formed, "XML parse error", "not-well-formed");
+
     METRE_XMPP_EXCEPT(undefined_condition, "Very sorry - unhandled internal error", "undefined-condition");
 
     namespace base {

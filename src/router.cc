@@ -172,6 +172,7 @@ void Route::SrvResult(DNS::Srv const *srv) {
     METRE_LOG(Metre::Log::DEBUG, "Got SRV");
     if (!srv->error.empty()) {
         METRE_LOG(Metre::Log::WARNING, "Got an error during SRV: " << srv->error);
+        onNamesCollated.emit(*this);
         return;
     }
     m_srv = *srv;
