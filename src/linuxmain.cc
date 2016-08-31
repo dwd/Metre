@@ -73,9 +73,9 @@ namespace {
     std::unique_ptr<Metre::Config> config;
 
     void hup_handler(int s) {
-        config.reset(new Metre::Config(bc->config_file));
-        Metre::Router::reload();
-        METRE_LOG(Metre::Log::INFO, "Reloading config.");
+        //config.reset(new Metre::Config(bc->config_file));
+        //Metre::Router::reload();
+        METRE_LOG(Metre::Log::INFO, "NOT Reloading config.");
     }
 
     void term_handler(int s) {

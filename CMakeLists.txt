@@ -37,10 +37,10 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc
-    src/xmlstream.cc src/saslexternal.cc src/spiffing.cc include/dhparams.h src/linuxmain.cc)
+    src/xmlstream.cc src/saslexternal.cc src/spiffing.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc)
 
 add_executable(metre ${SOURCE_FILES})
-target_link_libraries(metre event_core ssl crypto event_openssl unbound)
+target_link_libraries(metre event_core ssl crypto event_openssl event_extra unbound)
 include_directories(include)
 include_directories(./deps/rapidxml)
 include_directories(./deps/sigslot)

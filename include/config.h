@@ -42,6 +42,7 @@ SOFTWARE.
 
 struct ssl_ctx_st; // SSL_CTX
 struct x509_store_ctx_st; // X509_STORE_CTX;
+struct X509_crl_st; // X509_CRL; (I have no idea why some of these are capitalized.)
 
 /**
  * Lib unbound.
@@ -157,8 +158,6 @@ namespace Metre {
             ~Domain();
 
         private:
-            static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
-
             std::string m_domain;
             SESSION_TYPE m_type;
             bool m_forward;
@@ -218,17 +217,22 @@ namespace Metre {
             return m_dialback_secret;
         }
 
-        std::string
-        dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const;
+        std::string dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const;
 
         struct ub_ctx *ub_ctx() const {
             return m_ub_ctx;
         }
 
     private:
+        static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
+
+        std::map<std::string, struct X509_crl_st *> m_crls;
+
         std::string m_config_str;
         std::string m_default_domain;
         std::string m_runtime_dir;
+        std::string m_data_dir;
+        std::string m_dns_keys;
         std::string m_pidfile;
         std::string m_dialback_secret;
         std::string m_logfile;

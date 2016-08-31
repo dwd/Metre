@@ -35,6 +35,8 @@ SOFTWARE.
 #include <queue>
 #include <map>
 
+struct event_base;
+
 namespace Metre {
     class NetSession;
 
@@ -133,6 +135,8 @@ namespace Metre {
         void reload();
 
         void quit();
+
+        struct event_base * event_base();
     }
 }
 

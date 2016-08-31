@@ -44,6 +44,7 @@ namespace Metre {
             std::string const name;
         protected:
             std::set<std::string> m_suppress_features;
+        public:
             std::set<std::string> m_namespaces;
         };
 

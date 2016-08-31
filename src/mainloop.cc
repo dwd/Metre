@@ -80,6 +80,10 @@ namespace Metre {
             event_base_free(m_event_base);
         }
 
+        struct event_base * event_base() const {
+            return m_event_base;
+        }
+
         bool init() {
             if (m_event_base) throw std::runtime_error("I'm already initialized!");
             m_event_base = event_base_new();
@@ -385,6 +389,10 @@ namespace Metre {
 
         void reload() {
             Mainloop::s_mainloop->reload();
+        }
+
+        struct event_base * event_base() {
+            return Mainloop::s_mainloop->event_base();
         }
     }
 }

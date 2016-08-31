@@ -38,6 +38,8 @@ SOFTWARE.
 #include <openssl/rand.h>
 #include <dhparams.h>
 #include <openssl/x509v3.h>
+#include <evdns.h>
+#include <http.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -82,8 +84,6 @@ namespace {
     const std::string tls_ns = "urn:ietf:params:xml:ns:xmpp-tls";
 
     class StartTls : public Feature, public sigslot::has_slots<> {
-    private:
-        SSL *m_ssl;
     public:
         StartTls(XMLStream &s) : Feature(s) {}
 
@@ -138,7 +138,6 @@ namespace {
             if (!bev_ssl) throw std::runtime_error("Cannot create OpenSSL filter");
             m_stream.session().bufferevent(bev_ssl);
             m_stream.set_secured();
-            m_stream.thaw();
             // m_stream.restart(); // Will delete *this.
         }
 
@@ -168,10 +167,6 @@ namespace {
             m_stream.send(d);
             return true;
         }
-
-        SSL *ssl() {
-            return m_ssl;
-        }
     };
 
     bool s2s_declared = Feature::declare<StartTls>(S2S);
@@ -190,7 +185,6 @@ namespace Metre {
         } else if (rr.selector == DNS::TlsaRR::SubjectPublicKeyInfo) {
             X509_PUBKEY *pubkey = X509_get_X509_PUBKEY(cert);
             len = i2d_X509_PUBKEY(pubkey, &freeme);
-            X509_PUBKEY_free(pubkey);
         } else {
             goto match_fail;
         }
@@ -229,7 +223,6 @@ namespace Metre {
         STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
         SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
-        // TODO : Can I free ctx now?
         X509_VERIFY_PARAM *vpm = X509_VERIFY_PARAM_new();
         X509_VERIFY_PARAM_set1_host(vpm, route.domain().c_str(), route.domain().size());
         // Add RFC 6125 additional names.
@@ -242,16 +235,9 @@ namespace Metre {
                 X509_VERIFY_PARAM_add1_host(vpm, rr.hostname.c_str(), rr.hostname.size());
             }
         }
-        // X509_VERIFY_PARAM_set_auth_level(vpm, 1); // OpenSSL 1.1.0 only, maybe?
-        // TODO add additional names and DANE here.
         X509_STORE_CTX *st = X509_STORE_CTX_new();
         X509_STORE_CTX_init(st, store, cert, chain);
-        // TODO : can I free some of this stuff now?
-        //X509_STORE_free(store);
-        //X509_free(cert);
-        //sk_X509_free(chain); // Not pop free, apparently.
         X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
-        ///X509_VERIFY_PARAM_free(vpm);
         int result = X509_verify_cert(st);
         STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
         // If we have DANE records, iterate through them to find one that works.
@@ -295,5 +281,46 @@ namespace Metre {
                                                         << (dane_ok ? "OK" : "Not OK") << ", PKIX "
                                                         << ((result == X509_V_OK) ? "Passed" : "Failed"));
         return dane_present ? dane_ok : (result == X509_V_OK);
+    }
+
+    bool prep_crl(XMLStream & stream) {
+        SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
+        if (!ssl) return false; // No TLS.
+        X509 *cert = SSL_get_peer_certificate(ssl);
+        if (!cert) {
+            METRE_LOG(Metre::Log::INFO, "No cert, so no auth");
+            return false;
+        }
+        bool fetch_any = false;
+        STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
+        SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+        X509_STORE *store = SSL_CTX_get_cert_store(ctx);
+        X509_STORE_CTX *st = X509_STORE_CTX_new();
+        X509_STORE_CTX_init(st, store, cert, chain);
+        X509_verify_cert(st);
+        STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
+        for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
+            auto crldp = sk_X509_value(verified, certnum)->crldp;
+            if (crldp) {
+                for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
+                    DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
+                    if (dp->distpoint->type == 0) { // Full Name
+                        auto names = dp->distpoint->name.fullname;
+                        for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
+                            GENERAL_NAME *name = sk_GENERAL_NAME_value(names, ii);
+                            if (name->type == GEN_URI) {
+                                ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
+                                std::string uristr{reinterpret_cast<char *>(uri->data),
+                                                   static_cast<std::size_t>(uri->length)};
+                                METRE_LOG(Metre::Log::INFO, "Fetching CRL - " << uristr);
+                                stream.fetch_crl(uristr);
+                                fetch_any = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return fetch_any;
     }
 }

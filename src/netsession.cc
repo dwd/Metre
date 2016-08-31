@@ -61,9 +61,9 @@ NetSession::~NetSession() {
 
 bool NetSession::drain() {
     // While there is data, see how much we can consume with the XMLStream.
-    struct evbuffer *buf = bufferevent_get_input(m_bev); // TODO
+    struct evbuffer *buf = nullptr; // This gets refreshed each time through the loops.
     size_t len;
-    while ((len = evbuffer_get_contiguous_space(buf)) > 0) {
+    while ((len = evbuffer_get_contiguous_space(buf = bufferevent_get_input(m_bev))) > 0) {
         if (!m_xml_stream->closed()) {
             size_t used = m_xml_stream->process(evbuffer_pullup(buf, len), len);
             if (used == 0) {
@@ -75,7 +75,7 @@ bool NetSession::drain() {
         }
     }
     // If we can't consume it all, try pullup(), then return.
-    if ((len = evbuffer_get_length(buf)) > 0) {
+    if ((len = evbuffer_get_length(buf = bufferevent_get_input(m_bev))) > 0) {
         if (!m_xml_stream->closed()) {
             m_xml_stream->process(evbuffer_pullup(buf, -1), len);
         } else {

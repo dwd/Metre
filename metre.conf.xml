@@ -7,7 +7,7 @@
     <!-- Run directory, used to store pid file. -->
 
     <datadir>/home/dwd/src/metre/data/</datadir>
-    <!-- Data directory root; currently unused -->
+    <!-- Data directory root; defaults to run directory -->
 
     <logfile>/home/dwd/src/metre/metre.log</logfile>
     <!-- Logfile -->

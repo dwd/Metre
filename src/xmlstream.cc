@@ -23,6 +23,7 @@ SOFTWARE.
 
 ***/
 
+#include <http.h>
 #include "rapidxml.hpp"
 #include "xmlstream.h"
 #include "xmppexcept.h"
@@ -41,6 +42,7 @@ SOFTWARE.
 
 namespace Metre {
     bool verify_tls(XMLStream &stream, Route &hostname);
+    bool prep_crl(XMLStream &);
 }
 
 using namespace Metre;
@@ -56,12 +58,15 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
 
 void XMLStream::thaw() {
     m_frozen = false;
+    METRE_LOG(Log::DEBUG, m_session << " - thaw");
     m_session->read();
+    METRE_LOG(Log::DEBUG, m_session << " - thaw done.");
 }
 
 size_t XMLStream::process(unsigned char *p, size_t len) {
     using namespace rapidxml;
     if (len == 0) return 0;
+    if (m_frozen) return 0;
     (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
     size_t spaces = 0;
     for (unsigned char *sp{p}; len != 0; ++sp, --len, ++spaces) {
@@ -85,6 +90,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                  * We need to grab the stream open. Do so by parsing the main buffer to find where the open
                  * finishes, and copy that segment over to another buffer. Then reparse, this time properly.
                  */
+                METRE_LOG(Log::DEBUG, "Parsing stream open");
                 char *end = m_stream.parse<parse_open_only | parse_fastest>(const_cast<char *>(buf.c_str()));
                 auto test = m_stream.first_node();
                 if (test && test->name()) {
@@ -433,6 +439,14 @@ Feature &XMLStream::feature(const std::string &ns) {
 }
 
 void XMLStream::restart() {
+    // Check if I need to fetch CRLs at this point.
+    if (!m_crl_complete && prep_crl(*this)) {
+        return;
+    }
+    do_restart();
+}
+
+void XMLStream::do_restart() {
     if (!m_stream_id.empty()) {
         Router::unregister_stream_id(m_stream_id);
         m_stream_id.clear();
@@ -447,6 +461,7 @@ void XMLStream::restart() {
     if (m_dir == OUTBOUND) {
         send_stream_open(true, false);
     }
+    thaw();
 }
 
 XMLStream::~XMLStream() {
@@ -579,4 +594,22 @@ bool XMLStream::process(Stanza &s) {
 bool XMLStream::tls_auth_ok(Route &route) {
     if (!m_secured) return false;
     return verify_tls(*this, route);
+}
+
+void XMLStream::fetch_crl(std::string const &uri) {
+    m_num_crls++;
+    Http::get(uri).connect(this, &XMLStream::add_crl);
+    freeze();
+}
+
+void XMLStream::add_crl(std::string const & uri, int code, std::string const & data) {
+    if (m_crl_complete) return;
+    if (code == 200) {
+        METRE_LOG(Log::INFO, m_session << " - Got CRL from URI " << uri);
+        m_crls[uri] = data;
+        if (m_crls.size() == m_num_crls) {
+            m_crl_complete = true;
+            do_restart();
+        }
+    }
 }

@@ -30,6 +30,7 @@ SOFTWARE.
 #include <map>
 #include <optional>
 #include <memory>
+#include <vector>
 #include "sigslot/sigslot.h"
 #include "rapidxml.hpp"
 #include "feature.h"
@@ -45,7 +46,7 @@ namespace Metre {
 
     class Stanza;
 
-    class XMLStream {
+    class XMLStream : public sigslot::has_slots<sigslot::thread::st> {
     public:
         typedef enum {
             NONE, REQUESTED, AUTHORIZED
@@ -73,6 +74,9 @@ namespace Metre {
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_rx;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
         std::map<std::string, Filter *> m_filters;
+        std::size_t m_num_crls = 0;
+        std::map<std::string,std::string> m_crls;
+        bool m_crl_complete = false;
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -164,6 +168,9 @@ namespace Metre {
 
         void connected(NetSession &);
 
+        void fetch_crl(std::string const & uri);
+        void add_crl(std::string const & uri, int code, std::string const & data);
+
         Feature &feature(std::string const &);
 
         // Signals:
@@ -172,6 +179,7 @@ namespace Metre {
 
     private:
         void handle(rapidxml::xml_node<> *);
+        void do_restart();
 
         void stream_open();
 
