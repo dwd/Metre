@@ -7,6 +7,8 @@
 #include <evhttp.h>
 #include <event2/bufferevent_ssl.h>
 #include <log.h>
+#include <openssl/ossl_typ.h>
+#include <openssl/x509.h>
 
 using namespace Metre;
 
@@ -22,16 +24,16 @@ Http & Http::http() {
     return *s_http;
 }
 
-Http::callback_t & Http::get(std::string const &uri) {
-    return Http::http().do_get(uri);
+Http::crl_callback_t &Http::crl(std::string const &uri) {
+    return Http::http().do_crl(uri);
 }
 
-void Http::s_done_get(struct evhttp_request * req, void * arg) {
+void Http::s_done_crl(struct evhttp_request *req, void *arg) {
     std::uintptr_t key = reinterpret_cast<std::uintptr_t>(arg);
-    Http::http().done_get(req, key);
+    Http::http().done_crl(req, key);
 }
 
-void Http::done_get(struct evhttp_request * req, std::uintptr_t key) {
+void Http::done_crl(struct evhttp_request *req, std::uintptr_t key) {
     auto iter = m_requests.find(key);
     if (iter == m_requests.end()) {
         METRE_LOG(Metre::Log::ERR, "Unable to locate request key");
@@ -43,28 +45,35 @@ void Http::done_get(struct evhttp_request * req, std::uintptr_t key) {
     if ((response / 100) == 2) {
         auto buffer = evhttp_request_get_input_buffer(req);
         auto len = evbuffer_get_length(buffer);
-        std::string data{reinterpret_cast<char *>(evbuffer_pullup(buffer, len)), len};
-        m_cache[uri] = data;
-        m_waiting[uri].emit(uri, 200, data);
-        m_waiting[uri].disconnect_all();
-        METRE_LOG(Log::INFO, " - Got " << data.length() << " bytes");
+        auto buf = evbuffer_pullup(buffer, len);
+        X509_CRL *data = d2i_X509_CRL(nullptr, const_cast<const unsigned char **>(&buf), len);
+        m_crl_cache[uri] = data;
+        m_crl_waiting[uri].emit(uri, 200, data);
+        m_crl_waiting[uri].disconnect_all();
+        METRE_LOG(Log::INFO, " - Got " << len << " bytes");
     } else {
-        m_waiting[uri].emit(uri, response, "");
-        m_waiting[uri].disconnect_all();
+        m_crl_waiting[uri].emit(uri, response, nullptr);
+        m_crl_waiting[uri].disconnect_all();
     }
     m_requests.erase(key);
 }
 
-Http::callback_t& Http::do_get(std::string const & urix) {
+Http::crl_callback_t &Http::do_crl(std::string const &urix) {
     std::string uri{urix};
-    auto iter = m_cache.find(uri);
-    if (iter != m_cache.end()) {
-        std::string data{iter->second};
-        Router::defer([data,uri,this]() {
-            m_waiting[uri].emit(uri, 200, data);
-            m_waiting[uri].disconnect_all();
-        });
-        return m_waiting[uri];
+    auto iter = m_crl_cache.find(uri);
+    if (iter != m_crl_cache.end()) {
+        auto data = iter->second;
+        auto nextupdate = X509_CRL_get_nextUpdate(data);
+        int day, sec;
+        ASN1_TIME_diff(&day, &sec, nullptr, nextupdate);
+        if (day > 0) {
+            // nextUpdate is today sometime - refetch.,
+            Router::defer([data, uri, this]() {
+                m_crl_waiting[uri].emit(uri, 200, data);
+                m_crl_waiting[uri].disconnect_all();
+            });
+            return m_crl_waiting[uri];
+        }
     }
     try {
         auto parsed = evhttp_uri_parse(uri.c_str());
@@ -92,7 +101,7 @@ Http::callback_t& Http::do_get(std::string const & urix) {
         //evhttp_connection_set_retries(evcon, 3);
         //evhttp_connection_set_timeout(evcon, 5); // seconds
         m_requests[++m_req] = uri;
-        auto request = evhttp_request_new(Http::s_done_get, reinterpret_cast<void *>(m_req));
+        auto request = evhttp_request_new(Http::s_done_crl, reinterpret_cast<void *>(m_req));
         if (!request) {
             throw std::runtime_error("evhttp couldn't create for " + uri);
         }
@@ -104,9 +113,9 @@ Http::callback_t& Http::do_get(std::string const & urix) {
     } catch(std::runtime_error & e) {
         METRE_LOG(Log::INFO, "HTTP GET for " << uri << " failed, " << e.what());
         Router::defer([uri,this]() {
-            m_waiting[uri].emit(uri, 500, "");
-            m_waiting[uri].disconnect_all();
+            m_crl_waiting[uri].emit(uri, 500, nullptr);
+            m_crl_waiting[uri].disconnect_all();
         });
     }
-    return m_waiting[uri];
+    return m_crl_waiting[uri];
 }

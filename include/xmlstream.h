@@ -35,6 +35,8 @@ SOFTWARE.
 #include "rapidxml.hpp"
 #include "feature.h"
 
+struct X509_crl_st;
+
 namespace Metre {
     class NetSession;
 
@@ -75,7 +77,7 @@ namespace Metre {
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
         std::map<std::string, Filter *> m_filters;
         std::size_t m_num_crls = 0;
-        std::map<std::string,std::string> m_crls;
+        std::map<std::string, struct X509_crl_st *> m_crls;
         bool m_crl_complete = false;
 
     public:
@@ -169,7 +171,10 @@ namespace Metre {
         void connected(NetSession &);
 
         void fetch_crl(std::string const & uri);
-        void add_crl(std::string const & uri, int code, std::string const & data);
+
+        void add_crl(std::string const &uri, int code, struct X509_crl_st *data);
+
+        void crl(std::function<void(struct X509_crl_st *)> const &);
 
         Feature &feature(std::string const &);
 

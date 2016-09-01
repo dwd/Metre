@@ -77,6 +77,7 @@ namespace {
         bool auth_pkix = (def == S2S);
         bool auth_dialback = false;
         bool dnssec_required = false;
+        bool auth_pkix_crls = Config::config().fetch_pkix_status();
         std::string dhparam = "4096";
         std::string cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
         std::optional<std::string> auth_secret;
@@ -135,6 +136,12 @@ namespace {
                     std::string type = type_a->value();
                     if (type == "pkix") {
                         auth_pkix = true;
+                        auto crl = auth->first_node("check-status");
+                        if (crl && crl->value()) {
+                            auth_pkix_crls = xmlbool(crl->value());
+                            if (auth_pkix_crls && !Config::config().fetch_pkix_status())
+                                throw std::runtime_error("Cannot check status without fetching status.");
+                        }
                     } else if (type == "dialback") {
                         auth_dialback = true;
                     } else if (type == "secret") {
@@ -148,6 +155,7 @@ namespace {
         std::unique_ptr<Config::Domain> dom(
                 new Config::Domain(name, sess, forward, tls_required, block, auth_pkix, auth_dialback,
                                    std::move(auth_secret)));
+        dom->auth_pkix_status(auth_pkix_crls);
         auto x509t = domain->first_node("x509");
         if (x509t) {
             auto chain_a = x509t->first_attribute("chain");
@@ -306,19 +314,22 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
                           const_cast<char *>(cert_name.data()), name_sz);
         cert_name.resize(cert_name.find('\0'));
         METRE_LOG(Metre::Log::DEBUG, "Cert passed basic verification: " + cert_name);
-        auto crldp = X509_STORE_CTX_get_current_cert(st)->crldp;
-        if (crldp) {
-            for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-                DIST_POINT * dp = sk_DIST_POINT_value(crldp, i);
-                if (dp->distpoint->type == 0) { // Full Name
-                    auto names = dp->distpoint->name.fullname;
-                    for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-                        GENERAL_NAME * name = sk_GENERAL_NAME_value(names, ii);
-                        if (name->type == GEN_URI) {
-                            ASN1_IA5STRING * uri = name->d.uniformResourceIdentifier;
-                            std::string uristr{reinterpret_cast<char *>(uri->data), static_cast<std::size_t>(uri->length)};
-                            METRE_LOG(Metre::Log::INFO, "Fetching CRL for " << cert_name << " - " << uristr);
-                            Http::get(uristr);
+        if (Config::config().m_fetch_crls) {
+            auto crldp = X509_STORE_CTX_get_current_cert(st)->crldp;
+            if (crldp) {
+                for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
+                    DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
+                    if (dp->distpoint->type == 0) { // Full Name
+                        auto names = dp->distpoint->name.fullname;
+                        for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
+                            GENERAL_NAME *name = sk_GENERAL_NAME_value(names, ii);
+                            if (name->type == GEN_URI) {
+                                ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
+                                std::string uristr{reinterpret_cast<char *>(uri->data),
+                                                   static_cast<std::size_t>(uri->length)};
+                                METRE_LOG(Metre::Log::INFO, "Fetching CRL for " << cert_name << " - " << uristr);
+                                Http::crl(uristr);
+                            }
                         }
                     }
                 }
@@ -360,11 +371,11 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
 }
 
 Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(random_identifier()) {
+    s_config = this;
     load(filename);
     std::string tmp = asString();
     std::ofstream of(m_data_dir + "/" + "metre.running.xml", std::ios_base::trunc);
     of << tmp;
-    s_config = this;
     m_ub_ctx = ub_ctx_create();
     if (!m_ub_ctx) {
         throw std::runtime_error("DNS context creation failure.");
@@ -425,6 +436,10 @@ void Config::load(std::string const &filename) {
         auto dns_keys = globals->first_node("dnssec");
         if (dns_keys && dns_keys->value()) {
             m_dns_keys = dns_keys->value();
+        }
+        auto crls = globals->first_node("fetch-crls");
+        if (crls && crls->value()) {
+            m_fetch_crls = xmlbool(crls->value());
         }
     }
     if (m_runtime_dir.empty()) {
@@ -497,6 +512,9 @@ std::string Config::asString() {
         global("datadir", m_data_dir, "Data directory, used only for the running config.");
         global("logfile", m_logfile, "Logfile path.");
         global("dnssec", m_dns_keys, "DNSSEC root keys file.");
+        globals->append_node(doc.allocate_node(node_element, "fetch-crls", m_fetch_crls ? "true" : "false"));
+        globals->append_node(doc.allocate_node(node_comment, nullptr,
+                                               "Controls if CRLs are fetched - MUST be on for status checking!"));
 
         root->append_node(globals);
     }
@@ -534,6 +552,8 @@ std::string Config::asString() {
                 if (dom.auth_pkix()) {
                     auto auth = doc.allocate_node(node_element, "auth");
                     auth->append_attribute(doc.allocate_attribute("type", "pkix"));
+                    auth->append_node(
+                            doc.allocate_node(node_element, "check-status", dom.m_auth_crls ? "true" : "false"));
                     transport->append_node(auth);
                 }
                 if (dom.auth_dialback()) {
@@ -551,22 +571,80 @@ std::string Config::asString() {
             {
                 auto dns = doc.allocate_node(node_element, "dns");
                 dns->append_attribute(doc.allocate_attribute("dnssec", dom.dnssec_required() ? "true" : "false"));
-                dns->append_node(doc.allocate_node(node_comment, "DNS overrides are not yet output."));
-                /*
-                for (auto & tlsa : dom.tlsa()) {
-                    std::stringstream ss(tlsa.domain);
-                    unsigned short int port;
-                    std::string hostname;
-                    char underscore;
-                    ss >> underscore >> port >> "._tcp." >> hostname;
-                    std::ostringstream ssout;
-                    ssout << port;
-                    auto e = doc.allocate_node(node_element, "tlsa");
-                    e->append_attribute(doc.allocate_attribute("hostname", hostname.c_str()));
-                    e->append_attribute(doc.allocate_attribute("port", ssout.str().c_str()));
-                    e->append_attribute()
+                dns->append_node(
+                        doc.allocate_node(node_comment, nullptr, "DNS overrides are not yet output properly."));
+                for (auto &srv : dom.m_srvrecs) {
+                    for (auto &rr : srv.second->rrs) {
+                        auto s = doc.allocate_node(node_element, "srv");
+                        s->append_attribute(doc.allocate_attribute("host", rr.hostname.c_str()));
+                        std::ostringstream ss;
+                        ss << rr.port;
+                        s->append_attribute(doc.allocate_attribute("port", doc.allocate_string(ss.str().data())));
+                        dns->append_node(s);
+                    }
                 }
-                 */
+                dns->append_node(doc.allocate_node(node_comment, nullptr,
+                                                   "<srv host='hostname to connect to' port='port number'/>"));
+                for (auto & tlsa : dom.tlsa()) {
+                    for (auto &rr : tlsa.rrs) {
+                        std::stringstream ss(tlsa.domain);
+                        unsigned short int port = 0;
+                        std::string hostname;
+                        char underscore;
+                        ss >> underscore >> port >> hostname;
+                        std::ostringstream ssout;
+                        ssout << port;
+                        auto e = doc.allocate_node(node_element, "tlsa");
+                        e->append_attribute(
+                                doc.allocate_attribute("hostname", doc.allocate_string(hostname.c_str() + 6)));
+                        e->append_attribute(doc.allocate_attribute("port", doc.allocate_string(ssout.str().c_str())));
+                        const char *match = "Full";
+                        switch (rr.matchType) {
+                            case DNS::TlsaRR::Full:
+                                match = "Full";
+                                break;
+                            case DNS::TlsaRR::Sha256:
+                                match = "Sha256";
+                                break;
+                            case DNS::TlsaRR::Sha512:
+                                match = "Sha512";
+                                break;
+                        }
+                        e->append_attribute(doc.allocate_attribute("matchtype", match));
+                        const char *selector;
+                        switch (rr.selector) {
+                            case DNS::TlsaRR::FullCert:
+                                selector = "FullCert";
+                                break;
+                            case DNS::TlsaRR::SubjectPublicKeyInfo:
+                                selector = "SubjectPublicKeyInfo";
+                                break;
+                        }
+                        e->append_attribute(doc.allocate_attribute("selector", selector));
+                        const char *certUsage;
+                        switch (rr.certUsage) {
+                            case DNS::TlsaRR::CAConstraint:
+                                certUsage = "CAConstraint";
+                                break;
+                            case DNS::TlsaRR::CertConstraint:
+                                certUsage = "CertConstraint";
+                                break;
+                            case DNS::TlsaRR::DomainCert:
+                                certUsage = "DomainCert";
+                                break;
+                            case DNS::TlsaRR::TrustAnchorAssertion:
+                                certUsage = "TrustAnchorAssertion";
+                                break;
+                        }
+                        e->append_attribute(doc.allocate_attribute("certusage", certUsage));
+                        e->append_node(
+                                doc.allocate_node(node_comment, nullptr, "TLSA matching data is not yet included"));
+                        dns->append_node(e);
+                    }
+                }
+                dns->append_node(doc.allocate_node(node_comment, nullptr,
+                                                   "<tlsa host='nominal hostname [ignored]' port='nominal port number [ignored]' certusage='CAConstraint|CertConstraint|DomainCert|TrustAnchorAssertion' selector='FullCert|SubjectPublicKeyInfo' matchtype='Full|Sha256|Sha512'/>"));
+                d->append_node(dns);
             }
             {
                 auto x509 = doc.allocate_node(node_element, "x509");
@@ -586,12 +664,12 @@ std::string Config::asString() {
                     }
                 }
                 fclose(fp);
-                x509->append_attribute(doc.allocate_attribute("chain", chainfile.c_str()));
+                x509->append_attribute(doc.allocate_attribute("chain", doc.allocate_string(chainfile.c_str())));
                 std::string keyfile = m_data_dir + "/" + prefix + "key.pem";
                 fp = fopen(keyfile.c_str(), "w");
                 PEM_write_PKCS8PrivateKey(fp, SSL_CTX_get0_privatekey(dom.ssl_ctx()), nullptr, nullptr, 0, nullptr, nullptr);
                 fclose(fp);
-                x509->append_attribute(doc.allocate_attribute("pkey", keyfile.c_str()));
+                x509->append_attribute(doc.allocate_attribute("pkey", doc.allocate_string(keyfile.c_str())));
                 d->append_node(x509);
                 d->append_node(doc.allocate_node(node_comment, nullptr, "The x509 element provides a chainfile and private key to use as the local identity when acting as this domain."));
             }

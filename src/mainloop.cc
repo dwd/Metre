@@ -325,6 +325,7 @@ namespace Metre {
         }
 
         void session_closed(NetSession &ns) {
+            METRE_LOG(Log::DEBUG, "NS" << ns.serial() << " - Session closed.");
             auto it = m_sessions.find(ns.serial());
             if (it != m_sessions.end()) {
                 m_closed_sessions.push_back((*it).second);

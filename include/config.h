@@ -42,7 +42,6 @@ SOFTWARE.
 
 struct ssl_ctx_st; // SSL_CTX
 struct x509_store_ctx_st; // X509_STORE_CTX;
-struct X509_crl_st; // X509_CRL; (I have no idea why some of these are capitalized.)
 
 /**
  * Lib unbound.
@@ -60,6 +59,7 @@ namespace Metre {
         typedef sigslot::signal<sigslot::thread::st, DNS::Tlsa const *> tlsa_callback_t;
 
         class Domain {
+            friend class ::Metre::Config;
         public:
             std::string const &domain() const {
                 return m_domain;
@@ -83,6 +83,14 @@ namespace Metre {
 
             bool auth_pkix() const {
                 return m_auth_pkix;
+            }
+
+            bool auth_pkix_status() const {
+                return m_auth_crls;
+            }
+
+            bool auth_pkix_status(bool crls) {
+                return m_auth_crls = crls;
             }
 
             bool auth_dialback() const {
@@ -164,6 +172,7 @@ namespace Metre {
             bool m_require_tls;
             bool m_block;
             bool m_auth_pkix;
+            bool m_auth_crls;
             bool m_auth_dialback;
             bool m_dnssec_required = false;
             std::string m_dhparam;
@@ -205,8 +214,6 @@ namespace Metre {
 
         Domain const &domain(std::string const &domain) const;
 
-        Domain const &domain(int domain) const;
-
         void load(std::string const &filename);
 
         static Config const &config();
@@ -223,11 +230,14 @@ namespace Metre {
             return m_ub_ctx;
         }
 
+        bool fetch_pkix_status() const {
+            return m_fetch_crls;
+        }
+
     private:
         static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
 
-        std::map<std::string, struct X509_crl_st *> m_crls;
-
+        bool m_fetch_crls = true;
         std::string m_config_str;
         std::string m_default_domain;
         std::string m_runtime_dir;

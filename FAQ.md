@@ -60,12 +60,24 @@ How production-ready is this?
 I would describe this as:
 
 * MVP - it's not doing as much as I'd like, but it's essentially useful in its current form.
-* Beta - while it seems to work well enough for non-critical deployments, operational experience is lacking.
+* Alpha - while it seems to work well enough for non-critical test deployments, production operational experience is lacking.
 
 Does it score OK on the IM Observatory?
 ----
 
 It can get an A without much effort; the defaults are designed around this. 
+
+SIGHUP doesn't do a reload!
+----
+
+What Metre needs to do on a reload is flush all security information, disconnect all S2S
+sessions and components that may have changed security parameters, and ensure that
+all trust anchors on-disk are up to date.
+
+Essentially, it may have to discard all runtime state. And figuring out exactly what runtime
+state is safe to maintain, and therefore which sessions are safe to persist across this reload,
+is fraught with danger of getting things wrong. So I've elected not to try - if you change the
+configuration file, just restart - it really is much safer that way.
 
 I'm connecting a Java server and...
 ----
@@ -139,8 +151,8 @@ authenticate the remote domain, and not how it will authenticate itself *to* the
 Similarly, the `<dns/>` stanza controls lookups associated with the remote domain (so you can
 override host lookups for just one domain, even if the host is also used by another).
 
-However the `<x509/>` identity is how Metre will behave for the domain when it's hosting it, and not what it'll
-be using when connecting remotely.
+However the `<x509/>` identity is how Metre will behave for the domain when it's acting as it locally, and not what it'll
+be expecting when connecting remotely.
 
 How are XEP-0114 components hosted?
 ----

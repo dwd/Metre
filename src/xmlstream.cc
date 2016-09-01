@@ -57,16 +57,20 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
 }
 
 void XMLStream::thaw() {
+    if (!m_frozen) return;
     m_frozen = false;
-    METRE_LOG(Log::DEBUG, m_session << " - thaw");
+    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw");
     m_session->read();
-    METRE_LOG(Log::DEBUG, m_session << " - thaw done.");
+    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw done.");
 }
 
 size_t XMLStream::process(unsigned char *p, size_t len) {
     using namespace rapidxml;
     if (len == 0) return 0;
-    if (m_frozen) return 0;
+    if (m_frozen) {
+        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Data arrived when frozen");
+        return 0;
+    }
     (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
     size_t spaces = 0;
     for (unsigned char *sp{p}; len != 0; ++sp, --len, ++spaces) {
@@ -80,9 +84,10 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
         }
         break;
     }
-    if (len == 0) return 0;
+    if (spaces) m_session->used(spaces);
+    if (len == 0) return spaces;
     std::string buf{reinterpret_cast<char *>(p + spaces), len};
-    METRE_LOG(Metre::Log::DEBUG, m_session << " - Got [" << len << "] : " << buf);
+    METRE_LOG(Metre::Log::DEBUG, "NS" << m_session->serial() << " - Got [" << len << "] : " << buf);
     try {
         try {
             if (m_stream_buf.empty()) {
@@ -99,9 +104,6 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                     buf.erase(0, end - buf.data());
                     m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
                     stream_open();
-                    auto stream_open = m_stream.first_node();
-                    METRE_LOG(Metre::Log::DEBUG,
-                              "Stream open with {" << stream_open->xmlns() << "}" << stream_open->name());
                 } else {
                     m_stream_buf.clear();
                 }
@@ -510,9 +512,10 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     if (current < state) {
         m[key] = state;
         if (state == XMLStream::AUTHORIZED) METRE_LOG(Metre::Log::INFO,
-                                                      "Authorized " << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
-                                                                    << " session local:" << local << " remote:"
-                                                                    << remote);
+                                                      "NS" << m_session->serial() << " - Authorized "
+                                                           << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
+                                                           << " session local:" << local << " remote:"
+                                                           << remote);
         onAuthenticated.emit(*this);
     }
     return m[key];
@@ -598,18 +601,24 @@ bool XMLStream::tls_auth_ok(Route &route) {
 
 void XMLStream::fetch_crl(std::string const &uri) {
     m_num_crls++;
-    Http::get(uri).connect(this, &XMLStream::add_crl);
+    Http::crl(uri).connect(this, &XMLStream::add_crl);
     freeze();
 }
 
-void XMLStream::add_crl(std::string const & uri, int code, std::string const & data) {
+void XMLStream::add_crl(std::string const &uri, int code, struct X509_crl_st *data) {
     if (m_crl_complete) return;
     if (code == 200) {
-        METRE_LOG(Log::INFO, m_session << " - Got CRL from URI " << uri);
+        METRE_LOG(Log::INFO, "NS" << m_session->serial() << " - Got CRL from URI " << uri);
         m_crls[uri] = data;
         if (m_crls.size() == m_num_crls) {
             m_crl_complete = true;
             do_restart();
         }
+    }
+}
+
+void XMLStream::crl(std::function<void(struct X509_crl_st *)> const &fn) {
+    for (auto pair : m_crls) {
+        fn(pair.second);
     }
 }

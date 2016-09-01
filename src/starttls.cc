@@ -224,6 +224,15 @@ namespace Metre {
         SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
         X509_VERIFY_PARAM *vpm = X509_VERIFY_PARAM_new();
+        if (Config::config().domain(route.domain()).auth_pkix_status()) {
+            stream.crl([&](X509_CRL *crl) {
+                if (!X509_STORE_add_crl(store, crl)) {
+                    // Most likely already added. Wipe the error.
+                    ERR_clear_error();
+                }
+            });
+            X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CRL_CHECK_ALL);
+        }
         X509_VERIFY_PARAM_set1_host(vpm, route.domain().c_str(), route.domain().size());
         // Add RFC 6125 additional names.
         DNS::Srv const &srv = route.srv();
@@ -284,6 +293,7 @@ namespace Metre {
     }
 
     bool prep_crl(XMLStream & stream) {
+        if (Config::config().fetch_pkix_status()) return false;
         SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
         if (!ssl) return false; // No TLS.
         X509 *cert = SSL_get_peer_certificate(ssl);
