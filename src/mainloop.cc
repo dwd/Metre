@@ -64,7 +64,7 @@ namespace Metre {
         struct evconnlistener *m_component_listener;
         static std::atomic<unsigned long long> s_serial;
         std::list<std::shared_ptr<NetSession>> m_closed_sessions;
-        std::list<std::function<void()>> m_pending_actions;
+        std::multimap<time_t, std::function<void()>> m_pending_actions;
         bool m_shutdown = false;
         bool m_shutdown_now = false;
     public:
@@ -271,11 +271,13 @@ namespace Metre {
                     return;
                 }
                 m_closed_sessions.clear();
+                time_t now = std::time(nullptr);
                 while (!m_pending_actions.empty()) {
-                    std::list<std::function<void()>> pending;
-                    std::swap(pending, m_pending_actions);
-                    for (auto &f : pending) {
-                        f();
+                    if (m_pending_actions.begin()->first <= now) {
+                        m_pending_actions.begin()->second();
+                        m_pending_actions.erase(m_pending_actions.begin());
+                    } else {
+                        break;
                     }
                 }
                 if (m_shutdown) {
@@ -292,13 +294,20 @@ namespace Metre {
                     m_shutdown_now = true;
                     event_base_loopexit(m_event_base, NULL);
                     METRE_LOG(Metre::Log::INFO, "Closed all sessions.");
+                } else if (!m_pending_actions.empty()) {
+                    struct timeval t = {0, 0};
+                    t.tv_sec = m_pending_actions.begin()->first - now;
+                    event_base_loopexit(m_event_base, &t);
                 }
             }
         }
 
-        void do_later(std::function<void()> &&fn) {
-            m_pending_actions.emplace_back(std::move(fn));
-            event_base_loopexit(m_event_base, NULL);
+        void do_later(std::function<void()> &&fn, std::size_t seconds) {
+            time_t now = time(nullptr);
+            m_pending_actions.emplace(now + seconds, std::move(fn));
+            struct timeval t = {0, 0};
+            t.tv_sec = m_pending_actions.begin()->first - now;
+            event_base_loopexit(m_event_base, &t);
         }
 
         void shutdown() {
@@ -370,7 +379,11 @@ namespace Metre {
         }
 
         void defer(std::function<void()> &&fn) {
-            Mainloop::s_mainloop->do_later(std::move(fn));
+            Mainloop::s_mainloop->do_later(std::move(fn), 0);
+        }
+
+        void defer(std::function<void()> &&fn, std::size_t seconds) {
+            Mainloop::s_mainloop->do_later(std::move(fn), seconds);
         }
 
         void main() {
