@@ -46,6 +46,7 @@ SOFTWARE.
 #include "log.h"
 #include <rapidxml_print.hpp>
 #include <http.h>
+#include <iomanip>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -529,7 +530,10 @@ std::string Config::asString() {
             if (!dom.domain().empty()) {
                 d->append_attribute(doc.allocate_attribute("name", dom.domain().c_str()));
                 d->append_attribute(doc.allocate_attribute("forward", dom.forward() ? "true" : "false"));
+                d->append_attribute(doc.allocate_attribute("sec", dom.require_tls() ? "true" : "false"));
                 d->append_node(doc.allocate_node(node_comment, nullptr, "A remote domain. Forwarded domains are proxied through to non-forwarded domains."));
+                d->append_node(doc.allocate_node(node_comment, nullptr,
+                                                 "A 'sec' attribute set to true mandates a secured connection (usually TLS)."));
             }
             {
                 auto transport = doc.allocate_node(node_element, "transport");
@@ -572,7 +576,8 @@ std::string Config::asString() {
                 auto dns = doc.allocate_node(node_element, "dns");
                 dns->append_attribute(doc.allocate_attribute("dnssec", dom.dnssec_required() ? "true" : "false"));
                 dns->append_node(
-                        doc.allocate_node(node_comment, nullptr, "DNS overrides are not yet output properly."));
+                        doc.allocate_node(node_comment, nullptr,
+                                          "DNS overrides are always treated as if signed with DNSSEC."));
                 for (auto &srv : dom.m_srvrecs) {
                     for (auto &rr : srv.second->rrs) {
                         auto s = doc.allocate_node(node_element, "srv");
@@ -637,13 +642,41 @@ std::string Config::asString() {
                                 break;
                         }
                         e->append_attribute(doc.allocate_attribute("certusage", certUsage));
-                        e->append_node(
-                                doc.allocate_node(node_comment, nullptr, "TLSA matching data is not yet included"));
+                        if (rr.matchType == DNS::TlsaRR::Full) {
+                            // Base64 data (it might have come from a file, but never mind).
+                            e->value(doc.allocate_string(base64_encode(rr.matchData).c_str()));
+                        } else {
+                            std::ostringstream os;
+                            os << std::hex << std::setfill('0') << std::setw(2);
+                            bool colon = false;
+                            for (char c : rr.matchData) {
+                                unsigned char byte = static_cast<unsigned char>(c);
+                                if (!colon) {
+                                    colon = true;
+                                } else {
+                                    os << ':';
+                                }
+                                os << byte;
+                            }
+                            e->value(doc.allocate_string(os.str().c_str()));
+                        }
                         dns->append_node(e);
                     }
                 }
                 dns->append_node(doc.allocate_node(node_comment, nullptr,
-                                                   "<tlsa host='nominal hostname [ignored]' port='nominal port number [ignored]' certusage='CAConstraint|CertConstraint|DomainCert|TrustAnchorAssertion' selector='FullCert|SubjectPublicKeyInfo' matchtype='Full|Sha256|Sha512'/>"));
+                                                   "<tlsa host='nominal hostname [ignored]' port='nominal port number [ignored]' certusage='CAConstraint|CertConstraint|DomainCert|TrustAnchorAssertion' selector='FullCert|SubjectPublicKeyInfo' matchtype='Full|Sha256|Sha512'>Value</tsla>"));
+                dns->append_node(doc.allocate_node(node_comment, nullptr,
+                                                   "Value should be hex hash for hash matchtypes, or a filename (no return character, at least one '/') or base64 DER (PEM without headers)"));
+                for (auto const &h : dom.m_host_arecs) {
+                    auto host = doc.allocate_node(node_element, "host");
+                    host->append_attribute(doc.allocate_attribute("name", h.first.c_str()));
+                    char buf[32];
+                    inet_ntop(AF_INET, h.second->addr4.data(), buf, sizeof(buf));
+                    host->append_attribute(doc.allocate_attribute("a", doc.allocate_string(buf)));
+                    dns->append_node(host);
+                }
+                dns->append_node(
+                        doc.allocate_node(node_comment, nullptr, "<host name='name.example' a='123.45.67.89'/>"));
                 d->append_node(dns);
             }
             {
@@ -680,6 +713,7 @@ std::string Config::asString() {
                 d->append_node(doc.allocate_node(node_comment, nullptr, "Provides the size of the DH keys used for Perfect Forward Secrecy - 1024, 2048, or 4096."));
             }
             d->append_node(doc.allocate_node(node_element, "ciphers", dom.cipherlist().c_str()));
+            d->append_node(doc.allocate_node(node_comment, nullptr, "This is a normal OpenSSL cipher string."));
             domains->append_node(d);
         };
         for (auto & p : m_domains) {
