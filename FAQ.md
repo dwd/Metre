@@ -11,14 +11,14 @@ Who is "I"?
 ----
 
 I am Dave Cridland. You can find me in various places. If you're using Metre, or interested in doing so,
-drop me a line, or an IM, or whatever.
+please drop me a line, or an IM, or whatever.
 
 Is this an XMPP server?
 ----
 
 Well... Sort of. You can't connect clients to it, only servers and components (which are
 sort of servers anyway). It can offer services - but it actually only provides XEP-0199
-ping responses which are useful for diagnostics and testing. I might add version.
+ping responses which are useful for diagnostics and testing. I might add version, eventually.
 
 What it's for is for hosting components outside of a full server, and for letting two
 servers which cannot, or must not, talk to each other directly connect through it "back to back".
@@ -66,6 +66,19 @@ Does it score OK on the IM Observatory?
 ----
 
 It can get an A without much effort; the defaults are designed around this. 
+
+The defaults look complex!
+----
+
+Yes, they are - Metre tries to be smart about what defaults to use for a domain given
+previous configuration. Loosely, if it's set to fetch status information (a global), it'll also
+check it (a per-domain option).
+
+Domains should inherit defaults from the `<any/>` domain, too.
+
+If you're confused, check the config dump that'll be created in the data directory - it'll
+contain all the configuration, including defaults, and is an accurate snapshot of the
+running config (very useful for debugging and support!)
 
 SIGHUP doesn't do a reload!
 ----
