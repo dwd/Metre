@@ -79,6 +79,7 @@ namespace {
         bool auth_dialback = false;
         bool dnssec_required = false;
         bool auth_pkix_crls = Config::config().fetch_pkix_status();
+        int stanza_timeout = 10;
         std::string dhparam = "4096";
         std::string cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
         std::optional<std::string> auth_secret;
@@ -89,6 +90,8 @@ namespace {
             dnssec_required = any->dnssec_required();
             dhparam = any->dhparam();
             cipherlist = any->cipherlist();
+            auth_pkix_crls = any->auth_pkix_status();
+            stanza_timeout = any->stanza_timeout();
         }
         if (any_element == domain->name()) {
             name = "";
@@ -130,6 +133,15 @@ namespace {
             if (forward_a) {
                 forward = xmlbool(forward_a->value());
             }
+            auto timeout_a = domain->first_attribute("forward");
+            if (timeout_a && timeout_a->value()) {
+                std::istringstream timeout(timeout_a->value());
+                int tmp = 0;
+                timeout >> tmp;
+                if (tmp > 0) {
+                    stanza_timeout = tmp;
+                }
+            }
 
             for (auto auth = transport->first_node("auth"); auth; auth = auth->next_sibling("auth")) {
                 auto type_a = auth->first_attribute("type");
@@ -157,6 +169,7 @@ namespace {
                 new Config::Domain(name, sess, forward, tls_required, block, auth_pkix, auth_dialback,
                                    std::move(auth_secret)));
         dom->auth_pkix_status(auth_pkix_crls);
+        dom->stanza_timeout(stanza_timeout);
         auto x509t = domain->first_node("x509");
         if (x509t) {
             auto chain_a = x509t->first_attribute("chain");
@@ -531,6 +544,9 @@ std::string Config::asString() {
                 d->append_attribute(doc.allocate_attribute("name", dom.domain().c_str()));
                 d->append_attribute(doc.allocate_attribute("forward", dom.forward() ? "true" : "false"));
                 d->append_attribute(doc.allocate_attribute("sec", dom.require_tls() ? "true" : "false"));
+                std::ostringstream os;
+                os << dom.stanza_timeout();
+                d->append_attribute(doc.allocate_attribute("timeout", doc.allocate_string(os.str().c_str())));
                 d->append_node(doc.allocate_node(node_comment, nullptr, "A remote domain. Forwarded domains are proxied through to non-forwarded domains."));
                 d->append_node(doc.allocate_node(node_comment, nullptr,
                                                  "A 'sec' attribute set to true mandates a secured connection (usually TLS)."));

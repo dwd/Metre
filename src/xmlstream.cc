@@ -576,7 +576,7 @@ bool XMLStream::process(Stanza &s) {
                 throw Metre::stanza_service_unavailable("Stanza rejected by filter");
             }
             // Forward everything.
-            std::unique_ptr<Stanza> copy(s.create_forward(*this));
+            std::unique_ptr<Stanza> copy(s.create_forward());
             std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
             route->transmit(std::move(copy));
         } catch (Metre::base::xmpp_exception) {
@@ -587,7 +587,7 @@ bool XMLStream::process(Stanza &s) {
             throw Metre::stanza_undefined_condition(e.what());
         }
     } catch (Metre::base::stanza_exception const &stanza_error) {
-        std::unique_ptr<Stanza> st = s.create_bounce(stanza_error, *this);
+        std::unique_ptr<Stanza> st = s.create_bounce(stanza_error);
         std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
         route->transmit(std::move(st));
     }

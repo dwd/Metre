@@ -55,11 +55,11 @@ namespace {
             std::string stanza = node->name();
             std::unique_ptr<Stanza> s;
             if (stanza == "message") {
-                s = std::move(std::unique_ptr<Stanza>(new Message(node, m_stream)));
+                s = std::move(std::unique_ptr<Stanza>(new Message(node)));
             } else if (stanza == "iq") {
-                s = std::move(std::unique_ptr<Stanza>(new Iq(node, m_stream)));
+                s = std::move(std::unique_ptr<Stanza>(new Iq(node)));
             } else if (stanza == "presence") {
-                s = std::move(std::unique_ptr<Stanza>(new Presence(node, m_stream)));
+                s = std::move(std::unique_ptr<Stanza>(new Presence(node)));
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
             }
@@ -87,7 +87,7 @@ namespace {
                             std::string id;
                             auto id_att = node->first_attribute("id");
                             if (id_att && id_att->value()) id = id_att->value();
-                            std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, id, m_stream)};
+                            std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, id)};
                             std::shared_ptr<Route> route = RouteTable::routeTable(to).route(from);
                             route->transmit(std::move(pong));
                         } else {
@@ -106,7 +106,7 @@ namespace {
                     throw Metre::stanza_undefined_condition(e.what());
                 }
             } catch (Metre::base::stanza_exception const &stanza_error) {
-                std::unique_ptr<Stanza> st = s->create_bounce(stanza_error, m_stream);
+                std::unique_ptr<Stanza> st = s->create_bounce(stanza_error);
                 std::shared_ptr<Route> route = RouteTable::routeTable(st->from()).route(st->to());
                 route->transmit(std::move(st));
             }

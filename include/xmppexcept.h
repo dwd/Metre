@@ -108,6 +108,12 @@ namespace Metre {
 
     METRE_STANZA_EXCEPT(undefined_condition, "An internal server error occured processing this stanza", "cancel",
                         "undefined-condition");
+
+    METRE_STANZA_EXCEPT(remote_server_timeout, "The remote server could not be reached within the required time",
+                        "cancel", "remote-server-timeout");
+
+    METRE_STANZA_EXCEPT(remote_server_not_found, "The remote server discovery or connection failed", "cancel",
+                        "remote-server-not-found");
 }
 
 #endif

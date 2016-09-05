@@ -97,6 +97,14 @@ namespace Metre {
                 return m_auth_dialback;
             }
 
+            int stanza_timeout() const {
+                return m_stanza_timeout;
+            }
+
+            unsigned stanza_timeout(int stanza_timeout) {
+                return m_stanza_timeout = stanza_timeout;
+            }
+
             bool dnssec_required() const {
                 return m_dnssec_required;
             }
@@ -175,6 +183,7 @@ namespace Metre {
             bool m_auth_crls;
             bool m_auth_dialback;
             bool m_dnssec_required = false;
+            unsigned m_stanza_timeout = 10;
             std::string m_dhparam;
             std::string m_cipherlist;
             std::optional<std::string> m_auth_secret;

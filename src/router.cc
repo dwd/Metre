@@ -83,7 +83,7 @@ namespace {
     }
 }
 
-void Route::transmit(std::unique_ptr<Verify> v) {
+void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
     auto vrfy = m_vrfy.lock();
     if (check_verify(*this, vrfy)) {
         if (!m_dialback.empty()) {
@@ -103,13 +103,33 @@ void Route::transmit(std::unique_ptr<Verify> v) {
 
 }
 
-void Route::transmit(std::unique_ptr<Stanza> s) {
+void Route::bounce_dialback(bool timeout) {
+    // TODO : verify->failed(timeout); // Or something.
+}
+
+void Route::bounce_stanzas(Stanza::Error e) {
+    for (auto &stanza : m_stanzas) {
+        if (stanza->type_str() && *stanza->type_str() == "error") continue;
+        auto bounce = stanza->create_bounce(e);
+        RouteTable::routeTable(bounce->from()).route(bounce->to())->transmit(std::move(bounce));
+    }
+}
+
+void Route::queue(std::unique_ptr<Stanza> &&s) {
+    s->freeze();
+    if (m_stanzas.empty())
+        Router::defer([this]() {
+            bounce_stanzas(Stanza::remote_server_timeout);
+        }, Config::config().domain(m_domain.domain()).stanza_timeout());
+    m_stanzas.push_back(std::move(s));
+    METRE_LOG(Metre::Log::DEBUG, "Queued stanza for " << m_local.domain() << "=>" << m_domain.domain());
+}
+
+void Route::transmit(std::unique_ptr<Stanza> &&s) {
     auto to = m_to.lock();
     if (check_to(*this, to)) {
         if (!m_stanzas.empty()) {
-            s->freeze();
-            m_stanzas.push_back(std::move(s));
-            METRE_LOG(Metre::Log::DEBUG, "Queued stanza (check) for " << m_local.domain() << "=>" << m_domain.domain());
+            queue(std::move(s));
             return;
         } else {
             to->xml_stream().send(std::move(s));
@@ -121,26 +141,20 @@ void Route::transmit(std::unique_ptr<Stanza> s) {
             transmit(std::move(s)); // Retry
             return;
         }
-        // TODO Look for an existing session, etc.
         std::shared_ptr<NetSession> dom = Router::session_by_domain(m_domain.domain());
         if (dom) {
             m_to = dom;
             transmit(std::move(s)); // Retry;
             return;
         }
-        s->freeze();
-        m_stanzas.push_back(std::move(s));
-        METRE_LOG(Metre::Log::DEBUG, "Queued stanza (fallback) for " << m_local.domain() << "=>" << m_domain.domain());
-        // TODO : Timeout.
+        queue(std::move(s));
         Config::Domain const &conf = Config::config().domain(m_domain.domain());
         if (conf.transport_type() == S2S) {
             doSrvLookup();
         }
         // Otherwise wait.
     } else { // Got a to but it's not ready yet.
-        s->freeze();
-        m_stanzas.push_back(std::move(s));
-        METRE_LOG(Metre::Log::DEBUG, "Queued stanza (to) for " << m_local.domain() << "=>" << m_domain.domain());
+        queue(std::move(s));
     }
 }
 

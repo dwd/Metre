@@ -44,8 +44,6 @@ namespace Metre {
 
     class Feature;
 
-    class Verify;
-
     class Stanza;
 
     class XMLStream : public sigslot::has_slots<sigslot::thread::st> {

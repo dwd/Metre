@@ -117,120 +117,76 @@ namespace {
             }
             m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::REQUESTED);
             // With syntax done, we should send the key:
-            route.transmit(std::unique_ptr<Verify>(
-                    new Verify(route.domain(), route.local(), m_stream.stream_id(), key, m_stream)));
+            route.transmit(std::unique_ptr<DB::Verify>(
+                    new DB::Verify(route.domain(), route.local(), m_stream.stream_id(), key)));
             m_keys.erase(key);
         }
 
-        void result(rapidxml::xml_node<> *node) {
+        void result(DB::Result const &result) {
             /*
              * This is a request to authenticate, using the current key.
-             * We can shortcut this in a number of ways, but for now, let's do it longhand.
              */
-            // Should be a key here:
-            const char *key = node->value();
-            if (!key || !key[0]) {
-                throw Metre::unsupported_stanza_type("Missing key");
-            }
-            // And a from/to:
-            auto from = node->first_attribute("from");
-            auto to = node->first_attribute("to");
-            if (!(from && to)) {
-                throw Metre::unsupported_stanza_type("Missing mandatory attributes");
-            }
-            Jid fromjid(from->value());
-            Jid tojid(to->value());
-            Config::Domain const &from_domain = Config::config().domain(fromjid.domain());
+            Config::Domain const &from_domain = Config::config().domain(result.from().domain());
             if (from_domain.transport_type() != S2S) {
                 throw Metre::host_unknown("Nice try.");
             }
-            m_stream.check_domain_pair(fromjid.domain(), tojid.domain());
-            if (!m_stream.secured() && Config::config().domain(tojid.domain()).require_tls()) {
+            m_stream.check_domain_pair(result.from().domain(), result.to().domain());
+            if (!m_stream.secured() && Config::config().domain(result.to().domain()).require_tls()) {
                 throw Metre::host_unknown("Domain requires TLS");
             }
             // Need to perform name collation:
-            std::shared_ptr<Route> &route = RouteTable::routeTable(tojid).route(fromjid);
-            m_keys.insert(key);
-            const char *keytmp = m_keys.find(key)->c_str();
+            std::shared_ptr<Route> &route = RouteTable::routeTable(result.to()).route(result.from());
+            m_keys.insert(result.key());
+            const char *keytmp = m_keys.find(result.key())->c_str();
             route->onNamesCollated.connect(this, [=](Route &r) {
                 result_step(r, keytmp);
             });
             route->collateNames();
         }
 
-        void result_valid(rapidxml::xml_node<> *node) {
-            auto to_att = node->first_attribute("to");
-            if (!to_att || !to_att->value()) throw std::runtime_error("Missing to on db:result:valid");
-            std::string to = to_att->value();
-            auto from_att = node->first_attribute("from");
-            if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on db:result:valid");
-            std::string from = from_att->value();
-            if (m_stream.s2s_auth_pair(to, from, OUTBOUND) >= XMLStream::REQUESTED) {
-                m_stream.s2s_auth_pair(to, from, OUTBOUND, XMLStream::AUTHORIZED);
+        void result_valid(DB::Result const &result) {
+            if (m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND) >=
+                XMLStream::REQUESTED) {
+                m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND, XMLStream::AUTHORIZED);
             }
         }
 
-        void result_invalid(rapidxml::xml_node<> *node) {
+        void result_invalid(DB::Result const &r) {
             throw std::runtime_error("Unimplemented");
         }
 
-        void result_error(rapidxml::xml_node<> *node) {
+        void result_error(DB::Result const &r) {
             throw std::runtime_error("Unimplemented");
         }
 
-        void verify(rapidxml::xml_node<> *node) {
-            auto id_att = node->first_attribute("id");
-            if (!id_att || !id_att->value()) throw std::runtime_error("Missing id on db:result:valid");
-            std::string id = id_att->value();
-            // TODO : Validate stream to/from
-            auto to_att = node->first_attribute("to");
-            if (!to_att || !to_att->value()) throw std::runtime_error("Missing to on db:result:valid");
-            std::string to = to_att->value();
-            auto from_att = node->first_attribute("from");
-            if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on db:result:valid");
-            std::string from = from_att->value();
-            const char *validity = "invalid";
-            std::string expected = Config::config().dialback_key(id, to, from);
-            if (node->value() == expected) validity = "valid";
-            xml_document<> d;
-            auto vrfy = d.allocate_node(node_element, "db:verify");
-            vrfy->append_attribute(d.allocate_attribute("from", to.c_str()));
-            vrfy->append_attribute(d.allocate_attribute("to", from.c_str()));
-            vrfy->append_attribute(d.allocate_attribute("id", id.c_str()));
-            vrfy->append_attribute(d.allocate_attribute("type", validity));
-            d.append_node(vrfy);
-            m_stream.send(d);
+        void verify(DB::Verify const &v) {
+            std::shared_ptr<NetSession> session = Router::session_by_stream_id(v.id());
+            DB::Type validity = DB::INVALID;
+            if (session) {
+                if (session->xml_stream().s2s_auth_pair(v.to().domain(), v.from().domain(), OUTBOUND) >=
+                    XMLStream::REQUESTED) {
+                    std::string expected = Config::config().dialback_key(v.id(), v.to().domain(), v.from().domain());
+                    if (v.key() == expected) validity = DB::VALID;
+                }
+            }
+            std::unique_ptr<Stanza> d(new DB::Verify(v.from(), v.to(), v.id(), validity));
+            m_stream.send(std::move(d));
         }
 
-        void verify_valid(rapidxml::xml_node<> *node) {
+        void verify_valid(DB::Verify const &v) {
             if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
-            auto id_att = node->first_attribute("id");
-            if (!id_att || !id_att->value()) throw std::runtime_error("Missing id on verify");
-            std::string id = id_att->value();
-            std::shared_ptr<NetSession> session = Router::session_by_stream_id(id);
-            if (!session) throw std::runtime_error("Session not found");
+            std::shared_ptr<NetSession> session = Router::session_by_stream_id(v.id());
+            if (!session) return; // Silently ignore this.
             XMLStream &stream = session->xml_stream();
-            // TODO : Validate stream to/from
-            auto to_att = node->first_attribute("to");
-            if (!to_att || !to_att->value()) throw std::runtime_error("Missing to on verify");
-            std::string to = to_att->value();
-            auto from_att = node->first_attribute("from");
-            if (!from_att || !from_att->value()) throw std::runtime_error("Missing from on verify");
-            std::string from = from_att->value();
-            if (stream.s2s_auth_pair(to, from, INBOUND) >= XMLStream::REQUESTED) {
-                xml_document<> d;
-                auto result = d.allocate_node(node_element, "db:result");
-                result->append_attribute(d.allocate_attribute("from", to.c_str()));
-                result->append_attribute(d.allocate_attribute("to", from.c_str()));
-                result->append_attribute(d.allocate_attribute("type", "valid"));
-                d.append_node(result);
-                stream.send(d);
-                stream.s2s_auth_pair(to, from, INBOUND, XMLStream::AUTHORIZED);
+            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) >= XMLStream::REQUESTED) {
+                std::unique_ptr<Stanza> d(new DB::Result(v.from(), v.to(), "", DB::VALID));
+                stream.send(std::move(d));
+                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTHORIZED);
             }
         }
 
-        void verify_invalid(rapidxml::xml_node<> *node) {
+        void verify_invalid(DB::Verify const &v) {
             throw std::runtime_error("Unimplemented");
         }
 
@@ -238,17 +194,14 @@ namespace {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string stanza = node->name();
-            std::optional<std::string> type;
-            if (auto type_str = node->first_attribute("type")) {
-                type.emplace(type_str->value());
-            }
             if (stanza == "result") {
-                if (type) {
-                    if (*type == "valid") {
-                        result_valid(node);
-                    } else if (*type == "invalid") {
-                        result_invalid(node);
-                    } else if (*type == "error") {
+                std::unique_ptr<DB::Result> p(new DB::Result(node));
+                if (p->type_str()) {
+                    if (*p->type_str() == "valid") {
+                        result_valid(*p);
+                    } else if (*p->type_str() == "invalid") {
+                        result_invalid(*p);
+                    } else if (*p->type_str() == "error") {
                         result_error(node);
                     } else {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:result");
@@ -257,11 +210,12 @@ namespace {
                     result(node);
                 }
             } else if (stanza == "verify") {
-                if (type) {
-                    if (*type == "valid") {
-                        verify_valid(node);
-                    } else if (*type == "invalid") {
-                        verify_invalid(node);
+                std::unique_ptr<DB::Verify> p(new DB::Verify(node));
+                if (p->type_str()) {
+                    if (*p->type_str() == "valid") {
+                        verify_valid(*p);
+                    } else if (*p->type_str() == "invalid") {
+                        verify_invalid(*p);
                     } else {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:verify");
                     }

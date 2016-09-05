@@ -30,9 +30,7 @@ SOFTWARE.
 
 using namespace Metre;
 
-Stanza::Stanza(const char *name, rapidxml::xml_node<> const *node, XMLStream &s) : m_name(name),
-                                                                                   m_stream_id(s.stream_id()),
-                                                                                   m_payload{nullptr}, m_payload_l{0} {
+Stanza::Stanza(const char *name, rapidxml::xml_node<> const *node) : m_name(name) {
     auto to = node->first_attribute("to");
     if (to) m_to = Jid(to->value());
     auto from = node->first_attribute("from");
@@ -45,13 +43,12 @@ Stanza::Stanza(const char *name, rapidxml::xml_node<> const *node, XMLStream &s)
     m_payload_l = node->contents_size();
 }
 
-Stanza::Stanza(const char *name, XMLStream &s) : m_name(name), m_stream_id(s.stream_id()), m_payload_str(),
-                                                 m_payload{nullptr}, m_payload_l{0} {
+Stanza::Stanza(const char *name) : m_name(name) {
 }
 
-Stanza::Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type_str, std::string const &id,
-               XMLStream &s) : m_name(name), m_stream_id(s.stream_id()), m_from(from), m_to(to), m_type_str(type_str),
-                               m_id(id), m_payload{nullptr}, m_payload_l{0} {
+Stanza::Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type_str, std::string const &id)
+        : m_name(name), m_from(from), m_to(to), m_type_str(type_str),
+          m_id(id) {
 }
 
 void Stanza::freeze() {
@@ -72,8 +69,8 @@ void Stanza::render(rapidxml::xml_document<> &d) {
         auto att = d.allocate_attribute("from", m_from->full().c_str());
         hdr->append_attribute(att);
     }
-    if (!m_type_str.empty()) {
-        auto att = d.allocate_attribute("type", m_type_str.c_str());
+    if (m_type_str) {
+        auto att = d.allocate_attribute("type", m_type_str->c_str());
         hdr->append_attribute(att);
     }
     if (!m_id.empty()) {
@@ -88,8 +85,8 @@ void Stanza::render(rapidxml::xml_document<> &d) {
     d.append_node(hdr);
 }
 
-std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex, XMLStream &s) {
-    std::unique_ptr<Stanza> stanza{new Stanza(m_name, s)};
+std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) {
+    std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
     stanza->m_from = m_to;
     stanza->m_to = m_from;
     stanza->m_id = m_id;
@@ -115,8 +112,24 @@ std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex, 
     return stanza;
 }
 
-std::unique_ptr<Stanza> Stanza::create_forward(XMLStream &s) {
-    std::unique_ptr<Stanza> stanza{new Stanza(m_name, s)};
+std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) {
+    switch (e) {
+        case remote_server_timeout:
+            return create_bounce(stanza_remote_server_timeout());
+        case remote_server_not_found:
+            return create_bounce(stanza_remote_server_not_found());
+        case service_unavailable:
+            return create_bounce(stanza_service_unavailable());
+        case undefined_condition:
+            return create_bounce(stanza_undefined_condition());
+        default:
+        METRE_LOG(Log::CRIT, "Unhandled stanza error type");
+            return create_bounce(stanza_undefined_condition());
+    }
+}
+
+std::unique_ptr<Stanza> Stanza::create_forward() {
+    std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
     stanza->m_from = m_from;
     stanza->m_to = m_to;
     stanza->m_id = m_id;
@@ -129,11 +142,11 @@ std::unique_ptr<Stanza> Stanza::create_forward(XMLStream &s) {
     return stanza;
 }
 
-Iq::Iq(Jid const &from, Jid const &to, Type t, std::string const &id, XMLStream &s) : Stanza("iq", from, to,
-                                                                                             Iq::type_toString(t), id,
-                                                                                             s) {}
+Iq::Iq(Jid const &from, Jid const &to, Type t, std::string const &id) : Stanza("iq", from, to,
+                                                                               Iq::type_toString(t), id) {}
 
 const char *Iq::name = "iq";
 const char *Message::name = "message";
 const char *Presence::name = "presence";
-const char *Verify::name = "db:verify";
+const char *DB::Verify::name = "db:verify";
+const char *DB::Result::name = "db:result";

@@ -63,35 +63,31 @@ namespace Metre {
         } Error;
     protected:
         const char *m_name;
-        std::string const m_stream_id;
         std::optional<Jid> m_from;
         std::optional<Jid> m_to;
-        std::string m_type_str;
+        std::optional<std::string> m_type_str;
         std::string m_id;
         std::string m_lang;
         std::string m_payload_str;
-        const char *m_payload;
-        size_t m_payload_l;
+        const char *m_payload = nullptr;
+        size_t m_payload_l = 0;
         rapidxml::xml_node<> const *m_node;
     public:
-        Stanza(const char *name, rapidxml::xml_node<> const *node, XMLStream &s);
+        Stanza(const char *name, rapidxml::xml_node<> const *node);
 
-        Stanza(const char *name, XMLStream &s);
+        Stanza(const char *name);
 
-        Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type, std::string const &id,
-               XMLStream &s);
+        Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type, std::string const &id);
 
         Jid const &to() const {
-            //if (!m_to) return m_stream.to();
             return *m_to;
         }
 
         Jid const &from() const {
-            //if (!m_from) return m_stream.from();
             return *m_from;
         }
 
-        std::string const &type_str() const {
+        std::optional<std::string> const &type_str() const {
             return m_type_str;
         }
 
@@ -109,9 +105,11 @@ namespace Metre {
 
         void render(rapidxml::xml_document<> &d);
 
-        std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e, XMLStream &s);
+        std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e);
 
-        std::unique_ptr<Stanza> create_forward(XMLStream &s);
+        std::unique_ptr<Stanza> create_bounce(Stanza::Error e);
+
+        std::unique_ptr<Stanza> create_forward();
 
         void freeze(); // Make sure nothing is in volatile storage anymore.
     };
@@ -126,13 +124,13 @@ namespace Metre {
     private:
         mutable Type m_type;
     public:
-        Message(rapidxml::xml_node<> const *node, XMLStream &s) : Stanza(name, node, s), m_type(UNCHECKED) {
+        Message(rapidxml::xml_node<> const *node) : Stanza(name, node), m_type(UNCHECKED) {
         }
 
         Type type() const {
             if (m_type != UNCHECKED) return m_type;
-            std::string const &t = type_str();
-            if (t.empty()) return m_type = NORMAL;
+            if (!type_str()) return m_type = NORMAL;
+            std::string const &t = *type_str();
             switch (t[0]) {
                 case 'n':
                     if (t == "normal") return m_type = NORMAL;
@@ -163,9 +161,9 @@ namespace Metre {
     private:
         mutable Type m_type;
     public:
-        Iq(rapidxml::xml_node<> const *node, XMLStream &s) : Stanza(name, node, s) {}
+        Iq(rapidxml::xml_node<> const *node) : Stanza(name, node) {}
 
-        Iq(Jid const &from, Jid const &to, Type t, std::string const &id, XMLStream &s);
+        Iq(Jid const &from, Jid const &to, Type t, std::string const &id);
 
         static const char *type_toString(Type t) {
             switch (t) {
@@ -188,25 +186,92 @@ namespace Metre {
     public:
         static const char *name;
 
-        Presence(rapidxml::xml_node<> const *node, XMLStream &s) : Stanza(name, node, s) {
+        Presence(rapidxml::xml_node<> const *node) : Stanza(name, node) {
         }
     };
 
     /*
-        * Slightly hacky; used for building outbound Verify elements.
+        * Slightly hacky; used for handling the two dialback elements.
+        * These are not stanzas, but behave so much like them syntactically it's silly not to use the code.
         */
-    class Verify : public Stanza {
+    class DB : public Stanza {
     public:
-        static const char *name;
+        typedef enum {
+            VALID, INVALID, ERROR
+        } Type;
 
-        Verify(Jid const &to, Jid const &from, std::string const &stream_id, std::string const &key, XMLStream &s)
-                : Stanza(name, s) {
+        DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
+           std::optional<std::string> const &key)
+                : Stanza(name) {
             m_to = to;
             m_from = from;
             m_id = stream_id;
             m_payload_str = key;
             m_payload = m_payload_str.data();
             m_payload_l = m_payload_str.length();
+        }
+
+        DB(const char *name, rapidxml::xml_node<> const *node) : Stanza(name, node) {
+        }
+
+        DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t) : Stanza(name) {
+            m_to = to;
+            m_from = from;
+            m_id = stream_id;
+            switch (t) {
+                case VALID:
+                    m_type_str = "valid";
+                    break;
+                case INVALID:
+                    m_type_str = "invalid";
+                    break;
+                case ERROR:
+                    m_type_str = "error";
+                    break;
+            }
+        }
+
+        std::string const &key() const {
+            if (!m_type_str) {
+                const_cast<DB *>(this)->freeze();
+                return m_payload_str;
+            } else {
+                throw std::runtime_error("Keys not present in typed dialback element.");
+            }
+        }
+
+        class Verify;
+
+        class Result;
+    };
+
+    class DB::Verify : public DB {
+    public:
+        static const char *name;
+
+        Verify(Jid const &to, Jid const &from, std::string const &stream_id, std::string const &key)
+                : DB(name, to, from, stream_id, key) {
+        }
+
+        Verify(Jid const &to, Jid const &from, std::string const &stream_id, Type t) : DB(name, to, from, stream_id,
+                                                                                          t) {}
+
+        Verify(rapidxml::xml_node<> const *node) : DB(name, node) {
+        }
+    };
+
+    class DB::Result : public DB {
+    public:
+        static const char *name;
+
+        Result(Jid const &to, Jid const &from, std::string const &stream_id, std::string const &key)
+                : DB(name, to, from, stream_id, key) {
+        }
+
+        Result(Jid const &to, Jid const &from, std::string const &stream_id, Type t) : DB(name, to, from, stream_id,
+                                                                                          t) {}
+
+        Result(rapidxml::xml_node<> const *node) : DB(name, node) {
         }
     };
 }

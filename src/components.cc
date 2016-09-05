@@ -91,11 +91,11 @@ namespace {
             std::string stanza = node->name();
             std::unique_ptr<Stanza> s;
             if (stanza == "message") {
-                s.reset(new Message(node, m_stream));
+                s.reset(new Message(node));
             } else if (stanza == "iq") {
-                s.reset(new Iq(node, m_stream));
+                s.reset(new Iq(node));
             } else if (stanza == "presence") {
-                s.reset(new Presence(node, m_stream));
+                s.reset(new Presence(node));
             } else if (stanza == "handshake") {
                 std::string const handshake_offered{node->value(), node->value_size()};
                 std::string const handshake_expected = handshake_content();
@@ -124,9 +124,8 @@ namespace {
                         throw not_authorized();
                     }
                     // Forward everything.
-                    std::unique_ptr<Stanza> copy(s->create_forward(m_stream));
                     std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
-                    route->transmit(std::move(copy));
+                    route->transmit(std::move(s));
                 } catch (Metre::base::xmpp_exception) {
                     throw;
                 } catch (Metre::base::stanza_exception) {
@@ -135,7 +134,7 @@ namespace {
                     throw Metre::stanza_undefined_condition(e.what());
                 }
             } catch (Metre::base::stanza_exception const &stanza_error) {
-                std::unique_ptr<Stanza> st = s->create_bounce(stanza_error, m_stream);
+                std::unique_ptr<Stanza> st = s->create_bounce(stanza_error);
                 std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
                 route->transmit(std::move(st));
             }

@@ -45,7 +45,7 @@ namespace Metre {
         std::weak_ptr<NetSession> m_to;
         std::weak_ptr<NetSession> m_vrfy;
         std::list<std::unique_ptr<Stanza>> m_stanzas;
-        std::list<std::unique_ptr<Verify>> m_dialback;
+        std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
         Jid const m_domain;
         DNS::Srv m_srv;
@@ -64,9 +64,9 @@ namespace Metre {
             return m_local.domain();
         }
 
-        void transmit(std::unique_ptr<Stanza>);
+        void transmit(std::unique_ptr<Stanza> &&);
 
-        void transmit(std::unique_ptr<Verify>);
+        void transmit(std::unique_ptr<DB::Verify> &&);
 
         void doSrvLookup();
 
@@ -91,6 +91,15 @@ namespace Metre {
         DNS::Srv const &srv() const {
             return m_srv;
         }
+
+    protected:
+        void bounce_stanzas(Stanza::Error);
+
+        void bounce_dialback(bool timeout);
+
+        void queue(std::unique_ptr<Stanza> &&);
+
+        void queue(std::unique_ptr<DB::Verify> &&);
     };
 
     class RouteTable {
