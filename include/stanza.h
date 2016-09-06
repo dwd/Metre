@@ -112,6 +112,11 @@ namespace Metre {
         std::unique_ptr<Stanza> create_forward();
 
         void freeze(); // Make sure nothing is in volatile storage anymore.
+
+    protected:
+        void render_error(Stanza::Error e);
+
+        void render_error(Metre::base::stanza_exception const &ex);
     };
 
 
@@ -201,35 +206,14 @@ namespace Metre {
         } Type;
 
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
-           std::optional<std::string> const &key)
-                : Stanza(name) {
-            m_to = to;
-            m_from = from;
-            m_id = stream_id;
-            m_payload_str = key;
-            m_payload = m_payload_str.data();
-            m_payload_l = m_payload_str.length();
-        }
+           std::optional<std::string> const &key);
 
         DB(const char *name, rapidxml::xml_node<> const *node) : Stanza(name, node) {
         }
 
-        DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t) : Stanza(name) {
-            m_to = to;
-            m_from = from;
-            m_id = stream_id;
-            switch (t) {
-                case VALID:
-                    m_type_str = "valid";
-                    break;
-                case INVALID:
-                    m_type_str = "invalid";
-                    break;
-                case ERROR:
-                    m_type_str = "error";
-                    break;
-            }
-        }
+        DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t);
+
+        DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Stanza::Error e);
 
         std::string const &key() const {
             if (!m_type_str) {
@@ -256,6 +240,10 @@ namespace Metre {
         Verify(Jid const &to, Jid const &from, std::string const &stream_id, Type t) : DB(name, to, from, stream_id,
                                                                                           t) {}
 
+        Verify(Jid const &to, Jid const &from, std::string const &stream_id, Stanza::Error t) : DB(name, to, from,
+                                                                                                   stream_id,
+                                                                                                   t) {}
+
         Verify(rapidxml::xml_node<> const *node) : DB(name, node) {
         }
     };
@@ -264,12 +252,15 @@ namespace Metre {
     public:
         static const char *name;
 
-        Result(Jid const &to, Jid const &from, std::string const &stream_id, std::string const &key)
-                : DB(name, to, from, stream_id, key) {
+        Result(Jid const &to, Jid const &from, std::string const &key)
+                : DB(name, to, from, "", key) {
         }
 
-        Result(Jid const &to, Jid const &from, std::string const &stream_id, Type t) : DB(name, to, from, stream_id,
-                                                                                          t) {}
+        Result(Jid const &to, Jid const &from, Type t) : DB(name, to, from, "",
+                                                            t) {}
+
+        Result(Jid const &to, Jid const &from, Stanza::Error t) : DB(name, to, from, "",
+                                                                     t) {}
 
         Result(rapidxml::xml_node<> const *node) : DB(name, node) {
         }

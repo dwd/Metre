@@ -91,6 +91,16 @@ std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) 
     stanza->m_to = m_from;
     stanza->m_id = m_id;
     stanza->m_type_str = "error";
+    stanza->render_error(ex);
+    if (m_payload && m_payload_l) {
+        stanza->m_payload_str.append(m_payload, m_payload_l);
+        stanza->m_payload = stanza->m_payload_str.c_str();
+        stanza->m_payload_l = stanza->m_payload_str.length();
+    }
+    return stanza;
+}
+
+void Stanza::render_error(Metre::base::stanza_exception const &ex) {
     // Render the error
     rapidxml::xml_document<> d;
     auto error = d.allocate_node(rapidxml::node_element, "error");
@@ -103,13 +113,27 @@ std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) 
     text->append_attribute(d.allocate_attribute("xmlns", "urn:ietf:params:xml:ns:xmpp-stanzas"));
     text->value(ex.what());
     error->append_node(text);
-    rapidxml::print(std::back_inserter(stanza->m_payload_str), d, rapidxml::print_no_indenting);
-    if (m_payload && m_payload_l) {
-        stanza->m_payload_str.append(m_payload, m_payload_l);
-        stanza->m_payload = stanza->m_payload_str.c_str();
-        stanza->m_payload_l = stanza->m_payload_str.length();
+    rapidxml::print(std::back_inserter(m_payload_str), d, rapidxml::print_no_indenting);
+}
+
+void Stanza::render_error(Stanza::Error e) {
+    switch (e) {
+        case remote_server_timeout:
+            render_error(stanza_remote_server_timeout());
+            return;
+        case remote_server_not_found:
+            render_error(stanza_remote_server_not_found());
+            return;
+        case service_unavailable:
+            render_error(stanza_service_unavailable());
+            return;
+        case undefined_condition:
+            render_error(stanza_undefined_condition());
+            return;
+        default:
+        METRE_LOG(Log::CRIT, "Unhandled stanza error type");
+            render_error(stanza_undefined_condition());
     }
-    return stanza;
 }
 
 std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) {
@@ -150,3 +174,43 @@ const char *Message::name = "message";
 const char *Presence::name = "presence";
 const char *DB::Verify::name = "db:verify";
 const char *DB::Result::name = "db:result";
+
+/*
+ * Dialback
+ */
+
+DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
+       std::optional<std::string> const &key)
+        : Stanza(name) {
+    m_to = to;
+    m_from = from;
+    m_id = stream_id;
+    m_payload_str = key;
+    m_payload = m_payload_str.data();
+    m_payload_l = m_payload_str.length();
+}
+
+DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t) : Stanza(name) {
+    m_to = to;
+    m_from = from;
+    m_id = stream_id;
+    switch (t) {
+        case VALID:
+            m_type_str = "valid";
+            break;
+        case INVALID:
+            m_type_str = "invalid";
+            break;
+        case ERROR:
+            m_type_str = "error";
+            break;
+    }
+}
+
+DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Stanza::Error e) : Stanza(name) {
+    m_to = to;
+    m_from = from;
+    m_id = stream_id;
+    m_type_str = "error";
+    render_error(e);
+}
