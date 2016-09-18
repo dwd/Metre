@@ -215,18 +215,23 @@ namespace Metre {
         }
 
         std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, uint32_t addr,
+        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
                 unsigned short port) {
-            struct sockaddr_in sin;
-            sin.sin_family = AF_INET;
-            sin.sin_addr.s_addr = addr;
-            sin.sin_port = htons(port);
-            char buf[25];
+            void *inx_addr;
+            if (addr->sa_family == AF_INET) {
+                struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(addr);
+                sin->sin_port = htons(port);
+                inx_addr = &sin->sin_addr;
+            } else {
+                struct sockaddr_in6 *sin6 = reinterpret_cast<struct sockaddr_in6 *>(addr);
+                sin6->sin6_port = htons(port);
+                inx_addr = &sin6->sin6_addr;
+            }
+            char buf[INET6_ADDRSTRLEN + 1];
             METRE_LOG(Metre::Log::DEBUG,
-                      "Connecting to " << inet_ntop(AF_INET, &sin.sin_addr, buf, 25) << ":" << ntohs(sin.sin_port)
-                                       << ":" << port);
-            std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, reinterpret_cast<struct sockaddr *>(&sin),
-                                                       sizeof(sin), port);
+                      "Connecting to " << inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN) << ":" << port);
+            std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, addr,
+                                                       sizeof(struct sockaddr_storage), port);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
             auto it = m_sessions_by_domain.find(tod);
             if (it == m_sessions_by_domain.end() ||
@@ -349,7 +354,7 @@ namespace Metre {
 
     namespace Router {
         std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, uint32_t addr,
+        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
                 unsigned short port) {
             return Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port);
         }

@@ -130,6 +130,9 @@ void Stanza::render_error(Stanza::Error e) {
         case undefined_condition:
             render_error(stanza_undefined_condition());
             return;
+        case policy_violation:
+            render_error(stanza_policy_violation());
+            return;
         default:
         METRE_LOG(Log::CRIT, "Unhandled stanza error type");
             render_error(stanza_undefined_condition());
@@ -213,4 +216,6 @@ DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stre
     m_id = stream_id;
     m_type_str = "error";
     render_error(e);
+    m_payload = m_payload_str.data();
+    m_payload_l = m_payload_str.size();
 }

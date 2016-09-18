@@ -51,7 +51,7 @@ namespace Metre {
         DNS::Srv m_srv;
         std::vector<DNS::SrvRR>::const_iterator m_rr;
         DNS::Address m_addr;
-        std::vector<uint32_t>::const_iterator m_arr;
+        std::vector<struct sockaddr_storage>::const_iterator m_arr;
         std::vector<DNS::Tlsa> m_tlsa;
     public:
         Route(Jid const &from, Jid const &to);
@@ -69,6 +69,10 @@ namespace Metre {
         void transmit(std::unique_ptr<DB::Verify> &&);
 
         void doSrvLookup();
+
+        void try_srv();
+
+        void try_addr();
 
         // Callbacks:
         void SrvResult(DNS::Srv const *);
@@ -124,11 +128,7 @@ namespace Metre {
         void register_session_domain(std::string const &dom, NetSession &);
 
         std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, uint32_t addr,
-                unsigned short port);
-
-        std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, char addr[],
+        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
                 unsigned short port);
 
         std::shared_ptr<NetSession> session_by_stream_id(std::string const &stream_id);

@@ -191,6 +191,8 @@ namespace Metre {
             std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
             std::map<std::string, std::unique_ptr<DNS::Srv>> m_srvrecs;
             std::map<std::string, std::unique_ptr<DNS::Tlsa>> m_tlsarecs;
+            mutable DNS::Address m_current_arec;
+            mutable DNS::Srv m_current_srv;
             mutable std::vector<DNS::Tlsa> m_tlsa_all;
             mutable srv_callback_t m_srv_pending;
             mutable addr_callback_t m_a_pending;

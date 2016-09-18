@@ -114,6 +114,8 @@ namespace Metre {
 
     METRE_STANZA_EXCEPT(remote_server_not_found, "The remote server discovery or connection failed", "cancel",
                         "remote-server-not-found");
+
+    METRE_STANZA_EXCEPT(policy_violation, "Request rejected due to policy violation", "cancel", "policy-violation");
 }
 
 #endif

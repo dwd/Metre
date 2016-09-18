@@ -30,6 +30,7 @@ SOFTWARE.
 #include <sigslot/sigslot.h>
 #include <string>
 #include <vector>
+#include <netinet/in.h>
 
 namespace Metre {
 
@@ -40,21 +41,25 @@ namespace Metre {
             unsigned short port;
             unsigned short weight;
             unsigned short priority;
+            bool tls = false;
         };
 
         class Srv {
         public:
+            bool xmpp;
+            bool xmpps;
             std::vector<SrvRR> rrs;
             std::string domain;
-            bool dnssec;
+            bool dnssec = false;
             std::string error;
         };
 
         class Address {
         public:
-            std::vector<uint32_t> addr4;
-            //std::vector<unsigned char[16]> addr6;
-            bool dnssec;
+            bool ipv4 = false;
+            bool ipv6 = false;
+            std::vector<struct sockaddr_storage> addr;
+            bool dnssec = false;
             std::string error;
             std::string hostname;
         };
@@ -86,7 +91,7 @@ namespace Metre {
         public:
             std::string domain;
             std::string error;
-            bool dnssec;
+            bool dnssec = false;
 
             std::vector<TlsaRR> rrs;
         };

@@ -183,7 +183,7 @@ void Route::collateNames() {
 }
 
 void Route::SrvResult(DNS::Srv const *srv) {
-    METRE_LOG(Metre::Log::DEBUG, "Got SRV");
+    METRE_LOG(Metre::Log::DEBUG, "Got SRV " << m_local.domain() << "=>" << m_domain.domain() << " : " << srv->domain);
     if (!srv->error.empty()) {
         METRE_LOG(Metre::Log::WARNING, "Got an error during SRV: " << srv->error);
         onNamesCollated.emit(*this);
@@ -206,6 +206,18 @@ void Route::SrvResult(DNS::Srv const *srv) {
         return;
     }
     m_rr = m_srv.rrs.begin();
+    try_srv();
+}
+
+void Route::try_srv() {
+    // Skip over any XMPPS record - for now.
+    while (m_rr != m_srv.rrs.end() && m_rr->tls) ++m_rr;
+    if (m_rr == m_srv.rrs.end()) {
+        // Give up and go home.
+        bounce_stanzas(Stanza::remote_server_not_found);
+        bounce_dialback(false);
+        return;
+    }
     METRE_LOG(Metre::Log::DEBUG, "Should look for " << (*m_rr).hostname << ":" << (*m_rr).port);
     std::shared_ptr<NetSession> sesh = Router::session_by_address((*m_rr).hostname, (*m_rr).port);
     if (sesh) {
@@ -225,11 +237,15 @@ void Route::AddressResult(DNS::Address const *addr) {
     }
     if (!addr->error.empty()) {
         METRE_LOG(Metre::Log::DEBUG, "Got an error during DNS: ");
+        ++m_rr; // Next SRV record.
+        try_srv();
         return;
     }
     m_addr = *addr;
-    m_arr = m_addr.addr4.begin();
-    vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname, *m_arr, (*m_rr).port);
+    m_arr = m_addr.addr.begin();
+    vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
+                           const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&(*m_arr))),
+                           (*m_rr).port);
     METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
     vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
     m_vrfy = vrfy;

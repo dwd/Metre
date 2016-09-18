@@ -305,7 +305,10 @@ void Config::Domain::host(std::string const &hostname, uint32_t inaddr) {
     std::unique_ptr<DNS::Address> address(new DNS::Address);
     address->dnssec = true;
     address->hostname = hostname + ".";
-    address->addr4.push_back(inaddr);
+    address->addr.emplace_back();
+    struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&*address->addr.rbegin());
+    sin->sin_family = AF_INET;
+    sin->sin_addr.s_addr = inaddr;
     m_host_arecs[hostname + "."] = std::move(address);
 }
 
@@ -687,7 +690,8 @@ std::string Config::asString() {
                     auto host = doc.allocate_node(node_element, "host");
                     host->append_attribute(doc.allocate_attribute("name", h.first.c_str()));
                     char buf[32];
-                    inet_ntop(AF_INET, h.second->addr4.data(), buf, sizeof(buf));
+                    struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(h.second->addr.data());
+                    inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf));
                     host->append_attribute(doc.allocate_attribute("a", doc.allocate_string(buf)));
                     dns->append_node(host);
                 }
@@ -959,6 +963,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
 
 void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
     std::string error;
+    std::map<unsigned short, unsigned short> weights;
     if (err != 0) {
         error = ub_strerror(err);
     } else if (!result->havedata) {
@@ -968,18 +973,28 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
     } else if (!result->secure && m_dnssec_required) {
         error = "DNSSEC required but unsigned";
     } else {
-        DNS::Srv srv;
+        DNS::Srv &srv = m_current_srv;
+        bool xmpps = false;
         srv.dnssec = !!result->secure;
         srv.domain = result->qname;
+        if (srv.domain.find("_xmpps") == 0) {
+            xmpps = true;
+            srv.xmpps = true;
+        } else {
+            srv.xmpp = true;
+        }
         for (int i = 0; result->data[i]; ++i) {
             DNS::SrvRR rr;
             rr.priority = ntohs(*reinterpret_cast<unsigned short *>(result->data[i]));
             rr.weight = ntohs(*reinterpret_cast<unsigned short *>(result->data[i] + 2));
             rr.port = ntohs(*reinterpret_cast<unsigned short *>(result->data[i] + 4));
+            rr.tls = xmpps;
             for (int x = 6; result->data[i][x]; x += result->data[i][x] + 1) {
                 rr.hostname.append(result->data[i] + x + 1, result->data[i][x]);
                 rr.hostname += ".";
             }
+            weights[rr.priority] += rr.weight;
+            rr.weight = weights[rr.priority];
             srv.rrs.push_back(rr);
             METRE_LOG(Metre::Log::DEBUG, "Data[" << i << "]: (" << result->len[i] << " bytes) "
                                                  << rr.priority << ":"
@@ -987,15 +1002,25 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
                                                  << rr.port << "::"
                                                  << rr.hostname);
         }
-        m_srv_pending.emit(&srv);
+        if (srv.xmpp && srv.xmpps) {
+            m_srv_pending.emit(&srv);
+            m_srv_pending.disconnect_all();
+        }
         return;
     }
     METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
-    DNS::Srv srv;
-    srv.error = error;
-    srv.domain = result->qname;
-    m_srv_pending.emit(&srv);
-    m_srv_pending.disconnect_all();
+    if (m_current_srv.xmpp || m_current_srv.xmpps) {
+        if (m_current_srv.rrs.empty()) {
+            DNS::Srv srv;
+            srv.error = error;
+            srv.domain = result->qname;
+            m_srv_pending.emit(&srv);
+            m_srv_pending.disconnect_all();
+        } else {
+            m_srv_pending.emit(&m_current_srv);
+            m_srv_pending.disconnect_all();
+        }
+    }
 }
 
 void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
@@ -1009,20 +1034,51 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
     } else if (!result->secure && m_dnssec_required) {
         error = "DNSSEC required but unsigned";
     } else {
-        DNS::Address a;
-        a.dnssec = !!result->secure;
-        a.hostname = result->qname;
-        for (int i = 0; result->data[i]; ++i) {
-            a.addr4.push_back(*reinterpret_cast<uint32_t *>(result->data[0]));
+        DNS::Address &a = m_current_arec;
+        if (a.hostname != result->qname) {
+            a.error = "";
+            a.dnssec = !!result->secure;
+            a.hostname = result->qname;
+            a.addr.clear();
+            a.ipv4 = a.ipv6 = false;
+        } else {
+            a.dnssec = a.dnssec && !!result->secure;
         }
-        m_a_pending.emit(&a);
+        if (result->qtype == 1) {
+            m_current_arec.ipv4 = true;
+            for (int i = 0; result->data[i]; ++i) {
+                a.addr.emplace_back();
+                struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&*a.addr.rbegin());
+                sin->sin_family = AF_INET;
+                sin->sin_addr.s_addr = *reinterpret_cast<in_addr_t *>(result->data[i]);
+            }
+        } else if (result->qtype == 28) {
+            m_current_arec.ipv6 = true;
+            for (int i = 0; result->data[i]; ++i) {
+                a.addr.emplace(a.addr.begin());
+                struct sockaddr_in6 *sin = reinterpret_cast<struct sockaddr_in6 *>(&*a.addr.begin());
+                sin->sin6_family = AF_INET6;
+                memcpy(sin->sin6_addr.__in6_u.__u6_addr8, result->data[i], 16);
+            }
+        }
+        if (m_current_arec.ipv4 && m_current_arec.ipv6) {
+            m_a_pending.emit(&a);
+            m_a_pending.disconnect_all();
+        }
         return;
     }
-    DNS::Address a;
-    a.error = error;
-    a.hostname = result->qname;
-    m_a_pending.emit(&a);
-    m_a_pending.disconnect_all();
+    if (m_current_arec.ipv4 || m_current_arec.ipv6) {
+        if (m_current_arec.addr.empty()) {
+            DNS::Address a;
+            a.error = error;
+            a.hostname = result->qname;
+            m_a_pending.emit(&a);
+            m_a_pending.disconnect_all();
+        } else {
+            m_a_pending.emit(&m_current_arec);
+            m_a_pending.disconnect_all();
+        }
+    }
 }
 
 Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &hostname) const {
@@ -1035,6 +1091,9 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &hostna
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else {
+        m_current_arec.hostname = "";
+        ub_resolve_async(Config::config().ub_ctx(), hostname.c_str(), 28, 1,
+                         const_cast<void *>(reinterpret_cast<const void *>(this)), a_lookup_done_cb, NULL);
         ub_resolve_async(Config::config().ub_ctx(),
                          hostname.c_str(),
                          1, /* A */
@@ -1048,6 +1107,7 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &hostna
 
 Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain) const {
     std::string domain = "_xmpp-server._tcp." + base_domain + ".";
+    std::string domains = "_xmpps-server._tcp." + base_domain + ".";
     METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain << " context:" << m_domain);
     auto it = m_srvrecs.find(domain);
     if (it != m_srvrecs.end()) {
@@ -1057,8 +1117,16 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else {
+        m_current_srv.xmpp = m_current_srv.xmpps = false;
         ub_resolve_async(Config::config().ub_ctx(),
                          domain.c_str(),
+                         33, /* SRV */
+                         1,  /* IN */
+                         const_cast<void *>(reinterpret_cast<const void *>(this)),
+                         srv_lookup_done_cb,
+                         NULL); /* int * async_id */
+        ub_resolve_async(Config::config().ub_ctx(),
+                         domains.c_str(),
                          33, /* SRV */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
