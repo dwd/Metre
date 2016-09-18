@@ -167,6 +167,8 @@ namespace Metre {
             Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block,
                    bool auth_pkix, bool auth_dialback, std::optional<std::string> &&m_auth_secret);
 
+            Domain(Domain const &, std::string const &domain);
+
             Domain(Domain const &) = delete;
 
             Domain(Domain &&) = delete;

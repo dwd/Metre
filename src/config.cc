@@ -294,6 +294,15 @@ Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, b
           m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_secret(auth_secret), m_ssl_ctx(nullptr) {
 }
 
+Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
+        : m_domain(domain), m_type(any.m_type), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
+          m_block(any.m_block), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
+          m_auth_dialback(any.m_auth_dialback), m_dnssec_required(any.m_dnssec_required),
+          m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist),
+          m_ssl_ctx(nullptr) {
+    m_domain = domain;
+}
+
 Config::Domain::~Domain() {
     if (m_ssl_ctx) {
         SSL_CTX_free(m_ssl_ctx);
@@ -529,9 +538,10 @@ std::string Config::asString() {
         global("datadir", m_data_dir, "Data directory, used only for the running config.");
         global("logfile", m_logfile, "Logfile path.");
         global("dnssec", m_dns_keys, "DNSSEC root keys file.");
-        globals->append_node(doc.allocate_node(node_element, "fetch-crls", m_fetch_crls ? "true" : "false"));
-        globals->append_node(doc.allocate_node(node_comment, nullptr,
-                                               "Controls if CRLs are fetched - MUST be on for status checking!"));
+        global("boot_method", m_boot, "Boot method - none, fork, or systemd");
+        global("fetch-crls", m_fetch_crls ? "true" : "false",
+               "Controls if CRLs are fetched - MUST be on for status checking!");
+        global("dnssec", m_dns_keys, "DNS key file - obtain this from IANA");
 
         root->append_node(globals);
     }
@@ -758,6 +768,9 @@ Config::Domain const &Config::domain(std::string const &dom) const {
     auto it = m_domains.find(dom);
     if (it == m_domains.end()) {
         it = m_domains.find("");
+        std::unique_ptr<Config::Domain> newdom{new Config::Domain(*(*it).second, dom)};
+        std::tie(it, std::ignore) = const_cast<Config *>(this)->m_domains.insert(
+                std::make_pair(dom, std::move(newdom)));
     }
     return *(*it).second;
 }
