@@ -952,6 +952,47 @@ void Config::Domain::tlsa_lookup_done(int err, struct ub_result *result) {
     m_tlsa_pending.disconnect_all();
 }
 
+namespace {
+    void srv_sort(DNS::Srv &srv) {
+        std::vector<DNS::SrvRR> tmp = std::move(srv.rrs);
+        std::sort(tmp.begin(), tmp.end(), [](DNS::SrvRR const &a, DNS::SrvRR const &b) {
+            return a.priority < b.priority;
+        });
+        srv.rrs = std::vector<DNS::SrvRR>();
+        std::map<unsigned short, int> weights;
+        for (auto const &rr : tmp) {
+            weights[rr.priority] += rr.weight;
+        }
+        std::default_random_engine random(std::random_device{}());
+        std::uniform_int_distribution<> dist(0, 65535);
+        bool any;
+        do {
+            int prio = -1;
+            int r = dist(random);
+            any = false;
+            for (auto &rr : tmp) {
+                if (rr.port == 0) continue;
+                if (prio > 0 && prio != rr.priority) break; // We've not completed the last priority level yet.
+                if (weights[rr.priority] == rr.weight) {
+                    // Pick the only one.
+                    srv.rrs.push_back(rr);
+                    rr.port = 0;
+                    weights[rr.priority] = 0;
+                    continue;
+                }
+                if (r % weights[rr.priority] <= rr.weight) {
+                    srv.rrs.push_back(rr);
+                    rr.port = 0;
+                    weights[rr.priority] -= rr.weight;
+                } else {
+                    any = true;
+                    prio = rr.priority;
+                }
+            }
+        } while (any);
+    }
+}
+
 void
 Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port) {
     DNS::Srv *srv;
@@ -976,7 +1017,6 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
 
 void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
     std::string error;
-    std::map<unsigned short, unsigned short> weights;
     if (err != 0) {
         error = ub_strerror(err);
     } else if (!result->havedata) {
@@ -1006,8 +1046,6 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
                 rr.hostname.append(result->data[i] + x + 1, result->data[i][x]);
                 rr.hostname += ".";
             }
-            weights[rr.priority] += rr.weight;
-            rr.weight = weights[rr.priority];
             srv.rrs.push_back(rr);
             METRE_LOG(Metre::Log::DEBUG, "Data[" << i << "]: (" << result->len[i] << " bytes) "
                                                  << rr.priority << ":"
@@ -1016,6 +1054,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
                                                  << rr.hostname);
         }
         if (srv.xmpp && srv.xmpps) {
+            srv_sort(srv);
             m_srv_pending.emit(&srv);
             m_srv_pending.disconnect_all();
         }
@@ -1030,6 +1069,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
             m_srv_pending.emit(&srv);
             m_srv_pending.disconnect_all();
         } else {
+            srv_sort(m_current_srv);
             m_srv_pending.emit(&m_current_srv);
             m_srv_pending.disconnect_all();
         }
