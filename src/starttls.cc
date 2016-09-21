@@ -247,7 +247,7 @@ namespace Metre {
         X509_STORE_CTX *st = X509_STORE_CTX_new();
         X509_STORE_CTX_init(st, store, cert, chain);
         X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
-        int result = X509_verify_cert(st);
+        bool valid = (X509_verify_cert(st) == 1);
         STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
         // If we have DANE records, iterate through them to find one that works.
         bool dane_ok = false;
@@ -259,7 +259,7 @@ namespace Metre {
             for (auto &rr : tlsa.rrs) {
                 switch (rr.certUsage) {
                     case DNS::TlsaRR::CertConstraint:
-                        if (result != X509_V_OK) continue;
+                        if (!valid) continue;
                     case DNS::TlsaRR::DomainCert:
                         if (tlsa_matches(rr, sk_X509_value(verified, 0))) {
                             dane_ok = true;
@@ -267,7 +267,7 @@ namespace Metre {
                         }
                         break;
                     case DNS::TlsaRR::CAConstraint:
-                        if (result != X509_V_OK) continue;
+                        if (!valid) continue;
                     case DNS::TlsaRR::TrustAnchorAssertion:
                         if (sk_X509_num(verified) == 0) continue; // Problem there.
                         X509 *ta = sk_X509_value(verified, sk_X509_num(verified) - 1);
@@ -288,8 +288,8 @@ namespace Metre {
         X509_STORE_CTX_free(st);
         METRE_LOG(Metre::Log::INFO, "[Re]verify: DANE " << (dane_present ? "Present" : "Not present") << ", checked "
                                                         << (dane_ok ? "OK" : "Not OK") << ", PKIX "
-                                                        << ((result == X509_V_OK) ? "Passed" : "Failed"));
-        return dane_present ? dane_ok : (result == X509_V_OK);
+                                                        << (valid ? "Passed" : "Failed"));
+        return dane_present ? dane_ok : valid;
     }
 
     bool prep_crl(XMLStream & stream) {
