@@ -188,7 +188,7 @@ DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stre
     m_to = to;
     m_from = from;
     m_id = stream_id;
-    m_payload_str = key;
+    m_payload_str = *key;
     m_payload = m_payload_str.data();
     m_payload_l = m_payload_str.length();
 }
