@@ -182,11 +182,12 @@ namespace Metre {
 
     private:
         void handle(rapidxml::xml_node<> *);
+
         void do_restart();
 
         void stream_open();
 
-        void send_stream_open(bool, bool);
+        void send_stream_open(bool);
     };
 }
 

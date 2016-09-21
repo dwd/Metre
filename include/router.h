@@ -26,6 +26,7 @@ SOFTWARE.
 #ifndef ROUTER__H
 #define ROUTER__H
 
+#include "defs.h"
 #include "jid.h"
 #include "stanza.h"
 #include "dns.h"
@@ -56,11 +57,11 @@ namespace Metre {
     public:
         Route(Jid const &from, Jid const &to);
 
-        std::string const &domain() {
+        std::string const &domain() const {
             return m_domain.domain();
         }
 
-        std::string const &local() {
+        std::string const &local() const {
             return m_local.domain();
         }
 
@@ -129,7 +130,7 @@ namespace Metre {
 
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
-                unsigned short port);
+                unsigned short port, TLS_MODE tls_mode);
 
         std::shared_ptr<NetSession> session_by_stream_id(std::string const &stream_id);
 

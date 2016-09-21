@@ -247,6 +247,18 @@ namespace Metre {
             return m_fetch_crls;
         }
 
+        unsigned short listen_port(SESSION_TYPE s, TLS_MODE t) const {
+            switch (s) {
+                case S2S:
+                    return (t == STARTTLS ? m_s2s_port : m_s2s_ports);
+                case COMP:
+                    return (t == STARTTLS ? m_comp_port : m_comp_ports);
+                default:
+                    return 0;
+            }
+            return 0;
+        }
+
     private:
         static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
 
@@ -263,6 +275,10 @@ namespace Metre {
         std::map<std::string, std::unique_ptr<Domain>> m_domains;
         struct ub_ctx *m_ub_ctx = nullptr;
         std::unique_ptr<Metre::Log> m_log;
+        unsigned short m_s2s_port = 5269;
+        unsigned short m_comp_port = 5347;
+        unsigned short m_s2s_ports = 5270;
+        unsigned short m_comp_ports = 5348;
     };
 }
 

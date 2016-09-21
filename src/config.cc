@@ -365,6 +365,18 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
     return 1;
 }
 
+namespace {
+    int ssl_servername_cb(SSL *ssl, int *ad, void *arg) {
+        const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+        if (!servername) return SSL_TLSEXT_ERR_OK;
+        SSL_CTX *old_ctx = SSL_get_SSL_CTX(ssl);
+        SSL_CTX *new_ctx = Config::config().domain(servername).ssl_ctx();
+        if (!new_ctx) new_ctx = Config::config().domain("").ssl_ctx();
+        if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
+        return SSL_TLSEXT_ERR_OK;
+    }
+}
+
 void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
     if (!openssl_init) {
         SSL_library_init();
@@ -394,6 +406,7 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
     }
     SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
     SSL_CTX_set_default_verify_paths(m_ssl_ctx);
+    SSL_CTX_set_tlsext_servername_callback(m_ssl_ctx, ssl_servername_cb);
 }
 
 Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(random_identifier()) {

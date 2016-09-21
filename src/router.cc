@@ -35,7 +35,7 @@ SOFTWARE.
 
 using namespace Metre;
 
-Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to) {
+Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to), onNamesCollated() {
     METRE_LOG(Metre::Log::DEBUG, "Route created, local is " << m_local.domain() << " remote is " << m_domain.domain());
 }
 
@@ -174,10 +174,12 @@ void Route::collateNames() {
         // Have a SRV. Was it DNSSEC signed?
         if (!m_srv.dnssec) {
             onNamesCollated.emit(*this);
+            onNamesCollated.disconnect_all();
         }
         // Do we have TLSAs yet?
         if (m_tlsa.size() == m_srv.rrs.size()) {
             onNamesCollated.emit(*this);
+            onNamesCollated.disconnect_all();
         }
     }
 }
@@ -187,6 +189,7 @@ void Route::SrvResult(DNS::Srv const *srv) {
     if (!srv->error.empty()) {
         METRE_LOG(Metre::Log::WARNING, "Got an error during SRV: " << srv->error);
         onNamesCollated.emit(*this);
+        onNamesCollated.disconnect_all();
         return;
     }
     m_srv = *srv;
@@ -198,6 +201,7 @@ void Route::SrvResult(DNS::Srv const *srv) {
         }
     } else {
         onNamesCollated.emit(*this);
+        onNamesCollated.disconnect_all();
     }
     auto vrfy = m_vrfy.lock();
     if (vrfy) {
@@ -210,8 +214,6 @@ void Route::SrvResult(DNS::Srv const *srv) {
 }
 
 void Route::try_srv() {
-    // Skip over any XMPPS record - for now.
-    while (m_rr != m_srv.rrs.end() && m_rr->tls) ++m_rr;
     if (m_rr == m_srv.rrs.end()) {
         // Give up and go home.
         bounce_stanzas(Stanza::remote_server_not_found);
@@ -245,7 +247,7 @@ void Route::AddressResult(DNS::Address const *addr) {
     m_arr = m_addr.addr.begin();
     vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
                            const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&(*m_arr))),
-                           (*m_rr).port);
+                           (*m_rr).port, m_rr->tls ? IMMEDIATE : STARTTLS);
     METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
     vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
     m_vrfy = vrfy;
@@ -330,10 +332,10 @@ RouteTable &RouteTable::routeTable(Jid const &j) {
 
 std::shared_ptr<Route> &RouteTable::route(Jid const &to) {
     // TODO This needs to be more complex once we have clients.
-    if (!m_routes[to.domain()]) {
-        m_routes[to.domain()] = std::shared_ptr<Route>(new Route(m_local_domain, to));
-    }
-    return m_routes[to.domain()];
+    auto it = m_routes.find(to.domain());
+    if (it != m_routes.end()) return (*it).second;
+    auto itp = m_routes.emplace(to.domain(), std::shared_ptr<Route>(new Route(m_local_domain, to.domain())));
+    return (*(itp.first)).second;
 }
 
 RouteTable::RouteTable(std::string const &d) : m_routes(), m_local_domain(d) {

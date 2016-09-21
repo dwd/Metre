@@ -1,7 +1,7 @@
 /***
 
-Copyright 2013-2016 Dave Cridland
-Copyright 2014-2016 Surevine Ltd
+Copyright 2016 Dave Cridland
+Copyright 2016 Surevine Ltd
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -23,40 +23,23 @@ SOFTWARE.
 
 ***/
 
-#ifndef DEFS__HPP
-#define DEFS__HPP
+
+#ifndef METRE_TLS_H
+#define METRE_TLS_H
+
+#include <openssl/ossl_typ.h>
+#include "defs.h"
+#include "dns.h"
+
 
 namespace Metre {
-    typedef enum {
-        C2S,
-        S2S,
-        COMP,
-        INT
-    } SESSION_TYPE;
+    bool tlsa_matches(DNS::TlsaRR const &rr, X509 *cert);
 
+    bool verify_tls(XMLStream &stream, Route &route);
 
-    typedef enum {
-        INBOUND,
-        OUTBOUND
-    } SESSION_DIRECTION;
+    bool prep_crl(XMLStream &stream);
 
-    typedef enum {
-        IMMEDIATE,
-        STARTTLS
-    } TLS_MODE;
-
-    class Feature;
-
-    class Filter;
-
-    class Stanza;
-
-    class XMLStream;
-
-    class Route;
+    bool start_tls(XMLStream &stream);
 }
 
-#ifndef SIGSLOT_PURE_ISO
-#define SIGSLOT_PURE_ISO
-#endif
-#endif
+#endif //METRE_TLS_H

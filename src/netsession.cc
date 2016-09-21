@@ -27,6 +27,7 @@ SOFTWARE.
 #include "xmlstream.h"
 #include "router.h"
 #include "log.h"
+#include "tls.h"
 
 #include "rapidxml_print.hpp"
 
@@ -37,17 +38,23 @@ SOFTWARE.
 
 using namespace Metre;
 
-NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, SESSION_TYPE type)
+NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, SESSION_TYPE type, TLS_MODE tls_mode)
         : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, INBOUND, type)) {
     bufferevent(bev);
     METRE_LOG(Log::INFO, "New INBOUND session NS" << serial);
+    if (tls_mode == IMMEDIATE) {
+        start_tls(*m_xml_stream);
+    }
 }
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::string const &stream_from,
-                       std::string const &stream_to)
+                       std::string const &stream_to, TLS_MODE tls_mode)
         : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, OUTBOUND, S2S, stream_from, stream_to)) {
     bufferevent(bev);
     METRE_LOG(Log::INFO, "New OUTBOUND session NS" << serial);
+    if (tls_mode == IMMEDIATE) {
+        start_tls(*m_xml_stream);
+    }
 }
 
 void NetSession::bufferevent(struct bufferevent *bev) {

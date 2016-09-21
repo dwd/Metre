@@ -62,6 +62,8 @@ namespace Metre {
         struct event *m_ub_event;
         struct evconnlistener *m_server_listener;
         struct evconnlistener *m_component_listener;
+        struct evconnlistener *m_server_tls_listener;
+        struct evconnlistener *m_component_tls_listener;
         static std::atomic<unsigned long long> s_serial;
         std::list<std::shared_ptr<NetSession>> m_closed_sessions;
         std::multimap<time_t, std::function<void()>> m_pending_actions;
@@ -84,29 +86,34 @@ namespace Metre {
             return m_event_base;
         }
 
+        struct evconnlistener *do_listen(std::string const &service, unsigned short port,
+                                         void (*new_session_cb)(struct evconnlistener *listener,
+                                                                evutil_socket_t newsock, struct sockaddr *addr, int len,
+                                                                void *arg)) {
+            if (!port) return nullptr;
+            sockaddr_in6 sin = {AF_INET6, htons(port), 0, IN6ADDR_ANY_INIT, 0};
+            struct evconnlistener *listener = evconnlistener_new_bind(m_event_base, new_session_cb, this,
+                                                                      LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1,
+                                                                      reinterpret_cast<struct sockaddr *>(&sin),
+                                                                      sizeof(sin));
+            if (!listener) {
+                throw std::runtime_error("Cannot bind to " + service + " port: " + strerror(errno));
+            }
+            METRE_LOG(Metre::Log::INFO, "Listening to " << service << ".");
+            return listener;
+        }
+
         bool init() {
             if (m_event_base) throw std::runtime_error("I'm already initialized!");
             m_event_base = event_base_new();
-            {
-                sockaddr_in6 sin = {AF_INET6, htons(5269), 0, {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}, 0};
-                m_server_listener = evconnlistener_new_bind(m_event_base, Mainloop::new_server_session_cb, this,
-                                                            LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1,
-                                                            reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin));
-                if (!m_server_listener) {
-                    throw std::runtime_error(std::string("Cannot bind to server port: ") + strerror(errno));
-                }
-                METRE_LOG(Metre::Log::INFO, "Listening to server.");
-            }
-            {
-                sockaddr_in6 sin = {AF_INET6, htons(5347), 0, {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}, 0};
-                m_component_listener = evconnlistener_new_bind(m_event_base, Mainloop::new_comp_session_cb, this,
-                                                               LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1,
-                                                               reinterpret_cast<struct sockaddr *>(&sin), sizeof(sin));
-                if (!m_component_listener) {
-                    throw std::runtime_error(std::string("Cannot bind to component port: ") + strerror(errno));
-                }
-                METRE_LOG(Metre::Log::INFO, "Listening to component.");
-            }
+            m_server_listener = do_listen("xmpp-server", Config::config().listen_port(S2S, STARTTLS),
+                                          Mainloop::new_server_session_cb);
+            m_component_listener = do_listen("component", Config::config().listen_port(COMP, STARTTLS),
+                                             Mainloop::new_comp_session_cb);
+            m_server_tls_listener = do_listen("xmpps-server", Config::config().listen_port(S2S, IMMEDIATE),
+                                              Mainloop::new_server_session_cb);
+            m_component_tls_listener = do_listen("component-tls", Config::config().listen_port(COMP, IMMEDIATE),
+                                                 Mainloop::new_comp_session_cb);
             return true;
         }
 
@@ -177,22 +184,38 @@ namespace Metre {
         static void
         new_server_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr, int len,
                               void *arg) {
-            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, S2S);
+            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, S2S, STARTTLS);
         }
 
         static void
         new_comp_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr, int len,
                             void *arg) {
-            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, COMP);
+            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, COMP, STARTTLS);
         }
 
-        void new_session_inbound(evutil_socket_t sock, struct sockaddr *sin, int sinlen, SESSION_TYPE stype) {
+        static void
+        new_tls_server_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr,
+                                  int len,
+                                  void *arg) {
+            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, S2S, IMMEDIATE);
+        }
+
+        static void
+        new_tls_comp_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr,
+                                int len,
+                                void *arg) {
+            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, COMP, IMMEDIATE);
+        }
+
+        void new_session_inbound(evutil_socket_t sock, struct sockaddr *sin, int sinlen, SESSION_TYPE stype,
+                                 TLS_MODE tls_mode) {
             if (m_shutdown || m_shutdown_now) {
                 evutil_closesocket(sock);
                 return;
             }
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, sock, BEV_OPT_CLOSE_ON_FREE);
-            std::shared_ptr<NetSession> session(new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, stype));
+            std::shared_ptr<NetSession> session(
+                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, stype, tls_mode));
             auto it = m_sessions.find(session->serial());
             if (it != m_sessions.end()) {
                 // We already have one for this socket. This seems unlikely to be safe.
@@ -216,7 +239,7 @@ namespace Metre {
 
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
-                unsigned short port) {
+                unsigned short port, TLS_MODE tls_mode) {
             void *inx_addr;
             if (addr->sa_family == AF_INET) {
                 struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(addr);
@@ -231,7 +254,7 @@ namespace Metre {
             METRE_LOG(Metre::Log::DEBUG,
                       "Connecting to " << inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN) << ":" << port);
             std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, addr,
-                                                       sizeof(struct sockaddr_storage), port);
+                                                       sizeof(struct sockaddr_storage), port, tls_mode);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
             auto it = m_sessions_by_domain.find(tod);
             if (it == m_sessions_by_domain.end() ||
@@ -243,7 +266,7 @@ namespace Metre {
 
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *sin,
-                size_t addrlen, unsigned short port) {
+                size_t addrlen, unsigned short port, TLS_MODE tls_mode) {
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
             if (!bev) {
                 METRE_LOG(Metre::Log::CRIT, "Error creating BEV");
@@ -256,7 +279,7 @@ namespace Metre {
             }
             METRE_LOG(Metre::Log::DEBUG, "BEV fd is " << bufferevent_getfd(bev));
             std::shared_ptr<NetSession> session(
-                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod));
+                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, tls_mode));
             auto it = m_sessions.find(session->serial());
             if (it != m_sessions.end()) {
                 // We already have one for this socket. This seems unlikely to be safe.
@@ -355,8 +378,8 @@ namespace Metre {
     namespace Router {
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
-                unsigned short port) {
-            return Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port);
+                unsigned short port, TLS_MODE tls_mode) {
+            return Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port, tls_mode);
         }
 
         void register_stream_id(std::string const &id, NetSession &session) {

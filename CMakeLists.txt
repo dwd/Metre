@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(metre)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -Werror -O0 -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -Werror -O0 -g -DSIGSLOT_PURE_ISO")
 
 set(SOURCE_FILES
     include/base64.h
@@ -37,7 +37,7 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc
-    src/xmlstream.cc src/saslexternal.cc src/spiffing.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc)
+        src/xmlstream.cc src/saslexternal.cc src/spiffing.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h)
 
 add_executable(metre ${SOURCE_FILES})
 target_link_libraries(metre event_core ssl crypto event_openssl event_extra unbound)

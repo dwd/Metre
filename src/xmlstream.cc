@@ -33,6 +33,7 @@ SOFTWARE.
 #include "router.h"
 #include "config.h"
 #include "log.h"
+#include "tls.h"
 
 #ifdef VALGRIND
 #include <valgrind/memcheck.h>
@@ -40,20 +41,16 @@ SOFTWARE.
 #define VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(ptr, len) 0
 #endif
 
-namespace Metre {
-    bool verify_tls(XMLStream &stream, Route &hostname);
-    bool prep_crl(XMLStream &);
-}
-
 using namespace Metre;
 
 XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
-        : m_session(n), m_dir(dir), m_type(t) {
+        : has_slots(), m_session(n), m_dir(dir), m_type(t) {
 }
 
 XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const &stream_local,
                      std::string const &stream_remote)
-        : m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local), m_stream_remote(stream_remote) {
+        : has_slots(), m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local),
+          m_stream_remote(stream_remote) {
 }
 
 void XMLStream::thaw() {
@@ -273,16 +270,22 @@ void XMLStream::stream_open() {
         if (m_stream_remote == m_stream_local) {
             throw std::runtime_error("That's me, you fool");
         }
-        send_stream_open(with_ver, true);
-        if (with_ver) {
-            rapidxml::xml_document<> doc;
-            auto features = doc.allocate_node(rapidxml::node_element, "stream:features");
-            doc.append_node(features);
-            for (auto f : Feature::features(m_type)) {
-                f->offer(features, *this);
+        auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
+        r->onNamesCollated.connect(this, [this, with_ver](Route &) {
+            send_stream_open(with_ver);
+            if (with_ver) {
+                rapidxml::xml_document<> doc;
+                auto features = doc.allocate_node(rapidxml::node_element, "stream:features");
+                doc.append_node(features);
+                for (auto f : Feature::features(m_type)) {
+                    f->offer(features, *this);
+                }
+                m_session->send(doc);
             }
-            m_session->send(doc);
-        }
+            thaw();
+        });
+        freeze();
+        r->collateNames();
     } else if (m_dir == OUTBOUND) {
         if (m_type == S2S) {
             auto id_att = stream->first_attribute("id");
@@ -298,7 +301,7 @@ void XMLStream::stream_open() {
     }
 }
 
-void XMLStream::send_stream_open(bool with_version, bool with_id) {
+void XMLStream::send_stream_open(bool with_version) {
     /*
     *   We write this out as a string, to avoid trying to make rapidxml
     * write out only the open tag.
@@ -314,7 +317,7 @@ void XMLStream::send_stream_open(bool with_version, bool with_id) {
     }
     open += "' from='";
     open += m_stream_local;
-    if (with_id) {
+    if (m_dir == INBOUND) {
         open += "' id='";
         generate_stream_id();
         open += m_stream_id;
@@ -461,7 +464,15 @@ void XMLStream::do_restart() {
     m_stanza.clear();
     m_stream_buf.clear();
     if (m_dir == OUTBOUND) {
-        send_stream_open(true, false);
+        if (m_secured) {
+            auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
+            r->onNamesCollated.connect(this, [this](Route &) {
+                send_stream_open(true);
+            });
+            r->collateNames();
+        } else {
+            send_stream_open(true);
+        }
     }
     thaw();
 }
