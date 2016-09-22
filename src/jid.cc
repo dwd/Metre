@@ -24,8 +24,57 @@ SOFTWARE.
 ***/
 
 #include "jid.h"
+#include <unicode/usprep.h>
+#include <unicode/ucnv.h>
+#include <memory>
+#include <log.h>
+#include <algorithm>
 
 using namespace Metre;
+
+namespace {
+    UStringPrepProfile *nameprep() {
+        static UStringPrepProfile *p = 0;
+        if (!p) {
+            UErrorCode error = U_ZERO_ERROR;
+            p = usprep_openByType(USPREP_RFC3491_NAMEPREP, &error);
+        }
+        return p;
+    }
+
+    UConverter *utf8() {
+        UConverter *c = 0;
+        UErrorCode error = U_ZERO_ERROR;
+        if (!c) c = ucnv_open("utf-8", &error);
+        return c;
+    }
+
+    std::string stringprep(UStringPrepProfile *p, std::string const &input) {
+        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end()) {
+            std::string ret = input;
+            std::transform(ret.begin(), ret.end(), ret.begin(),
+                           [](const char c) { return static_cast<char>(tolower(c)); });
+            return ret;
+        }
+        std::unique_ptr<UChar[]> output{new UChar[input.size() + 1]};
+        UChar *ptr = output.get();
+        const char *data = input.data();
+        UErrorCode error = U_ZERO_ERROR;
+        ucnv_toUnicode(utf8(), &ptr, output.get() + input.size(), &data, data + input.size(), nullptr, TRUE, &error);
+        std::unique_ptr<UChar[]> prepped{new UChar[2 * (ptr - output.get())]};
+        UParseError parse_error;
+        int32_t sz = usprep_prepare(p, output.get(), ptr - output.get(), prepped.get(), ptr - output.get(),
+                                    USPREP_DEFAULT, &parse_error, &error);
+        std::string ret;
+        ret.resize(2 * input.size());
+        data = ret.data();
+        const UChar *prepped_data = prepped.get();
+        ucnv_fromUnicode(utf8(), const_cast<char **>(&data), ret.data() + ret.capacity(), &prepped_data,
+                         prepped.get() + sz, nullptr, TRUE, &error);
+        ret.resize(data - ret.data());
+        return ret;
+    }
+}
 
 void Jid::parse(std::string const &s) {
     ssize_t at_pos{-1};
@@ -55,13 +104,13 @@ void Jid::parse(std::string const &s) {
         ++at_pos;
     }
     if (at_pos == 0 && slash_pos < 0) {
-        m_domain = s;
+        m_domain = stringprep(nameprep(), s);
     } else {
         if (slash_pos < 0) {
             slash_pos = s.length();
         }
         slash_pos -= at_pos;
-        m_domain.assign(s.data() + at_pos, slash_pos);
+        m_domain.assign(stringprep(nameprep(), std::string{s.data() + at_pos, static_cast<std::size_t>(slash_pos)}));
     }
 }
 

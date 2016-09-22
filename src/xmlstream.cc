@@ -237,13 +237,13 @@ void XMLStream::stream_open() {
         domainname.assign(domainat->value(), domainat->value_size());
         METRE_LOG(Metre::Log::DEBUG, "Requested contact domain {" << domainname << "}");
     } else if (m_dir == OUTBOUND) {
-        domainname = m_stream_local;
+        domainname = Jid(m_stream_local).domain();
     } else {
         domainname = Config::config().default_domain();
     }
     std::string from;
     if (auto fromat = stream->first_attribute("from")) {
-        from.assign(fromat->value(), fromat->value_size());
+        from = Jid(std::string(fromat->value(), fromat->value_size())).domain();
     }
     METRE_LOG(Metre::Log::DEBUG, "Requesting domain is " << from);
     check_domain_pair(from, domainname);

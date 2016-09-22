@@ -47,11 +47,29 @@ SOFTWARE.
 #include <rapidxml_print.hpp>
 #include <http.h>
 #include <iomanip>
+#include <unicode/uidna.h>
 
 using namespace Metre;
 using namespace rapidxml;
 
 namespace {
+    std::string toASCII(std::string const &input) {
+        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end())
+            return input;
+        static UIDNA *idna = 0;
+        UErrorCode error = U_ZERO_ERROR;
+        if (!idna) {
+            idna = uidna_openUTS46(UIDNA_DEFAULT, &error);
+        }
+        std::string ret;
+        ret.resize(1024);
+        UIDNAInfo pInfo = UIDNA_INFO_INITIALIZER;
+        auto sz = uidna_nameToASCII_UTF8(idna, input.data(), input.size(), const_cast<char *>(ret.data()), 1024, &pInfo,
+                                         &error);
+        ret.resize(sz);
+        return ret;
+    }
+
     std::string const any_element = "any";
     std::string const xmlns = "http://surevine.com/xmlns/metre/config";
     std::string const root_name = "config";
@@ -100,7 +118,7 @@ namespace {
             if (!name_a) {
                 throw std::runtime_error("Missing name for domain element");
             }
-            name = name_a->value();
+            name = Jid(name_a->value()).domain(); // This stringpreps.
         }
         auto block_a = domain->first_attribute("block");
         if (block_a) {
@@ -310,15 +328,16 @@ Config::Domain::~Domain() {
     }
 }
 
-void Config::Domain::host(std::string const &hostname, uint32_t inaddr) {
+void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
     std::unique_ptr<DNS::Address> address(new DNS::Address);
+    std::string hostname = toASCII(ihostname + '.');
     address->dnssec = true;
-    address->hostname = hostname + ".";
+    address->hostname = hostname;
     address->addr.emplace_back();
     struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&*address->addr.rbegin());
     sin->sin_family = AF_INET;
     sin->sin_addr.s_addr = inaddr;
-    m_host_arecs[hostname + "."] = std::move(address);
+    m_host_arecs[hostname] = std::move(address);
 }
 
 int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
@@ -370,7 +389,7 @@ namespace {
         const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
         if (!servername) return SSL_TLSEXT_ERR_OK;
         SSL_CTX *old_ctx = SSL_get_SSL_CTX(ssl);
-        SSL_CTX *new_ctx = Config::config().domain(servername).ssl_ctx();
+        SSL_CTX *new_ctx = Config::config().domain(Jid(servername).domain()).ssl_ctx();
         if (!new_ctx) new_ctx = Config::config().domain("").ssl_ctx();
         if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
         return SSL_TLSEXT_ERR_OK;
@@ -858,7 +877,7 @@ void Config::Domain::tlsa(std::string const &hostname, unsigned short port, DNS:
                           DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value) {
     std::ostringstream out;
     out << "_" << port << "._tcp." << hostname;
-    std::string domain = out.str();
+    std::string domain = toASCII(out.str());
     auto tlsait = m_tlsarecs.find(domain);
     DNS::Tlsa *tlsa;
     if (tlsait == m_tlsarecs.end()) {
@@ -1009,7 +1028,7 @@ namespace {
 void
 Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port) {
     DNS::Srv *srv;
-    std::string domain = "_xmpp-server._tcp." + m_domain + ".";
+    std::string domain = toASCII("_xmpp-server._tcp." + m_domain + ".");
     auto it = m_srvrecs.find(domain);
     if (it == m_srvrecs.end()) {
         std::unique_ptr<DNS::Srv> s(new DNS::Srv);
@@ -1024,7 +1043,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     rr.priority = priority;
     rr.weight = weight;
     rr.port = port;
-    rr.hostname = hostname;
+    rr.hostname = toASCII(hostname);
     srv->rrs.push_back(rr);
 }
 
@@ -1090,6 +1109,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
 }
 
 void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
+    METRE_LOG(Log::INFO, "Lookup for " << result->qname << " complete.");
     std::string error;
     if (err != 0) {
         error = ub_strerror(err);
@@ -1109,7 +1129,9 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
             a.ipv4 = a.ipv6 = false;
         } else {
             a.dnssec = a.dnssec && !!result->secure;
+            a.error = "";
         }
+        METRE_LOG(Log::DEBUG, "... Success for " << result->qtype);
         if (result->qtype == 1) {
             m_current_arec.ipv4 = true;
             for (int i = 0; result->data[i]; ++i) {
@@ -1133,21 +1155,32 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
         }
         return;
     }
-    if (m_current_arec.ipv4 || m_current_arec.ipv6) {
+    METRE_LOG(Log::DEBUG, "... Failure for " << result->qtype << " with " << error);
+    if (m_current_arec.hostname != result->qname) {
+        m_current_arec.error = error;
+        m_current_arec.dnssec = !!result->secure;
+        m_current_arec.hostname = result->qname;
+        m_current_arec.addr.clear();
+        m_current_arec.ipv4 = m_current_arec.ipv6 = false;
+    }
+    switch (result->qtype) {
+        case 1:
+            m_current_arec.ipv4 = true;
+            break;
+        case 28:
+            m_current_arec.ipv6 = true;
+    }
+    if (m_current_arec.ipv4 && m_current_arec.ipv6) {
         if (m_current_arec.addr.empty()) {
-            DNS::Address a;
-            a.error = error;
-            a.hostname = result->qname;
-            m_a_pending.emit(&a);
-            m_a_pending.disconnect_all();
-        } else {
-            m_a_pending.emit(&m_current_arec);
-            m_a_pending.disconnect_all();
+            m_current_arec.error = error;
         }
+        m_a_pending.emit(&m_current_arec);
+        m_a_pending.disconnect_all();
     }
 }
 
-Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &hostname) const {
+Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostname) const {
+    std::string hostname = toASCII(ihostname);
     METRE_LOG(Metre::Log::DEBUG, "A/AAAA lookup for " << hostname << " context:" << m_domain);
     auto it = m_host_arecs.find(hostname);
     if (it != m_host_arecs.end()) {
@@ -1172,8 +1205,8 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &hostna
 }
 
 Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain) const {
-    std::string domain = "_xmpp-server._tcp." + base_domain + ".";
-    std::string domains = "_xmpps-server._tcp." + base_domain + ".";
+    std::string domain = toASCII("_xmpp-server._tcp." + base_domain + ".");
+    std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
     METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain << " context:" << m_domain);
     auto it = m_srvrecs.find(domain);
     if (it != m_srvrecs.end()) {
@@ -1205,7 +1238,7 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
 Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::string const &base_domain) const {
     std::ostringstream out;
     out << "_" << port << "._tcp." << base_domain;
-    std::string domain = out.str();
+    std::string domain = toASCII(out.str());
     METRE_LOG(Metre::Log::DEBUG, "TLSA lookup for " << domain);
     auto it = m_tlsarecs.find(domain);
     if (it != m_tlsarecs.end()) {

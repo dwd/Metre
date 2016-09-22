@@ -215,9 +215,16 @@ namespace Metre {
             }
         }
         X509_STORE_CTX *st = X509_STORE_CTX_new();
-        X509_STORE_CTX_init(st, store, cert, chain);
         X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
+        X509_STORE_CTX_init(st, store, cert, chain);
         bool valid = (X509_verify_cert(st) == 1);
+        if (!valid) {
+            auto error = X509_STORE_CTX_get_error(st);
+            auto depth = X509_STORE_CTX_get_error_depth(st);
+            char buf[1024];
+            METRE_LOG(Log::WARNING,
+                      "Chain failed validation: " << ERR_error_string(error, buf) << " (at " << depth << ")");
+        }
         STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
         // If we have DANE records, iterate through them to find one that works.
         bool dane_ok = false;

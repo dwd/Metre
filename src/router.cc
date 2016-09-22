@@ -233,6 +233,7 @@ void Route::try_srv() {
 }
 
 void Route::AddressResult(DNS::Address const *addr) {
+    METRE_LOG(Log::DEBUG, "AddressResult for " << addr->hostname << " (" << m_domain.domain() << ")");
     auto vrfy = m_vrfy.lock();
     if (vrfy) {
         return;

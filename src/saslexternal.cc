@@ -83,7 +83,7 @@ namespace {
             if (authzid == "=") {
                 authzid = m_stream.remote_domain();
             } else {
-                authzid = base64_decode(authzid);
+                authzid = Jid(base64_decode(authzid)).domain();
             }
             if (authzid.empty()) {
                 xml_document<> d;
