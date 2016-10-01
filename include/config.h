@@ -143,7 +143,7 @@ namespace Metre {
 
             void host(std::string const &hostname, uint32_t inaddr);
 
-            void srv(std::string const &, unsigned short, unsigned short, unsigned short);
+            void srv(std::string const &, unsigned short, unsigned short, unsigned short, bool);
 
             void tlsa(std::string const &hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
                       DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value);

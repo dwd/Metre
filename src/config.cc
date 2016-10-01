@@ -87,6 +87,11 @@ namespace {
         return false;
     }
 
+    bool xmlbool(xml_attribute<> const * attr) {
+        if (attr && attr->value()) return xmlbool(attr->value());
+        return false;
+    }
+
     std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, xml_node<> *domain, SESSION_TYPE def) {
         std::string name;
         bool forward = (def == INT || def == COMP);
@@ -236,13 +241,32 @@ namespace {
                 auto hosta = srvt->first_attribute("host");
                 if (!hosta || !hosta->value()) throw std::runtime_error("Missing host in SRV DNS override");
                 std::string host = hosta->value();
+                auto tls = xmlbool(srvt->first_attribute("tls"));
                 auto porta = srvt->first_attribute("port");
+                unsigned short port = tls ? 5270 : 5269;
                 if (porta && porta->value()) {
-                    std::istringstream ports(porta->value());
-                    unsigned short port;
-                    ports >> port;
-                    dom->srv(host, 0, 0, port);
+                    std::istringstream ss(porta->value());
+                    ss >> port;
+                } else {
+                    throw std::runtime_error("Incomprehensible port in SRV DNS override");
                 }
+                auto weighta = srvt->first_attribute("weight");
+                unsigned short weight = 0;
+                if (weighta && weighta->value()) {
+                    std::istringstream ss(weighta->value());
+                    ss >> port;
+                } else {
+                    throw std::runtime_error("Incomprehensible weight in SRV DNS override");
+                }
+                auto prioritya = srvt->first_attribute("priority");
+                unsigned short prio = 0;
+                if (prioritya && prioritya->value()) {
+                    std::istringstream ss(prioritya->value());
+                    ss >> prio;
+                } else {
+                    throw std::runtime_error("Incomprehensible priority in SRV DNS override");
+                }
+                dom->srv(host, prio, weight, port, tls);
             }
             for (auto tlsa = dnst->first_node("tlsa"); tlsa; tlsa = tlsa->next_sibling("tlsa")) {
                 auto hosta = tlsa->first_attribute("hostname");
@@ -633,6 +657,11 @@ std::string Config::asString() {
                 }
                 d->append_node(transport);
             }
+            auto alloc_short = [&doc](unsigned short x) {
+                std::ostringstream ss;
+                ss << x;
+                return doc.allocate_string(ss.str().data());
+            };
             {
                 auto dns = doc.allocate_node(node_element, "dns");
                 dns->append_attribute(doc.allocate_attribute("dnssec", dom.dnssec_required() ? "true" : "false"));
@@ -643,14 +672,16 @@ std::string Config::asString() {
                     for (auto &rr : srv.second->rrs) {
                         auto s = doc.allocate_node(node_element, "srv");
                         s->append_attribute(doc.allocate_attribute("host", rr.hostname.c_str()));
-                        std::ostringstream ss;
-                        ss << rr.port;
-                        s->append_attribute(doc.allocate_attribute("port", doc.allocate_string(ss.str().data())));
+                        s->append_attribute(doc.allocate_attribute("port", alloc_short(rr.port)));
+                        s->append_attribute(doc.allocate_attribute("priority", alloc_short(rr.priority)));
+                        s->append_attribute(doc.allocate_attribute("weight", alloc_short(rr.weight)));
+                        s->append_attribute(doc.allocate_attribute("tls", rr.tls ? "true" : "false"));
                         dns->append_node(s);
                     }
                 }
                 dns->append_node(doc.allocate_node(node_comment, nullptr,
-                                                   "<srv host='hostname to connect to' port='port number'/>"));
+                                                   "<srv host='hostname to connect to' port='port number' priority='prio' weight='weight' tls='bool'/>"));
+                dns->append_node(doc.allocate_node(node_comment, nullptr, "Most values (not hostname) default sensibly - but note that priority and weight default to zero, which is unusuable if multiple records are used."));
                 for (auto & tlsa : dom.tlsa()) {
                     for (auto &rr : tlsa.rrs) {
                         std::stringstream ss(tlsa.domain);
@@ -1026,9 +1057,9 @@ namespace {
 }
 
 void
-Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port) {
+Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port, bool tls) {
     DNS::Srv *srv;
-    std::string domain = toASCII("_xmpp-server._tcp." + m_domain + ".");
+    std::string domain = toASCII("_xmpp-server._tcp." + m_domain + "."); // Confusing: We fake a non-tls SRV record with TLS set in RR.
     auto it = m_srvrecs.find(domain);
     if (it == m_srvrecs.end()) {
         std::unique_ptr<DNS::Srv> s(new DNS::Srv);
@@ -1044,6 +1075,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     rr.weight = weight;
     rr.port = port;
     rr.hostname = toASCII(hostname);
+    rr.tls = tls;
     srv->rrs.push_back(rr);
 }
 
