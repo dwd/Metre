@@ -30,6 +30,7 @@ namespace Metre {
     typedef enum {
         C2S,
         S2S,
+        X2X,
         COMP,
         INT
     } SESSION_TYPE;

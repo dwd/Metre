@@ -45,12 +45,20 @@ using namespace Metre;
 
 XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
         : has_slots(), m_session(n), m_dir(dir), m_type(t) {
+    if (t == X2X) {
+        m_type = S2S;
+        m_x2x_mode = true;
+    }
 }
 
 XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const &stream_local,
                      std::string const &stream_remote)
         : has_slots(), m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local),
           m_stream_remote(stream_remote) {
+    if (t == X2X) {
+        m_type = S2S;
+        m_x2x_mode = true;
+    }
 }
 
 void XMLStream::thaw() {
@@ -302,32 +310,48 @@ void XMLStream::stream_open() {
 }
 
 void XMLStream::send_stream_open(bool with_version) {
-    /*
-    *   We write this out as a string, to avoid trying to make rapidxml
-    * write out only the open tag.
-    */
-    std::string open = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
-    open += content_namespace();
-    if (m_type == S2S) {
-        open += "' xmlns:db='jabber:server:dialback";
-        if (m_stream_remote != "") {
-            open += "' to='";
-            open += m_stream_remote;
+    if (m_x2x_mode) {
+        if (m_secured) {
+            auto route = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
+            if (!tls_auth_ok(*route)) {
+                throw host_unknown("Cannot authenticate host");
+            }
         }
-    }
-    open += "' from='";
-    open += m_stream_local;
-    if (m_dir == INBOUND) {
-        open += "' id='";
-        generate_stream_id();
-        open += m_stream_id;
-    }
-    if (with_version) {
-        open += "' version='1.0'>";
+        m_stream_buf == "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
+        m_stream_buf += content_namespace();
+        m_stream_buf += "' to='";
+        m_stream_buf += m_stream_local;
+        m_stream_buf += "' from='";
+        m_stream_buf += m_stream_remote;
+        m_stream_buf += "' version='1.0'>";
     } else {
-        open += "'>";
+        /*
+        *   We write this out as a string, to avoid trying to make rapidxml
+        * write out only the open tag.
+        */
+        std::string open = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
+        open += content_namespace();
+        if (m_type == S2S) {
+            open += "' xmlns:db='jabber:server:dialback";
+            if (m_stream_remote != "") {
+                open += "' to='";
+                open += m_stream_remote;
+            }
+        }
+        open += "' from='";
+        open += m_stream_local;
+        if (m_dir == INBOUND) {
+            open += "' id='";
+            generate_stream_id();
+            open += m_stream_id;
+        }
+        if (with_version) {
+            open += "' version='1.0'>";
+        } else {
+            open += "'>";
+        }
+        m_session->send(open);
     }
-    m_session->send(open);
     m_opened = true;
 }
 

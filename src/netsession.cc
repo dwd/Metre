@@ -38,11 +38,15 @@ SOFTWARE.
 
 using namespace Metre;
 
-NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, SESSION_TYPE type, TLS_MODE tls_mode)
-        : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, INBOUND, type)) {
+NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Config::Listener const *listen)
+        : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, INBOUND, listen->session_type)) {
     bufferevent(bev);
     METRE_LOG(Log::INFO, "New INBOUND session NS" << serial);
-    if (tls_mode == IMMEDIATE) {
+    if (listen->session_type == X2X) {
+        m_xml_stream->remote_domain(listen->remote_domain);
+        m_xml_stream->local_domain(listen->local_domain);
+    }
+    if (listen->tls_mode == IMMEDIATE) {
         start_tls(*m_xml_stream);
     }
 }

@@ -30,6 +30,7 @@ SOFTWARE.
 #include "defs.h"
 #include "rapidxml.hpp"
 #include "sigslot/sigslot.h"
+#include "config.h"
 
 // fwd:
 struct bufferevent;
@@ -44,8 +45,7 @@ namespace Metre {
         struct bufferevent *m_bev;
         XMLStream *m_xml_stream;
     public:
-        NetSession(unsigned long long serial, struct bufferevent *bev, SESSION_TYPE type,
-                   TLS_MODE tls_mode); /* Inbound */
+        NetSession(unsigned long long serial, struct bufferevent *bev, Config::Listener const *listen); /* Inbound */
         NetSession(unsigned long long serial, struct bufferevent *bev, std::string const &stream_from,
                    std::string const &stream_to, TLS_MODE tls_mode); /* Outbound S2S */
 

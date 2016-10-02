@@ -247,16 +247,27 @@ namespace Metre {
             return m_fetch_crls;
         }
 
-        unsigned short listen_port(SESSION_TYPE s, TLS_MODE t) const {
-            switch (s) {
-                case S2S:
-                    return (t == STARTTLS ? m_s2s_port : m_s2s_ports);
-                case COMP:
-                    return (t == STARTTLS ? m_comp_port : m_comp_ports);
-                default:
-                    return 0;
+        class Listener {
+        public:
+            SESSION_TYPE session_type;
+            TLS_MODE tls_mode;
+            std::string const name;
+            std::string const local_domain;
+            std::string const remote_domain;
+            std::set<std::string> allowed_domains;
+        private:
+            struct sockaddr_storage m_sockaddr;
+        public:
+            const struct sockaddr *sockaddr() const {
+                return reinterpret_cast<const struct sockaddr *>(&m_sockaddr);
             }
-            return 0;
+
+            Listener(std::string const &local_domain, std::string const &remote_domain, std::string const &name,
+                     const char *address, unsigned short port, TLS_MODE tls, SESSION_TYPE sess);
+        };
+
+        std::list<Listener> const &listeners() const {
+            return m_listeners;
         }
 
     private:
@@ -275,10 +286,7 @@ namespace Metre {
         std::map<std::string, std::unique_ptr<Domain>> m_domains;
         struct ub_ctx *m_ub_ctx = nullptr;
         std::unique_ptr<Metre::Log> m_log;
-        unsigned short m_s2s_port = 5269;
-        unsigned short m_comp_port = 5347;
-        unsigned short m_s2s_ports = 5270;
-        unsigned short m_comp_ports = 5348;
+        std::list<Listener> m_listeners;
     };
 }
 

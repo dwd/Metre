@@ -92,13 +92,57 @@ namespace {
         return false;
     }
 
+    template<typename N>
+    N attrval(xml_attribute<> const *attr) {
+        if (!attr || !attr->value()) {
+            throw std::runtime_error("Missing mandatory attribute");
+        }
+        std::istringstream ss(attr->value());
+        N r;
+        ss >> r;
+        if (ss.eof()) {
+            return r;
+        }
+        throw std::runtime_error("Mangled attribute");
+    }
+
+    template<typename N>
+    N attrval(xml_attribute<> const *attr, N def) {
+        if (!attr || !attr->value()) {
+            return def;
+        }
+        std::istringstream ss(attr->value());
+        N r;
+        ss >> r;
+        if (ss.eof()) {
+            return r;
+        }
+        throw std::runtime_error("Mangled attribute");
+    }
+
+    template<>
+    const char *attrval<const char *>(xml_attribute<> const *attr) {
+        if (!attr || !attr->value()) {
+            throw std::runtime_error("Missing mandatory attribute");
+        }
+        return attr->value();
+    }
+
+    template<>
+    const char *attrval<const char *>(xml_attribute<> const *attr, const char *def) {
+        if (!attr || !attr->value()) {
+            return def;
+        }
+        return attr->value();
+    }
+
     std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, xml_node<> *domain, SESSION_TYPE def) {
         std::string name;
         bool forward = (def == INT || def == COMP);
         SESSION_TYPE sess = def;
         bool tls_required = true;
         bool block = false;
-        bool auth_pkix = (def == S2S);
+        bool auth_pkix = (def == S2S) || (def == X2X);
         bool auth_dialback = false;
         bool dnssec_required = false;
         bool auth_pkix_crls = Config::config().fetch_pkix_status();
@@ -136,6 +180,8 @@ namespace {
                 std::string type = type_a->value();
                 if (type == "s2s") {
                     sess = S2S;
+                } else if (type == "x2x") {
+                    sess = X2X;
                 } else if (type == "114") {
                     sess = COMP;
                     tls_required = false;
@@ -242,41 +288,16 @@ namespace {
                 if (!hosta || !hosta->value()) throw std::runtime_error("Missing host in SRV DNS override");
                 std::string host = hosta->value();
                 auto tls = xmlbool(srvt->first_attribute("tls"));
-                auto porta = srvt->first_attribute("port");
-                unsigned short port = tls ? 5270 : 5269;
-                if (porta && porta->value()) {
-                    std::istringstream ss(porta->value());
-                    ss >> port;
-                } else {
-                    throw std::runtime_error("Incomprehensible port in SRV DNS override");
-                }
-                auto weighta = srvt->first_attribute("weight");
-                unsigned short weight = 0;
-                if (weighta && weighta->value()) {
-                    std::istringstream ss(weighta->value());
-                    ss >> port;
-                } else {
-                    throw std::runtime_error("Incomprehensible weight in SRV DNS override");
-                }
-                auto prioritya = srvt->first_attribute("priority");
-                unsigned short prio = 0;
-                if (prioritya && prioritya->value()) {
-                    std::istringstream ss(prioritya->value());
-                    ss >> prio;
-                } else {
-                    throw std::runtime_error("Incomprehensible priority in SRV DNS override");
-                }
+                unsigned short port = attrval<unsigned short>(srvt->first_attribute("port"), tls ? 5270 : 5269);
+                unsigned short weight = attrval<unsigned short>(srvt->first_attribute("weight"), 0);
+                unsigned short prio = attrval<unsigned short>(srvt->first_attribute("priority"), 0);
                 dom->srv(host, prio, weight, port, tls);
             }
             for (auto tlsa = dnst->first_node("tlsa"); tlsa; tlsa = tlsa->next_sibling("tlsa")) {
                 auto hosta = tlsa->first_attribute("hostname");
                 if (!hosta || !hosta->value()) throw std::runtime_error("Missing hostname in TLSA DNS override");
                 std::string host = hosta->value();
-                auto porta = tlsa->first_attribute("port");
-                if (!porta || !porta->value()) throw std::runtime_error("Missing port in TLSA DNS override");
-                std::istringstream ports(porta->value());
-                unsigned short port;
-                ports >> port;
+                auto port = attrval<unsigned short>(tlsa->first_attribute("port"));
                 auto certusagea = tlsa->first_attribute("certusage");
                 if (!certusagea || !certusagea->value()) throw std::runtime_error("Missing certusage in TLSA DNS override");
                 DNS::TlsaRR::CertUsage certUsage;
@@ -542,6 +563,9 @@ void Config::load(std::string const &filename) {
             std::unique_ptr<Config::Domain> dom = std::move(parse_domain(nullptr, any, S2S));
             any_domain = &*dom; // Save this pointer.
             m_domains[dom->domain()] = std::move(dom);
+        } else {
+            m_domains[""] = std::unique_ptr<Config::Domain>(
+                    new Config::Domain("", INT, false, true, true, true, true, std::optional<std::string>()));
         }
         for (auto domain = external->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
             std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, S2S));
@@ -555,10 +579,66 @@ void Config::load(std::string const &filename) {
             m_domains[dom->domain()] = std::move(dom);
         }
     }
-    auto it = m_domains.find("");
-    if (it == m_domains.end()) {
-        m_domains[""] = std::unique_ptr<Config::Domain>(
-                new Config::Domain("", INT, false, true, true, true, true, std::optional<std::string>()));
+    auto listeners = root_node->first_node("listeners");
+    if (listeners) {
+        for (auto listener = listeners->first_node("listener"); listener; listener = listener->next_sibling(
+                "listener")) {
+            // address : port* : default_domain[*X2X] : session_type : tls_mode
+            auto port = attrval<unsigned short>(listener->first_attribute("port"));
+            SESSION_TYPE stype = S2S;
+            TLS_MODE tls = xmlbool(listener->first_attribute("tls")) ? IMMEDIATE : STARTTLS;
+            auto stypea = listener->first_attribute("type");
+            if (stypea && stypea->value()) {
+                std::string s = stypea->value();
+                if (s == "s2s") {
+                    stype = S2S;
+                } else if (s == "x2x") {
+                    stype = X2X;
+                } else if (s == "114") {
+                    stype = COMP;
+                } else {
+                    throw std::runtime_error("Unknown type for listener");
+                }
+            }
+            auto local_domain = attrval<const char *>(listener->first_attribute("local-domain"), "");
+            auto remote_domain = attrval<const char *>(listener->first_attribute("remote-domain"), "");
+            auto address = attrval<const char *>(listener->first_attribute("address"), "::");
+            std::ostringstream ss;
+            ss << "unnamed-" << address << "-" << port;
+            auto name = attrval<const char *>(listener->first_attribute("name"), ss.str().c_str());
+            m_listeners.emplace_back(local_domain, remote_domain, name, address, port, tls, stype);
+            if (remote_domain[0]) m_listeners.rbegin()->allowed_domains.emplace(remote_domain);
+            for (auto allowed = listener->first_node("allowed-domain"); allowed; allowed = allowed->next_sibling(
+                    "allowed-domain")) {
+                if (!allowed->value()) throw std::runtime_error("Empty allowed-domain");
+                m_listeners.rbegin()->allowed_domains.emplace(allowed->value());
+            }
+        }
+    } else {
+        m_listeners.emplace_back("", "", "S2S", "::", 5269, STARTTLS, S2S);
+        m_listeners.emplace_back("", "", "XEP-0368", "::", 5270, IMMEDIATE, S2S);
+    }
+}
+
+Config::Listener::Listener(std::string const &ldomain, std::string const &rdomain, std::string const &aname,
+                           const char *address, unsigned short port, TLS_MODE atls,
+                           SESSION_TYPE asess)
+        : session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
+    if (1 == inet_pton(AF_INET6, address, &(reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr)->sin6_addr))) {
+        struct sockaddr_in6 *sa = reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr);
+        sa->sin6_family = AF_INET6;
+        sa->sin6_port = htons(port);
+    } else if (1 == inet_pton(AF_INET, address, &(reinterpret_cast<struct sockaddr_in *>(&m_sockaddr)->sin_addr))) {
+        struct sockaddr_in *sa = reinterpret_cast<struct sockaddr_in *>(&m_sockaddr);
+        sa->sin_family = AF_INET;
+        sa->sin_port = htons(port);
+    } else {
+        throw std::runtime_error("Couldn't understand address syntax " + std::string(address));
+    }
+    if (asess == X2X) {
+        if (local_domain.empty() || remote_domain.empty()) {
+            throw std::runtime_error("Missing local or remote domains");
+        }
     }
 }
 
@@ -566,6 +646,11 @@ std::string Config::asString() {
     xml_document<> doc;
     auto root = doc.allocate_node(node_element, root_name.c_str());
     root->append_attribute(doc.allocate_attribute("xmlns", xmlns.c_str()));
+    auto alloc_short = [&doc](unsigned short x) {
+        std::ostringstream ss;
+        ss << x;
+        return doc.allocate_string(ss.str().data());
+    };
     {
         root->append_node(doc.allocate_node(node_data, nullptr, "\n"));
         auto globals = doc.allocate_node(node_element, "globals");
@@ -657,11 +742,6 @@ std::string Config::asString() {
                 }
                 d->append_node(transport);
             }
-            auto alloc_short = [&doc](unsigned short x) {
-                std::ostringstream ss;
-                ss << x;
-                return doc.allocate_string(ss.str().data());
-            };
             {
                 auto dns = doc.allocate_node(node_element, "dns");
                 dns->append_attribute(doc.allocate_attribute("dnssec", dom.dnssec_required() ? "true" : "false"));
@@ -689,12 +769,10 @@ std::string Config::asString() {
                         std::string hostname;
                         char underscore;
                         ss >> underscore >> port >> hostname;
-                        std::ostringstream ssout;
-                        ssout << port;
                         auto e = doc.allocate_node(node_element, "tlsa");
                         e->append_attribute(
                                 doc.allocate_attribute("hostname", doc.allocate_string(hostname.c_str() + 6)));
-                        e->append_attribute(doc.allocate_attribute("port", doc.allocate_string(ssout.str().c_str())));
+                        e->append_attribute(doc.allocate_attribute("port", alloc_short(port)));
                         const char *match = "Full";
                         switch (rr.matchType) {
                             case DNS::TlsaRR::Full:
@@ -813,6 +891,50 @@ std::string Config::asString() {
             dout(*(p.second));
         }
         root->append_node(domains);
+        {
+            // Listeners
+            auto listeners = doc.allocate_node(node_element, "listeners");
+            for (auto &listen : m_listeners) {
+                auto listener = doc.allocate_node(node_element, "listener");
+                if (!listen.local_domain.empty())
+                    listener->append_attribute(doc.allocate_attribute("local-domain", listen.local_domain.c_str()));
+                if (!listen.remote_domain.empty())
+                    listener->append_attribute(doc.allocate_attribute("remote-domain", listen.remote_domain.c_str()));
+                listener->append_attribute(doc.allocate_attribute("name", listen.name.c_str()));
+                if (listen.sockaddr()->sa_family == AF_INET) {
+                    const struct sockaddr_in *sa = reinterpret_cast<const struct sockaddr_in *>(listen.sockaddr());
+                    char buf[1024];
+                    inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(struct sockaddr_in));
+                    listener->append_attribute(doc.allocate_attribute("address", doc.allocate_string(buf)));
+                    listener->append_attribute(doc.allocate_attribute("port", alloc_short(sa->sin_port)));
+                } else if (listen.sockaddr()->sa_family == AF_INET6) {
+                    const struct sockaddr_in6 *sa = reinterpret_cast<const struct sockaddr_in6 *>(listen.sockaddr());
+                    char buf[1024];
+                    inet_ntop(AF_INET6, &sa->sin6_addr, buf, sizeof(struct sockaddr_in6));
+                    listener->append_attribute(doc.allocate_attribute("address", doc.allocate_string(buf)));
+                    listener->append_attribute(doc.allocate_attribute("port", alloc_short(sa->sin6_port)));
+                }
+                const char *stype = "s2s";
+                switch (listen.session_type) {
+                    case S2S:
+                        stype = "s2s";
+                        break;
+                    case X2X:
+                        stype = "x2x";
+                        break;
+                    case COMP:
+                        stype = "114";
+                        break;
+                    default:
+                        continue;
+                };
+                listener->append_attribute(doc.allocate_attribute("type", stype));
+                listener->append_attribute(
+                        doc.allocate_attribute("tls", listen.tls_mode == IMMEDIATE ? "true" : "false"));
+                listeners->append_node(listener);
+            }
+            root->append_node(listeners);
+        }
     }
     doc.append_node(root);
     std::string tmp;
@@ -1247,6 +1369,12 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
             m_srv_pending.emit(addr);
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
+    } else if (m_type == X2X) {
+        Router::defer([this]() {
+            DNS::Srv r;
+            r.error = "X2X - DNS aborted";
+            m_srv_pending.emit(&r);
+        });
     } else {
         m_current_srv.xmpp = m_current_srv.xmpps = false;
         ub_resolve_async(Config::config().ub_ctx(),
@@ -1279,6 +1407,12 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
             m_tlsa_pending.emit(addr);
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
+    } else if (m_type == X2X) {
+        Router::defer([this]() {
+            DNS::Tlsa r;
+            r.error = "X2X - DNS aborted";
+            m_tlsa_pending.emit(&r);
+        });
     } else {
         ub_resolve_async(Config::config().ub_ctx(),
                          domain.c_str(),

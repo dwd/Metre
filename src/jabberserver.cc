@@ -36,7 +36,7 @@ using namespace rapidxml;
 namespace {
     const std::string sasl_ns = "jabber:server";
 
-    class JabberServer : public Feature {
+    class JabberServer : public Feature, public sigslot::has_slots<> {
     public:
         JabberServer(XMLStream &s) : Feature(s) {}
 
@@ -63,19 +63,44 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
             }
+            handle(s);
+            return true;
+        }
+
+        void handle(std::unique_ptr<Stanza> &s) {
             try {
                 try {
                     Jid const &to = s->to();
                     Jid const &from = s->from();
                     // Check auth state.
                     if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
-                        throw Metre::not_authorized();
+                        if (m_stream.x2x_mode()) {
+                            if (m_stream.secured()) {
+                                Stanza *holding = s.release();
+                                holding->freeze();
+                                auto r = RouteTable::routeTable(to.domain()).route(from.domain());
+                                r->onNamesCollated.connect(this, [this, holding](Route &r) {
+                                    std::unique_ptr<Stanza> s(holding);
+                                    if (m_stream.tls_auth_ok(r)) {
+                                        m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
+                                                               XMLStream::AUTHORIZED);
+                                    }
+                                    handle(s);
+                                    m_stream.thaw();
+                                });
+                                r->collateNames();
+                                m_stream.freeze();
+                                return;
+                            }
+                        } else {
+                            throw Metre::not_authorized();
+                        }
                     }
                     if (Config::config().domain(to.domain()).transport_type() == INT) {
                         // For now, bounce everything.
                         bool ping = false;
-                        if (stanza == "iq" && to.full() == to.domain()) {
-                            auto query = node->first_node();
+                        if (std::string(s->name()) == "iq" && to.full() == to.domain()) {
+                            auto query = s->node()->first_node();
                             if (query) {
                                 std::string xmlns{query->xmlns(), query->xmlns_size()};
                                 if (xmlns == "urn:xmpp:ping") {
@@ -84,10 +109,7 @@ namespace {
                             }
                         }
                         if (ping) {
-                            std::string id;
-                            auto id_att = node->first_attribute("id");
-                            if (id_att && id_att->value()) id = id_att->value();
-                            std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, id)};
+                            std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, s->id())};
                             std::shared_ptr<Route> route = RouteTable::routeTable(to).route(from);
                             route->transmit(std::move(pong));
                         } else {
@@ -110,7 +132,6 @@ namespace {
                 std::shared_ptr<Route> route = RouteTable::routeTable(st->from()).route(st->to());
                 route->transmit(std::move(st));
             }
-            return true;
         }
     };
 

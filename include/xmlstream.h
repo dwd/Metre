@@ -77,6 +77,7 @@ namespace Metre {
         std::size_t m_num_crls = 0;
         std::map<std::string, struct X509_crl_st *> m_crls;
         bool m_crl_complete = false;
+        bool m_x2x_mode = false;
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -133,9 +134,15 @@ namespace Metre {
 
         bool auth_ready() { return m_authready; }
 
-        std::string const &local_domain() { return m_stream_local; }
+        std::string const &local_domain() const { return m_stream_local; }
 
-        std::string const &remote_domain() { return m_stream_remote; }
+        void local_domain(std::string const &dom) { m_stream_local = dom; }
+
+        std::string const &remote_domain() const { return m_stream_remote; }
+
+        void remote_domain(std::string const &dom) { m_stream_remote = dom; }
+
+        bool x2x_mode() const { return m_x2x_mode; }
 
         bool tls_auth_ok(Route &domain);
 

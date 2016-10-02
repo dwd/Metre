@@ -60,10 +60,7 @@ namespace Metre {
         std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_domain;
         std::map<std::pair<std::string, unsigned short>, std::weak_ptr<NetSession>> m_sessions_by_address;
         struct event *m_ub_event;
-        struct evconnlistener *m_server_listener;
-        struct evconnlistener *m_component_listener;
-        struct evconnlistener *m_server_tls_listener;
-        struct evconnlistener *m_component_tls_listener;
+        std::list<struct evconnlistener *> m_listeners;
         static std::atomic<unsigned long long> s_serial;
         std::list<std::shared_ptr<NetSession>> m_closed_sessions;
         std::multimap<time_t, std::function<void()>> m_pending_actions;
@@ -86,34 +83,20 @@ namespace Metre {
             return m_event_base;
         }
 
-        struct evconnlistener *do_listen(std::string const &service, unsigned short port,
-                                         void (*new_session_cb)(struct evconnlistener *listener,
-                                                                evutil_socket_t newsock, struct sockaddr *addr, int len,
-                                                                void *arg)) {
-            if (!port) return nullptr;
-            sockaddr_in6 sin = {AF_INET6, htons(port), 0, IN6ADDR_ANY_INIT, 0};
-            struct evconnlistener *listener = evconnlistener_new_bind(m_event_base, new_session_cb, this,
-                                                                      LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1,
-                                                                      reinterpret_cast<struct sockaddr *>(&sin),
-                                                                      sizeof(sin));
-            if (!listener) {
-                throw std::runtime_error("Cannot bind to " + service + " port: " + strerror(errno));
-            }
-            METRE_LOG(Metre::Log::INFO, "Listening to " << service << ".");
-            return listener;
-        }
-
         bool init() {
             if (m_event_base) throw std::runtime_error("I'm already initialized!");
             m_event_base = event_base_new();
-            m_server_listener = do_listen("xmpp-server", Config::config().listen_port(S2S, STARTTLS),
-                                          Mainloop::new_server_session_cb);
-            m_component_listener = do_listen("component", Config::config().listen_port(COMP, STARTTLS),
-                                             Mainloop::new_comp_session_cb);
-            m_server_tls_listener = do_listen("xmpps-server", Config::config().listen_port(S2S, IMMEDIATE),
-                                              Mainloop::new_server_session_cb);
-            m_component_tls_listener = do_listen("component-tls", Config::config().listen_port(COMP, IMMEDIATE),
-                                                 Mainloop::new_comp_session_cb);
+            for (auto &listen : Config::config().listeners()) {
+                auto listener = evconnlistener_new_bind(m_event_base, new_session_cb,
+                                                        const_cast<Config::Listener *>(&listen),
+                                                        LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1,
+                                                        listen.sockaddr(), sizeof(struct sockaddr_storage));
+                if (!listener) {
+                    throw std::runtime_error("Cannot bind to " + listen.name + " service port: " + strerror(errno));
+                }
+                m_listeners.push_back(listener);
+                METRE_LOG(Metre::Log::INFO, "Listening to " << listen.name << ".");
+            }
             return true;
         }
 
@@ -182,40 +165,21 @@ namespace Metre {
         }
 
         static void
-        new_server_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr, int len,
-                              void *arg) {
-            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, S2S, STARTTLS);
+        new_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr, int len,
+                       void *arg) {
+            Config::Listener const *listen = reinterpret_cast<Config::Listener *>(arg);
+            Mainloop::s_mainloop->new_session_inbound(newsock, addr, len, listen);
         }
 
-        static void
-        new_comp_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr, int len,
-                            void *arg) {
-            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, COMP, STARTTLS);
-        }
-
-        static void
-        new_tls_server_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr,
-                                  int len,
-                                  void *arg) {
-            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, S2S, IMMEDIATE);
-        }
-
-        static void
-        new_tls_comp_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr,
-                                int len,
-                                void *arg) {
-            reinterpret_cast<Mainloop *>(arg)->new_session_inbound(newsock, addr, len, COMP, IMMEDIATE);
-        }
-
-        void new_session_inbound(evutil_socket_t sock, struct sockaddr *sin, int sinlen, SESSION_TYPE stype,
-                                 TLS_MODE tls_mode) {
+        void
+        new_session_inbound(evutil_socket_t sock, struct sockaddr *sin, int sinlen, Config::Listener const *listen) {
             if (m_shutdown || m_shutdown_now) {
                 evutil_closesocket(sock);
                 return;
             }
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, sock, BEV_OPT_CLOSE_ON_FREE);
             std::shared_ptr<NetSession> session(
-                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, stype, tls_mode));
+                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, listen));
             auto it = m_sessions.find(session->serial());
             if (it != m_sessions.end()) {
                 // We already have one for this socket. This seems unlikely to be safe.
@@ -232,7 +196,7 @@ namespace Metre {
                           addrbuf, 1024);
             }
             METRE_LOG(Metre::Log::INFO,
-                      "New session on " << (stype == S2S ? "S2S" : "COMP") << " port from " << addrbuf);
+                      "New session on " << listen->name << " port from " << addrbuf);
             m_sessions[session->serial()] = session;
             session->onClosed.connect(this, &Mainloop::session_closed);
         }
@@ -310,10 +274,11 @@ namespace Metre {
                 }
                 if (m_shutdown) {
                     METRE_LOG(Metre::Log::INFO, "Closing sessions.");
-                    evconnlistener_disable(m_component_listener);
-                    evconnlistener_disable(m_server_listener);
-                    evconnlistener_free(m_component_listener);
-                    evconnlistener_free(m_server_listener);
+                    for (auto listener : m_listeners) {
+                        evconnlistener_disable(listener);
+                        evconnlistener_free(listener);
+                    }
+                    m_listeners.clear();
                     for (auto &it : m_sessions) {
                         it.second->send(
                                 "<stream:error><system-shutdown xmlns='urn:ietf:params:xml:ns:xmpp-streams'/></stream:error></stream:close>");

@@ -151,6 +151,8 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
         Config::Domain const &conf = Config::config().domain(m_domain.domain());
         if (conf.transport_type() == S2S) {
             doSrvLookup();
+        } else if (conf.transport_type() == X2X) {
+            doSrvLookup();
         }
         // Otherwise wait.
     } else { // Got a to but it's not ready yet.

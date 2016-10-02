@@ -79,6 +79,10 @@ namespace Metre {
 
         Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type, std::string const &id);
 
+        const char *name() {
+            return m_name;
+        }
+
         Jid const &to() const {
             return *m_to;
         }
