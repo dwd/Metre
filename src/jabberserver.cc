@@ -87,7 +87,7 @@ namespace {
                                     }
                                     handle(s);
                                     m_stream.thaw();
-                                });
+                                }, true);
                                 r->collateNames();
                                 m_stream.freeze();
                                 return;

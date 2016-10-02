@@ -98,7 +98,6 @@ namespace {
          * Inbound handling.
          */
         void result_step(Route &route, std::string const &key) {
-            route.onNamesCollated.disconnect(this);
             // Shortcuts here.
             if (m_stream.tls_auth_ok(route)) {
                 std::unique_ptr<Stanza> d(new DB::Result(route.domain(), route.local(), DB::VALID));
@@ -141,7 +140,7 @@ namespace {
             const char *keytmp = m_keys.find(result.key())->c_str();
             route->onNamesCollated.connect(this, [=](Route &r) {
                 result_step(r, keytmp);
-            });
+            }, true);
             route->collateNames();
         }
 

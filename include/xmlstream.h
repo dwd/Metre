@@ -91,6 +91,10 @@ namespace Metre {
             m_frozen = true;
         }
 
+        bool frozen() const {
+            return m_frozen;
+        }
+
         void thaw();
 
         const char *content_namespace() const;

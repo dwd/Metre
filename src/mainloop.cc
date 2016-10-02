@@ -242,6 +242,9 @@ namespace Metre {
                 bufferevent_free(bev);
             }
             METRE_LOG(Metre::Log::DEBUG, "BEV fd is " << bufferevent_getfd(bev));
+            struct timeval tv = {0, 0};
+            tv.tv_sec = Config::config().domain(tod).connect_timeout();
+            bufferevent_set_timeouts(bev, nullptr, &tv);
             std::shared_ptr<NetSession> session(
                     new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, tls_mode));
             auto it = m_sessions.find(session->serial());

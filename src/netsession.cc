@@ -109,6 +109,9 @@ void NetSession::send(rapidxml::xml_document<> &d) {
     std::string tmp;
     rapidxml::print(std::back_inserter(tmp), d, rapidxml::print_no_indenting);
     struct evbuffer *buf = bufferevent_get_output(m_bev);
+    if (!buf) {
+        return;
+    }
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << m_xml_stream << ": " << tmp);
     evbuffer_add(buf, tmp.data(),
                  tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
@@ -117,6 +120,9 @@ void NetSession::send(rapidxml::xml_document<> &d) {
 void NetSession::send(std::string const &s) {
     struct evbuffer *buf = bufferevent_get_output(m_bev);
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << m_xml_stream << ": " << s);
+    if (!buf) {
+        return;
+    }
     evbuffer_add(buf, s.data(), s.length());
 }
 
@@ -140,6 +146,12 @@ void NetSession::read_cb(struct bufferevent *, void *arg) {
 }
 
 void NetSession::bev_closed() {
+    if (m_xml_stream->frozen()) {
+        Router::defer([this]() {
+            this->bev_closed();
+        });
+        return;
+    }
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Closed.");
     onClosed.emit(*this);
 }
@@ -163,6 +175,9 @@ void NetSession::event_cb(struct bufferevent *b, short events, void *arg) {
     if (events & BEV_EVENT_EOF) {
         METRE_LOG(Metre::Log::DEBUG, "NS" << ns.serial() << " - BEV EOF.");
         ns.bev_closed();
+    } else if (events & BEV_EVENT_TIMEOUT) {
+        METRE_LOG(Log::INFO, "NS" << ns.serial() << " timed out, closing");
+        ns.bev_closed();
     } else if (events & BEV_EVENT_ERROR) {
         METRE_LOG(Metre::Log::DEBUG,
                   "NS" << ns.serial() << " - BEV Error " << events << " : " << strerror(EVUTIL_SOCKET_ERROR()));
@@ -170,13 +185,19 @@ void NetSession::event_cb(struct bufferevent *b, short events, void *arg) {
             char buf[1024];
             METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, buf));
         }
-        // ns.bev_closed();
+        ns.bev_closed();
     } else if (events & BEV_EVENT_CONNECTED) {
         ns.bev_connected();
     }
 }
 
 void NetSession::close() {
+    if (m_xml_stream->frozen()) {
+        Router::defer([this]() {
+            this->close();
+        });
+        return;
+    }
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Closing.");
     bufferevent_flush(m_bev, EV_WRITE, BEV_FINISHED);
     onClosed.emit(*this);

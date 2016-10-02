@@ -105,6 +105,14 @@ namespace Metre {
                 return m_stanza_timeout = stanza_timeout;
             }
 
+            int connect_timeout() const {
+                return m_connect_timeout;
+            }
+
+            unsigned connect_timeout(int connect_timeout) {
+                return m_connect_timeout = connect_timeout;
+            }
+
             bool dnssec_required() const {
                 return m_dnssec_required;
             }
@@ -185,7 +193,8 @@ namespace Metre {
             bool m_auth_crls;
             bool m_auth_dialback;
             bool m_dnssec_required = false;
-            unsigned m_stanza_timeout = 10;
+            unsigned m_stanza_timeout = 20;
+            unsigned m_connect_timeout = 10;
             std::string m_dhparam;
             std::string m_cipherlist;
             std::optional<std::string> m_auth_secret;
@@ -196,9 +205,9 @@ namespace Metre {
             mutable DNS::Address m_current_arec;
             mutable DNS::Srv m_current_srv;
             mutable std::vector<DNS::Tlsa> m_tlsa_all;
-            mutable srv_callback_t m_srv_pending;
-            mutable addr_callback_t m_a_pending;
-            mutable tlsa_callback_t m_tlsa_pending;
+            mutable std::map<std::string, srv_callback_t> m_srv_pending;
+            mutable std::map<std::string, addr_callback_t> m_a_pending;
+            mutable std::map<std::string, tlsa_callback_t> m_tlsa_pending;
         };
 
         Config(std::string const &filename);

@@ -146,7 +146,8 @@ namespace {
         bool auth_dialback = false;
         bool dnssec_required = false;
         bool auth_pkix_crls = Config::config().fetch_pkix_status();
-        int stanza_timeout = 10;
+        int stanza_timeout = 20;
+        int connect_timeout = 10;
         std::string dhparam = "4096";
         std::string cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
         std::optional<std::string> auth_secret;
@@ -159,6 +160,7 @@ namespace {
             cipherlist = any->cipherlist();
             auth_pkix_crls = any->auth_pkix_status();
             stanza_timeout = any->stanza_timeout();
+            connect_timeout = any->connect_timeout();
         }
         if (any_element == domain->name()) {
             name = "";
@@ -198,18 +200,11 @@ namespace {
             if (tls_a) {
                 tls_required = xmlbool(tls_a->value());
             }
+            stanza_timeout = attrval<int>(domain->first_attribute("stanza-timeout"), stanza_timeout);
+            connect_timeout = attrval<int>(domain->first_attribute("connect-timeout"), connect_timeout);
             auto forward_a = domain->first_attribute("forward");
             if (forward_a) {
                 forward = xmlbool(forward_a->value());
-            }
-            auto timeout_a = domain->first_attribute("forward");
-            if (timeout_a && timeout_a->value()) {
-                std::istringstream timeout(timeout_a->value());
-                int tmp = 0;
-                timeout >> tmp;
-                if (tmp > 0) {
-                    stanza_timeout = tmp;
-                }
             }
 
             for (auto auth = transport->first_node("auth"); auth; auth = auth->next_sibling("auth")) {
@@ -239,6 +234,7 @@ namespace {
                                    std::move(auth_secret)));
         dom->auth_pkix_status(auth_pkix_crls);
         dom->stanza_timeout(stanza_timeout);
+        dom->connect_timeout(connect_timeout);
         auto x509t = domain->first_node("x509");
         if (x509t) {
             auto chain_a = x509t->first_attribute("chain");
@@ -646,7 +642,7 @@ std::string Config::asString() {
     xml_document<> doc;
     auto root = doc.allocate_node(node_element, root_name.c_str());
     root->append_attribute(doc.allocate_attribute("xmlns", xmlns.c_str()));
-    auto alloc_short = [&doc](unsigned short x) {
+    auto alloc_short = [&doc](long x) {
         std::ostringstream ss;
         ss << x;
         return doc.allocate_string(ss.str().data());
@@ -697,10 +693,7 @@ std::string Config::asString() {
             if (!dom.domain().empty()) {
                 d->append_attribute(doc.allocate_attribute("name", dom.domain().c_str()));
                 d->append_attribute(doc.allocate_attribute("forward", dom.forward() ? "true" : "false"));
-                d->append_attribute(doc.allocate_attribute("sec", dom.require_tls() ? "true" : "false"));
-                std::ostringstream os;
-                os << dom.stanza_timeout();
-                d->append_attribute(doc.allocate_attribute("timeout", doc.allocate_string(os.str().c_str())));
+                d->append_attribute(doc.allocate_attribute("stanza-timeout", alloc_short(dom.stanza_timeout())));
                 d->append_node(doc.allocate_node(node_comment, nullptr, "A remote domain. Forwarded domains are proxied through to non-forwarded domains."));
                 d->append_node(doc.allocate_node(node_comment, nullptr,
                                                  "A 'sec' attribute set to true mandates a secured connection (usually TLS)."));
@@ -723,6 +716,8 @@ std::string Config::asString() {
                 }
                 transport->append_attribute(doc.allocate_attribute("type", tt));
                 transport->append_attribute(doc.allocate_attribute("sec", dom.require_tls() ? "true" : "false"));
+                transport->append_attribute(
+                        doc.allocate_attribute("connect-timeout", alloc_short(dom.connect_timeout())));
                 if (dom.auth_pkix()) {
                     auto auth = doc.allocate_node(node_element, "auth");
                     auth->append_attribute(doc.allocate_attribute("type", "pkix"));
@@ -851,30 +846,44 @@ std::string Config::asString() {
                 d->append_node(dns);
             }
             {
-                auto x509 = doc.allocate_node(node_element, "x509");
-                std::string prefix;
-                if (dom.domain().empty()) {
-                    prefix = "any_";
-                } else {
-                    prefix = dom.domain() + "_";
+                SSL_CTX *ctx = dom.ssl_ctx();
+                if (!ctx) {
+                    ctx = domain("").ssl_ctx();
                 }
-                STACK_OF(X509) * chain = nullptr;
-                std::string chainfile = m_data_dir + "/" + prefix + "chain.pem";
-                FILE * fp = fopen(chainfile.c_str(), "w");
-                if (0 == SSL_CTX_get0_chain_certs(dom.ssl_ctx(), &chain)) {
-                    for (int i = 0; i != sk_X509_num(chain); ++i) {
-                        X509 * item = sk_X509_value(chain, i);
-                        PEM_write_X509(fp, item);
+                if (ctx) {
+                    auto x509 = doc.allocate_node(node_element, "x509");
+                    std::string prefix;
+                    if (dom.domain().empty()) {
+                        prefix = "any_";
+                    } else {
+                        prefix = dom.domain() + "_";
+                    }
+                    STACK_OF(X509) *chain = nullptr;
+                    std::string chainfile = m_data_dir + "/" + prefix + "chain.pem";
+                    if (0 == SSL_CTX_get0_chain_certs(ctx, &chain) && chain) {
+                        FILE *fp = fopen(chainfile.c_str(), "w");
+                        for (int i = 0; i < sk_X509_num(chain); ++i) {
+                            X509 *item = sk_X509_value(chain, i);
+                            PEM_write_X509(fp, item);
+                        }
+                        fclose(fp);
+                        x509->append_attribute(doc.allocate_attribute("chain", doc.allocate_string(chainfile.c_str())));
+                    }
+                    std::string keyfile = m_data_dir + "/" + prefix + "key.pem";
+                    bool key_okay = false;
+                    if (SSL_CTX_get0_privatekey(ctx)) {
+                        FILE *fp = fopen(keyfile.c_str(), "w");
+                        PEM_write_PKCS8PrivateKey(fp, SSL_CTX_get0_privatekey(ctx), nullptr, nullptr, 0,
+                                                  nullptr,
+                                                  nullptr);
+                        fclose(fp);
+                        x509->append_attribute(doc.allocate_attribute("pkey", doc.allocate_string(keyfile.c_str())));
+                        key_okay = true;
+                    }
+                    if (key_okay || chain) {
+                        d->append_node(x509);
                     }
                 }
-                fclose(fp);
-                x509->append_attribute(doc.allocate_attribute("chain", doc.allocate_string(chainfile.c_str())));
-                std::string keyfile = m_data_dir + "/" + prefix + "key.pem";
-                fp = fopen(keyfile.c_str(), "w");
-                PEM_write_PKCS8PrivateKey(fp, SSL_CTX_get0_privatekey(dom.ssl_ctx()), nullptr, nullptr, 0, nullptr, nullptr);
-                fclose(fp);
-                x509->append_attribute(doc.allocate_attribute("pkey", doc.allocate_string(keyfile.c_str())));
-                d->append_node(x509);
                 d->append_node(doc.allocate_node(node_comment, nullptr, "The x509 element provides a chainfile and private key to use as the local identity when acting as this domain."));
             }
             {
@@ -906,13 +915,13 @@ std::string Config::asString() {
                     char buf[1024];
                     inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(struct sockaddr_in));
                     listener->append_attribute(doc.allocate_attribute("address", doc.allocate_string(buf)));
-                    listener->append_attribute(doc.allocate_attribute("port", alloc_short(sa->sin_port)));
+                    listener->append_attribute(doc.allocate_attribute("port", alloc_short(ntohs(sa->sin_port))));
                 } else if (listen.sockaddr()->sa_family == AF_INET6) {
                     const struct sockaddr_in6 *sa = reinterpret_cast<const struct sockaddr_in6 *>(listen.sockaddr());
                     char buf[1024];
                     inet_ntop(AF_INET6, &sa->sin6_addr, buf, sizeof(struct sockaddr_in6));
                     listener->append_attribute(doc.allocate_attribute("address", doc.allocate_string(buf)));
-                    listener->append_attribute(doc.allocate_attribute("port", alloc_short(sa->sin6_port)));
+                    listener->append_attribute(doc.allocate_attribute("port", alloc_short(ntohs(sa->sin6_port))));
                 }
                 const char *stype = "s2s";
                 switch (listen.session_type) {
@@ -1101,6 +1110,7 @@ std::vector<DNS::Tlsa> const &Config::Domain::tlsa() const {
 
 void Config::Domain::tlsa_lookup_done(int err, struct ub_result *result) {
     std::string error;
+    METRE_LOG(Log::DEBUG, "TLSA Response for " << result->qname);
     if (err != 0) {
         error = ub_strerror(err);
     } else if (!result->havedata) {
@@ -1126,15 +1136,14 @@ void Config::Domain::tlsa_lookup_done(int err, struct ub_result *result) {
                                                  << rr.matchType << "::"
                                                  << rr.matchData);
         }
-        m_tlsa_pending.emit(&tlsa);
+        m_tlsa_pending[tlsa.domain].emit(&tlsa);
         return;
     }
     METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
     DNS::Tlsa tlsa;
     tlsa.error = error;
     tlsa.domain = result->qname;
-    m_tlsa_pending.emit(&tlsa);
-    m_tlsa_pending.disconnect_all();
+    m_tlsa_pending[tlsa.domain].emit(&tlsa);
 }
 
 namespace {
@@ -1196,7 +1205,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     rr.priority = priority;
     rr.weight = weight;
     rr.port = port;
-    rr.hostname = toASCII(hostname);
+    rr.hostname = toASCII(hostname) + ".";
     rr.tls = tls;
     srv->rrs.push_back(rr);
 }
@@ -1241,8 +1250,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
         }
         if (srv.xmpp && srv.xmpps) {
             srv_sort(srv);
-            m_srv_pending.emit(&srv);
-            m_srv_pending.disconnect_all();
+            m_srv_pending[srv.domain].emit(&srv);
         }
         return;
     }
@@ -1252,12 +1260,10 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
             DNS::Srv srv;
             srv.error = error;
             srv.domain = result->qname;
-            m_srv_pending.emit(&srv);
-            m_srv_pending.disconnect_all();
+            m_srv_pending[srv.domain].emit(&srv);
         } else {
             srv_sort(m_current_srv);
-            m_srv_pending.emit(&m_current_srv);
-            m_srv_pending.disconnect_all();
+            m_srv_pending[m_current_srv.domain].emit(&m_current_srv);
         }
     }
 }
@@ -1304,8 +1310,7 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
             }
         }
         if (m_current_arec.ipv4 && m_current_arec.ipv6) {
-            m_a_pending.emit(&a);
-            m_a_pending.disconnect_all();
+            m_a_pending[a.hostname].emit(&a);
         }
         return;
     }
@@ -1328,8 +1333,7 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
         if (m_current_arec.addr.empty()) {
             m_current_arec.error = error;
         }
-        m_a_pending.emit(&m_current_arec);
-        m_a_pending.disconnect_all();
+        m_a_pending[m_current_arec.hostname].emit(&m_current_arec);
     }
 }
 
@@ -1340,7 +1344,7 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
     if (it != m_host_arecs.end()) {
         auto addr = &*(it->second);
         Router::defer([addr, this]() {
-            m_a_pending.emit(addr);
+            m_a_pending[addr->hostname].emit(addr);
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else {
@@ -1355,7 +1359,7 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
                          a_lookup_done_cb,
                          NULL); /* int * async_id */
     }
-    return m_a_pending;
+    return m_a_pending[hostname];
 }
 
 Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain) const {
@@ -1366,14 +1370,15 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
     if (it != m_srvrecs.end()) {
         auto addr = &*(it->second);
         Router::defer([addr, this]() {
-            m_srv_pending.emit(addr);
+            m_srv_pending[addr->domain].emit(addr);
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else if (m_type == X2X) {
-        Router::defer([this]() {
+        srv_callback_t &cb = m_srv_pending[domain];
+        Router::defer([this, &cb]() {
             DNS::Srv r;
             r.error = "X2X - DNS aborted";
-            m_srv_pending.emit(&r);
+            cb.emit(&r);
         });
     } else {
         m_current_srv.xmpp = m_current_srv.xmpps = false;
@@ -1392,7 +1397,7 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
                          srv_lookup_done_cb,
                          NULL); /* int * async_id */
     }
-    return m_srv_pending;
+    return m_srv_pending[domain];
 }
 
 Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::string const &base_domain) const {
@@ -1404,14 +1409,15 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
     if (it != m_tlsarecs.end()) {
         auto addr = &*(it->second);
         Router::defer([addr, this]() {
-            m_tlsa_pending.emit(addr);
+            m_tlsa_pending[addr->domain].emit(addr);
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else if (m_type == X2X) {
-        Router::defer([this]() {
+        auto &cb = m_tlsa_pending[domain];
+        Router::defer([this, &cb]() {
             DNS::Tlsa r;
             r.error = "X2X - DNS aborted";
-            m_tlsa_pending.emit(&r);
+            cb.emit(&r);
         });
     } else {
         ub_resolve_async(Config::config().ub_ctx(),
@@ -1422,5 +1428,5 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
                          tlsa_lookup_done_cb,
                          NULL); /* int * async_id */
     }
-    return m_tlsa_pending;
+    return m_tlsa_pending[domain];
 }

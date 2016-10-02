@@ -291,7 +291,7 @@ void XMLStream::stream_open() {
                 m_session->send(doc);
             }
             thaw();
-        });
+        }, true);
         freeze();
         r->collateNames();
     } else if (m_dir == OUTBOUND) {
@@ -492,7 +492,7 @@ void XMLStream::do_restart() {
             auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
             r->onNamesCollated.connect(this, [this](Route &) {
                 send_stream_open(true);
-            });
+            }, true);
             r->collateNames();
         } else {
             send_stream_open(true);

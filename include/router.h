@@ -87,6 +87,8 @@ namespace Metre {
 
         void SessionAuthenticated(XMLStream &);
 
+        void SessionClosed(NetSession &);
+
         void collateNames();
 
         sigslot::signal<sigslot::thread::st, Route &> onNamesCollated;

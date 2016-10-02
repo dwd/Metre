@@ -113,6 +113,7 @@ void Route::bounce_stanzas(Stanza::Error e) {
         auto bounce = stanza->create_bounce(e);
         RouteTable::routeTable(bounce->from()).route(bounce->to())->transmit(std::move(bounce));
     }
+    m_stanzas.clear();
 }
 
 void Route::queue(std::unique_ptr<Stanza> &&s) {
@@ -162,7 +163,7 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
 
 void Route::doSrvLookup() {
     if (m_srv.domain.empty() || !m_srv.error.empty()) {
-        Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+        Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult, true);
     } else {
         SrvResult(&m_srv);
     }
@@ -176,12 +177,10 @@ void Route::collateNames() {
         // Have a SRV. Was it DNSSEC signed?
         if (!m_srv.dnssec) {
             onNamesCollated.emit(*this);
-            onNamesCollated.disconnect_all();
         }
         // Do we have TLSAs yet?
         if (m_tlsa.size() == m_srv.rrs.size()) {
             onNamesCollated.emit(*this);
-            onNamesCollated.disconnect_all();
         }
     }
 }
@@ -191,7 +190,6 @@ void Route::SrvResult(DNS::Srv const *srv) {
     if (!srv->error.empty()) {
         METRE_LOG(Metre::Log::WARNING, "Got an error during SRV: " << srv->error);
         onNamesCollated.emit(*this);
-        onNamesCollated.disconnect_all();
         return;
     }
     m_srv = *srv;
@@ -199,11 +197,11 @@ void Route::SrvResult(DNS::Srv const *srv) {
     if (m_srv.dnssec) {
         for (auto &rr : m_srv.rrs) {
             Config::config().domain(m_domain.domain()).TlsaLookup(rr.port, rr.hostname).connect(this,
-                                                                                                &Route::TlsaResult);
+                                                                                                &Route::TlsaResult,
+                                                                                                true);
         }
     } else {
         onNamesCollated.emit(*this);
-        onNamesCollated.disconnect_all();
     }
     auto vrfy = m_vrfy.lock();
     if (vrfy) {
@@ -231,7 +229,8 @@ void Route::try_srv() {
         check_to(*this, sesh);
         return;
     }
-    Config::config().domain(m_domain.domain()).AddressLookup((*m_rr).hostname).connect(this, &Route::AddressResult);
+    Config::config().domain(m_domain.domain()).AddressLookup((*m_rr).hostname).connect(this, &Route::AddressResult,
+                                                                                       true);
 }
 
 void Route::AddressResult(DNS::Address const *addr) {
@@ -248,17 +247,45 @@ void Route::AddressResult(DNS::Address const *addr) {
     }
     m_addr = *addr;
     m_arr = m_addr.addr.begin();
+    try_addr();
+}
+
+void Route::try_addr() {
+    auto vrfy = m_vrfy.lock();
+    if (vrfy) {
+        return;
+    }
+    if (m_arr == m_addr.addr.end()) {
+        // RUn out of A/AAAA records to try.
+        ++m_rr;
+        try_srv();
+        return;
+    }
     vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
                            const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&(*m_arr))),
                            (*m_rr).port, m_rr->tls ? IMMEDIATE : STARTTLS);
     METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
     vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
+    vrfy->onClosed.connect(this, &Route::SessionClosed);
     m_vrfy = vrfy;
     if (m_to.expired()) {
         m_to = vrfy;
         check_to(*this, vrfy);
     }
     // m_vrfy->connected.connect(...);
+}
+
+void Route::SessionClosed(NetSession &n) {
+    // One of my sessions has been closed. See what needs progressing.
+    if (!m_dialback.empty() || !m_stanzas.empty()) {
+        auto vrfy = m_vrfy.lock();
+        if (vrfy.get() == &n) {
+            m_vrfy.reset();
+            ++m_arr;
+            try_addr();
+            return;
+        }
+    }
 }
 
 void Route::TlsaResult(const DNS::Tlsa *tlsa) {

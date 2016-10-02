@@ -107,7 +107,6 @@ namespace {
 
         void collation_ready(Route &route) {
             METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
-            route.onNamesCollated.disconnect(this);
             start_tls(m_stream);
         }
 
@@ -119,7 +118,7 @@ namespace {
                 (name == "proceed" && m_stream.direction() == OUTBOUND)) {
                 std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                         m_stream.remote_domain());
-                route->onNamesCollated.connect(this, &StartTls::collation_ready);
+                route->onNamesCollated.connect(this, &StartTls::collation_ready, true);
                 m_stream.freeze();
                 route->collateNames();
                 return true;
