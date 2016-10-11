@@ -105,11 +105,6 @@ namespace {
             }
         };
 
-        void collation_ready(Route &route) {
-            METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
-            start_tls(m_stream);
-        }
-
         bool handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
@@ -118,14 +113,16 @@ namespace {
                 (name == "proceed" && m_stream.direction() == OUTBOUND)) {
                 std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                         m_stream.remote_domain());
-                route->onNamesCollated.connect(this, &StartTls::collation_ready, true);
+                route->onNamesCollated.connect(this, [this](Route &r) {
+                    METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
+                    m_stream.in_context([this]() { start_tls(m_stream); });
+                }, true);
                 m_stream.freeze();
                 route->collateNames();
                 return true;
             } else {
                 throw std::runtime_error("Unimplemented");
             }
-            return false;
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {

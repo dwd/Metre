@@ -84,12 +84,14 @@ namespace {
                                     if (m_stream.tls_auth_ok(r)) {
                                         m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
                                                                XMLStream::AUTHORIZED);
+                                    } else {
+                                        throw Metre::not_authorized();
                                     }
-                                    handle(s);
+                                    m_stream.in_context([this, &s]() { handle(s); }, *s);
                                     m_stream.thaw();
                                 }, true);
-                                r->collateNames();
                                 m_stream.freeze();
+                                r->collateNames();
                                 return;
                             }
                         } else {

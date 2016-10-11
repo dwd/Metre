@@ -141,38 +141,76 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
             throw Metre::undefined_condition(e.what());
         }
     } catch (Metre::base::xmpp_exception &e) {
-        METRE_LOG(Metre::Log::INFO, "Raising error: " << e.what());
-        xml_document<> d;
-        auto error = d.allocate_node(node_element, "stream:error");
-        auto specific = d.allocate_node(node_element, e.element_name());
-        specific->append_attribute(d.allocate_attribute("xmlns", "urn:ietf:params:xml:ns:xmpp-streams"));
-        auto text = d.allocate_node(node_element, "text", e.what());
-        specific->append_node(text);
-        if (dynamic_cast<Metre::undefined_condition *>(&e)) {
-            auto other = d.allocate_node(node_element, "unhandled-exception");
-            other->append_attribute(d.allocate_attribute("xmlns", "http://cridland.im/xmlns/metre"));
-            specific->append_node(other);
-        }
-        error->append_node(specific);
-        if (m_opened) {
-            d.append_node(error);
-            m_session->send(d);
-            m_session->send("</stream:stream>");
-        } else {
-            auto node = d.allocate_node(node_element, "stream:stream");
-            node->append_attribute(d.allocate_attribute("xmlns:stream", "http://etherx.jabber.org/streams"));
-            node->append_attribute(d.allocate_attribute("version", "1.0"));
-            node->append_attribute(d.allocate_attribute("xmlns", content_namespace()));
-            node->append_node(error);
-            d.append_node(node);
-            m_session->send("<?xml version='1.0'?>");
-            m_session->send(d);
-        }
-        m_closed = true;
+        handle_exception(e);
     }
     return spaces + len - buf.length();
 }
 
+void XMLStream::handle_exception(Metre::base::xmpp_exception &e) {
+    using namespace rapidxml;
+    METRE_LOG(Metre::Log::INFO, "Raising error: " << e.what());
+    xml_document<> d;
+    auto error = d.allocate_node(node_element, "stream:error");
+    auto specific = d.allocate_node(node_element, e.element_name());
+    specific->append_attribute(d.allocate_attribute("xmlns", "urn:ietf:params:xml:ns:xmpp-streams"));
+    auto text = d.allocate_node(node_element, "text", e.what());
+    specific->append_node(text);
+    if (dynamic_cast<Metre::undefined_condition *>(&e)) {
+        auto other = d.allocate_node(node_element, "unhandled-exception");
+        other->append_attribute(d.allocate_attribute("xmlns", "http://cridland.im/xmlns/metre"));
+        specific->append_node(other);
+    }
+    error->append_node(specific);
+    if (m_opened) {
+        d.append_node(error);
+        m_session->send(d);
+        m_session->send("</stream:stream>");
+    } else {
+        auto node = d.allocate_node(node_element, "stream:stream");
+        node->append_attribute(d.allocate_attribute("xmlns:stream", "http://etherx.jabber.org/streams"));
+        node->append_attribute(d.allocate_attribute("version", "1.0"));
+        node->append_attribute(d.allocate_attribute("xmlns", content_namespace()));
+        node->append_node(error);
+        d.append_node(node);
+        m_session->send("<?xml version='1.0'?>");
+        m_session->send(d);
+    }
+    m_closed = true;
+}
+
+void XMLStream::in_context(std::function<void()> &&fn, Stanza &s) {
+    try {
+        try {
+        } catch (Metre::base::xmpp_exception) {
+            throw;
+        } catch (Metre::base::stanza_exception) {
+            throw;
+        } catch (std::runtime_error &e) {
+            throw Metre::stanza_undefined_condition(e.what());
+        }
+    } catch (Metre::base::stanza_exception const &stanza_error) {
+        std::unique_ptr<Stanza> st = s.create_bounce(stanza_error);
+        std::shared_ptr<Route> route = RouteTable::routeTable(st->from()).route(st->to());
+        route->transmit(std::move(st));
+    } catch (Metre::base::xmpp_exception &e) {
+        handle_exception(e);
+    }
+}
+
+void XMLStream::in_context(std::function<void()> &&fn) {
+    try {
+        try {
+        } catch (Metre::base::xmpp_exception &) {
+            throw;
+        } catch (Metre::base::stanza_exception &e) {
+            throw Metre::undefined_condition(std::string("Uncaught stanza error: ") + e.what());
+        } catch (std::runtime_error &e) {
+            throw Metre::stanza_undefined_condition(e.what());
+        }
+    } catch (Metre::base::xmpp_exception &e) {
+        handle_exception(e);
+    }
+}
 
 const char *XMLStream::content_namespace() const {
     const char *p;

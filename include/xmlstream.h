@@ -34,6 +34,7 @@ SOFTWARE.
 #include "sigslot/sigslot.h"
 #include "rapidxml.hpp"
 #include "feature.h"
+#include "xmppexcept.h"
 
 struct X509_crl_st;
 
@@ -86,6 +87,12 @@ namespace Metre {
                   std::string const &stream_to);
 
         size_t process(unsigned char *, size_t);
+
+        void handle_exception(Metre::base::xmpp_exception &e);
+
+        void in_context(std::function<void()> &&, Stanza &s);
+
+        void in_context(std::function<void()> &&);
 
         void freeze() {
             m_frozen = true;

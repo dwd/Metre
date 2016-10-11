@@ -139,7 +139,9 @@ namespace {
             m_keys.insert(result.key());
             const char *keytmp = m_keys.find(result.key())->c_str();
             route->onNamesCollated.connect(this, [=](Route &r) {
-                result_step(r, keytmp);
+                m_stream.in_context([&]() {
+                    result_step(r, keytmp);
+                });
             }, true);
             route->collateNames();
         }
