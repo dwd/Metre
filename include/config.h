@@ -183,6 +183,12 @@ namespace Metre {
 
             ~Domain();
 
+            FILTER_RESULT filter(SESSION_DIRECTION dir, Stanza &s) const;
+
+            std::list<std::unique_ptr<Filter>> &filters() {
+                return m_filters;
+            }
+
         private:
             std::string m_domain;
             SESSION_TYPE m_type;
@@ -208,6 +214,7 @@ namespace Metre {
             mutable std::map<std::string, srv_callback_t> m_srv_pending;
             mutable std::map<std::string, addr_callback_t> m_a_pending;
             mutable std::map<std::string, tlsa_callback_t> m_tlsa_pending;
+            std::list<std::unique_ptr<Filter>> m_filters;
         };
 
         Config(std::string const &filename);

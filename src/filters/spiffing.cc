@@ -29,11 +29,16 @@ using namespace Metre;
 
 namespace {
     class Spiffing : public Filter {
+    public:
         class Description : public Filter::Description<Spiffing> {
             Description(std::string &&name) : Filter::Description<Spiffing>(std::move(name)) {};
         };
 
-        Spiffing(XMLStream &s) : Filter(s) {
+        Spiffing(BaseDescription &b, Config::Domain &s, rapidxml::xml_node<> *config) : Filter(b) {
+        }
+
+        virtual FILTER_RESULT apply(SESSION_DIRECTION, Metre::Stanza &) override {
+            return PASS;
         }
     };
 }

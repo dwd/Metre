@@ -29,6 +29,18 @@ SOFTWARE.
 
 using namespace Metre;
 
-void Filter::instantiate(std::string const &xmlns, XMLStream &) {
-    // Do nothing.
+std::map<std::string, Filter::BaseDescription *> &Filter::all_filters() {
+    static std::map<std::string, Filter::BaseDescription *> s_filters;
+    return s_filters;
+}
+
+rapidxml::xml_node<> *Filter::BaseDescription::config(rapidxml::xml_document<> &doc) {
+    return doc.allocate_node(rapidxml::node_element, name.c_str());
+}
+
+void Filter::BaseDescription::config(rapidxml::xml_node<> *) {
+}
+
+rapidxml::xml_node<> *Filter::dump_config(rapidxml::xml_document<> &doc) {
+    return nullptr;
 }

@@ -27,58 +27,69 @@ SOFTWARE.
 #define METRE_FILTER__H
 
 #include "defs.h"
+#include "config.h"
 
 #include <map>
 #include <string>
 #include <memory>
 #include <set>
+#include <rapidxml.hpp>
 
 namespace Metre {
     class Filter {
     public:
         class BaseDescription {
         protected:
-            BaseDescription(std::string &&name);
+            BaseDescription(std::string &&aname) : name(std::move(aname)) {}
+
+        public:
+            virtual void config(rapidxml::xml_node<> *config);
+
+            virtual rapidxml::xml_node<> *config(rapidxml::xml_document<> &doc);
+
+            virtual std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) = 0;
 
         public:
             std::string const name;
-        protected:
-            std::set<std::string> m_suppress_features;
-        public:
-            std::set<std::string> m_namespaces;
         };
 
         template<typename T>
         class Description : public BaseDescription {
         public:
-            Description(std::string &&name) : BaseDescription(std::move(name)) {};
+            Description(std::string &&name) : BaseDescription(std::move(name)) {}
 
-            std::unique_ptr<T> create(XMLStream &);
+            virtual std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) override {
+                return std::unique_ptr<Filter>(new T(*this, domain, config));
+            }
         };
 
-    protected:
-        static std::multimap<std::string, BaseDescription *> &all_filters();
+    public:
+        static std::map<std::string, BaseDescription *> &all_filters();
 
     public:
-        Filter(XMLStream &);
+        Filter(BaseDescription &b) : m_description(b) {}
 
-        virtual bool apply(bool inbound, Stanza &) = 0;
+        /* Interface */
+        /* Actually do the filter. Tinkering with the stanza is fine. */
+        virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Stanza &) = 0;
 
-        virtual ~Filter();
+    protected:
+        /* Node will be an element of the filter name. */
+        virtual void do_dump_config(rapidxml::xml_node<> *) {}
+
+        BaseDescription const &m_description;
+
+    public:
+        virtual ~Filter() {}
 
         template<typename T>
         static bool declare(const char *name) {
             BaseDescription *bd = new typename T::Description(name);
-            for (auto &ns : bd->m_namespaces) {
-                all_filters().insert(std::make_pair(ns, bd));
-            }
+            all_filters().insert(std::make_pair(bd->name, bd));
             return true;
         }
 
-        static void instantiate(std::string const &xmlns, XMLStream &);
-
-    protected:
-        XMLStream &m_stream;
+        rapidxml::xml_node<> *dump_config(rapidxml::xml_document<> &doc);
     };
 }
 

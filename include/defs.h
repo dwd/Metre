@@ -46,6 +46,11 @@ namespace Metre {
         STARTTLS
     } TLS_MODE;
 
+    typedef enum {
+        PASS,
+        DROP
+    } FILTER_RESULT;
+
     class Feature;
 
     class Filter;

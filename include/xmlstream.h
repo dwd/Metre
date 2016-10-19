@@ -35,6 +35,7 @@ SOFTWARE.
 #include "rapidxml.hpp"
 #include "feature.h"
 #include "xmppexcept.h"
+#include "filter.h"
 
 struct X509_crl_st;
 
@@ -74,11 +75,12 @@ namespace Metre {
         bool m_frozen = false;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_rx;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
-        std::map<std::string, Filter *> m_filters;
+        std::list<std::unique_ptr<Filter>> m_filters;
         std::size_t m_num_crls = 0;
         std::map<std::string, struct X509_crl_st *> m_crls;
         bool m_crl_complete = false;
         bool m_x2x_mode = false;
+        std::map<std::string, sigslot::signal<sigslot::thread::st, Stanza const &>> m_response_callbacks;
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -130,6 +132,8 @@ namespace Metre {
 
         void send(std::unique_ptr<Stanza> v);
 
+        sigslot::signal<sigslot::thread::st, Stanza const &> &query(rapidxml::xml_node<> const &payload);
+
         void restart();
 
         void set_auth_ready() {
@@ -164,10 +168,6 @@ namespace Metre {
 
         void check_domain_pair(std::string const &from, std::string const &to) const;
 
-        bool process(Stanza &);
-
-        bool filter(Stanza &); // Filter a stanza. Returns true if it's been swallowed.
-
         std::string const &stream_local() const {
             return m_stream_local;
         }
@@ -183,8 +183,6 @@ namespace Metre {
         ~XMLStream();
 
         void generate_stream_id();
-
-        void connected(NetSession &);
 
         void fetch_crl(std::string const & uri);
 

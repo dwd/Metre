@@ -9,7 +9,9 @@ It's written in C++11 (ie, modern C++), and aims to provide a semantically-aware
 between domains, to avoid exposing your internal XMPP fully to the world.
 
 You'll probably want to read the [FAQ](FAQ.md), and you may wish to find some
-[BUILD](BUILD.md) instructions. The [LICENCE](LICENSE) is MIT, and the copyright
+[BUILD](BUILD.md) instructions. There is also a documentation file on [FILTERS](FILTERS.md)
+
+The [LICENCE](LICENSE) is MIT, and the copyright
 rests (mostly - see the [Base 64 code](src/base64.cc)) jointly with Surevine Ltd and
 Dave Cridland.
 

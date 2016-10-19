@@ -79,6 +79,8 @@ namespace Metre {
 
         Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type, std::string const &id);
 
+        virtual ~Stanza() {}
+
         const char *name() {
             return m_name;
         }
@@ -107,6 +109,12 @@ namespace Metre {
             return m_node;
         }
 
+        void payload(std::string const &p) {
+            m_payload_str = p;
+            m_payload = m_payload_str.c_str();
+            m_payload_l = m_payload_str.size();
+        }
+
         void render(rapidxml::xml_document<> &d);
 
         std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e);
@@ -127,67 +135,44 @@ namespace Metre {
     class Message : public Stanza {
     public:
         typedef enum {
-            UNCHECKED, NORMAL, CHAT, HEADLINE, GROUPCHAT, ERROR
+            NORMAL, CHAT, HEADLINE, GROUPCHAT, ERROR
         } Type;
         static const char *name;
     private:
-        mutable Type m_type;
+        Type m_type;
     public:
-        Message(rapidxml::xml_node<> const *node) : Stanza(name, node), m_type(UNCHECKED) {
-        }
+        Message(rapidxml::xml_node<> const *node);
 
         Type type() const {
-            if (m_type != UNCHECKED) return m_type;
-            if (!type_str()) return m_type = NORMAL;
-            std::string const &t = *type_str();
-            switch (t[0]) {
-                case 'n':
-                    if (t == "normal") return m_type = NORMAL;
-                    break;
-                case 'c':
-                    if (t == "chat") return m_type = CHAT;
-                    break;
-                case 'h':
-                    if (t == "headline") return m_type = HEADLINE;
-                    break;
-                case 'g':
-                    if (t == "groupchat") return m_type = GROUPCHAT;
-                    break;
-                case 'e':
-                    if (t == "error") return m_type = ERROR;
-                    break;
-            }
+            return m_type;
         }
+
+    protected:
+        Type set_type() const;
     };
 
 
     class Iq : public Stanza {
     public:
         typedef enum {
-            UNCHECKED, GET, SET, RESULT, ERROR
+            GET, SET, RESULT, ERROR
         } Type;
         static const char *name;
     private:
-        mutable Type m_type;
+        Type m_type;
     public:
-        Iq(rapidxml::xml_node<> const *node) : Stanza(name, node) {}
+        Iq(rapidxml::xml_node<> const *node);
 
         Iq(Jid const &from, Jid const &to, Type t, std::string const &id);
 
-        static const char *type_toString(Type t) {
-            switch (t) {
-                case GET:
-                    return "get";
-                case SET:
-                    return "set";
-                case RESULT:
-                    return "result";
-                case ERROR:
-                    return "error";
-                default:
-                    return "error";
-            }
+        Type type() const {
+            return m_type;
         }
+
+    protected:
+        static const char *type_toString(Type t);
+
+        Type set_type() const;
     };
 
 

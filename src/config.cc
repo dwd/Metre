@@ -48,6 +48,7 @@ SOFTWARE.
 #include <http.h>
 #include <iomanip>
 #include <unicode/uidna.h>
+#include <filter.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -339,6 +340,19 @@ namespace {
             }
         }
         dom->dnssec_required(dnssec_required);
+        auto filter_in = domain->first_node("filter-in");
+        if (filter_in) {
+            for (auto filter = filter_in->first_node(); filter; filter = filter->next_sibling()) {
+                if (filter->type() != node_element) continue;
+                std::string filter_name{filter->name(), filter->name_size()};
+                auto it = Filter::all_filters().find(filter_name);
+                if (it == Filter::all_filters().end()) {
+                    throw std::runtime_error("Unknown filter " + filter_name);
+                }
+                auto &filter_desc = (*it).second;
+                dom->filters().emplace_back(filter_desc->create(*dom, filter));
+            }
+        }
         return dom;
     }
 
@@ -361,6 +375,20 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
           m_ssl_ctx(nullptr) {
     m_domain = domain;
 }
+
+FILTER_RESULT Config::Domain::filter(SESSION_DIRECTION dir, Stanza &s) const {
+    rapidxml::xml_node<> const *node = s.node();
+    if (!node) {
+        // Synthetic Stanza. Probably a bounce, or similar.
+        return PASS;
+    }
+    for (auto &filter : m_filters) {
+        if (filter->apply(dir, s) == DROP) return DROP;
+    }
+    return PASS;
+}
+
+
 
 Config::Domain::~Domain() {
     if (m_ssl_ctx) {

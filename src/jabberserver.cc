@@ -98,6 +98,10 @@ namespace {
                             throw Metre::not_authorized();
                         }
                     }
+                    if (DROP == Config::config().domain(to.domain()).filter(INBOUND, *s)) {
+                        METRE_LOG(Log::INFO, "Stanza discarded by filters");
+                        return;
+                    }
                     if (Config::config().domain(to.domain()).transport_type() == INT) {
                         // For now, bounce everything.
                         bool ping = false;
