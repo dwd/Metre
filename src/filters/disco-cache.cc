@@ -33,14 +33,14 @@ using namespace Metre;
 using namespace rapidxml;
 
 namespace {
-    class DiscoCache : public Filter {
+    class Unicode : public Filter {
     public:
-        class Description : public Filter::Description<DiscoCache> {
+        class Description : public Filter::Description<Unicode> {
         public:
-            Description(std::string &&name) : Filter::Description<DiscoCache>(std::move(name)) {};
+            Description(std::string &&name) : Filter::Description<Unicode>(std::move(name)) {};
         };
 
-        DiscoCache(BaseDescription &b, Config::Domain &, rapidxml::xml_node<> *) : Filter(b) {
+        Unicode(BaseDescription &b, Config::Domain &, rapidxml::xml_node<> *) : Filter(b) {
         }
 
         virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Stanza &s) override {
@@ -96,5 +96,5 @@ namespace {
         }  // For responding to disco requests.
     };
 
-    bool something = Filter::declare<DiscoCache>("disco-cache");
+    bool something = Filter::declare<Unicode>("disco-cache");
 }

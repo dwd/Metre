@@ -35,12 +35,16 @@ std::map<std::string, Filter::BaseDescription *> &Filter::all_filters() {
 }
 
 rapidxml::xml_node<> *Filter::BaseDescription::config(rapidxml::xml_document<> &doc) {
-    return doc.allocate_node(rapidxml::node_element, name.c_str());
+    auto config = doc.allocate_node(rapidxml::node_element, name.c_str());
+    do_config(doc, config);
+    return config;
 }
 
 void Filter::BaseDescription::config(rapidxml::xml_node<> *) {
 }
 
 rapidxml::xml_node<> *Filter::dump_config(rapidxml::xml_document<> &doc) {
-    return nullptr;
+    auto config = doc.allocate_node(rapidxml::node_element, m_description.name.c_str());
+    do_dump_config(doc, config);
+    return config;
 }

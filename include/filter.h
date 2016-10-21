@@ -42,10 +42,12 @@ namespace Metre {
         protected:
             BaseDescription(std::string &&aname) : name(std::move(aname)) {}
 
+            virtual void do_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) {}
+
         public:
             virtual void config(rapidxml::xml_node<> *config);
 
-            virtual rapidxml::xml_node<> *config(rapidxml::xml_document<> &doc);
+            rapidxml::xml_node<> *config(rapidxml::xml_document<> &doc);
 
             virtual std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) = 0;
 
@@ -75,7 +77,7 @@ namespace Metre {
 
     protected:
         /* Node will be an element of the filter name. */
-        virtual void do_dump_config(rapidxml::xml_node<> *) {}
+        virtual void do_dump_config(rapidxml::xml_document<> &, rapidxml::xml_node<> *) {}
 
         BaseDescription const &m_description;
 

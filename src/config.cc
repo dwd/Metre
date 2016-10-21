@@ -568,6 +568,19 @@ void Config::load(std::string const &filename) {
         if (crls && crls->value()) {
             m_fetch_crls = xmlbool(crls->value());
         }
+        auto filters = globals->first_node("filter");
+        if (filters) {
+            for (auto filter = filters->first_node(); filter; filter = filter->next_sibling()) {
+                if (filter->type() != node_element) continue;
+                std::string filter_name{filter->name(), filter->name_size()};
+                auto it = Filter::all_filters().find(filter_name);
+                if (it == Filter::all_filters().end()) {
+                    throw std::runtime_error("Unknown filter " + filter_name);
+                }
+                auto &filter_desc = (*it).second;
+                filter_desc->config(filter);
+            }
+        }
     }
     if (m_runtime_dir.empty()) {
         m_runtime_dir = "/var/run/";
@@ -707,6 +720,15 @@ std::string Config::asString() {
         global("fetch-crls", m_fetch_crls ? "true" : "false",
                "Controls if CRLs are fetched - MUST be on for status checking!");
         global("dnssec", m_dns_keys, "DNS key file - obtain this from IANA");
+
+        xml_node<> *filters = doc.allocate_node(node_element, "filter");
+        filters->append_node(
+                doc.allocate_node(node_comment, nullptr, "Filter global configuration for all compiled-in filters"));
+        for (auto const &filter : Filter::all_filters()) {
+            auto filter_conf = filter.second->config(doc);
+            filters->append_node(filter_conf);
+        }
+        globals->append_node(filters);
 
         root->append_node(globals);
     }
@@ -922,6 +944,15 @@ std::string Config::asString() {
             }
             d->append_node(doc.allocate_node(node_element, "ciphers", dom.cipherlist().c_str()));
             d->append_node(doc.allocate_node(node_comment, nullptr, "This is a normal OpenSSL cipher string."));
+            {
+                auto filter_in = doc.allocate_node(node_element, "filter-in");
+                filter_in->append_node(doc.allocate_node(node_comment, nullptr,
+                                                         "Config for any filters active for inbound stanzas to this domain"));
+                for (auto const &filter : dom.m_filters) {
+                    filter_in->append_node(filter->dump_config(doc));
+                }
+                d->append_node(filter_in);
+            }
             domains->append_node(d);
         };
         for (auto & p : m_domains) {

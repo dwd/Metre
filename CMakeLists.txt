@@ -5,7 +5,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -Werror -O0 -
 
 set(FILTER_SOURCES
         src/filters/disco-filter.cc
-        src/filters/disco-cache.cc)
+        src/filters/spiffing.cc
+        src/filters/disco-cache.cc
+        src/filters/unicode.cc)
 
 set(SOURCE_FILES
         ${FILTER_SOURCES}
@@ -42,7 +44,7 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc
-        src/xmlstream.cc src/saslexternal.cc src/filters/spiffing.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h)
+        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h)
 
 add_executable(metre ${SOURCE_FILES})
 target_link_libraries(metre event_core ssl crypto event_openssl event_extra unbound icudata icuuc)

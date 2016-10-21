@@ -43,7 +43,7 @@ namespace {
     }
 
     UConverter *utf8() {
-        UConverter *c = 0;
+        static UConverter *c = 0;
         UErrorCode error = U_ZERO_ERROR;
         if (!c) c = ucnv_open("utf-8", &error);
         return c;
