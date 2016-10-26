@@ -71,7 +71,7 @@ namespace Metre {
         std::string m_payload_str;
         const char *m_payload = nullptr;
         size_t m_payload_l = 0;
-        rapidxml::xml_node<> const *m_node;
+        rapidxml::xml_node<> const *m_node = nullptr;
     public:
         Stanza(const char *name, rapidxml::xml_node<> const *node);
 

@@ -85,62 +85,72 @@ namespace {
 }
 
 int main(int argc, char *argv[]) {
-    // Firstly, load up the configuration.
-    bc.reset(new BootConfig(argc, argv));
-    config.reset(new Metre::Config(bc->config_file));
-    if (bc->boot_method.empty()) {
-        bc->boot_method = config->boot_method();
-    }
-    if (bc->boot_method == "sysv") {
-        pid_t child = fork();
-        if (child == -1) {
-            std::cerr << "Fork failed: " << strerror(errno) << std::endl;
-            exit(1);
+    try {
+        // Firstly, load up the configuration.
+        bc.reset(new BootConfig(argc, argv));
+        config.reset(new Metre::Config(bc->config_file));
+        if (bc->boot_method.empty()) {
+            bc->boot_method = config->boot_method();
         }
-        if (child != 0) {
-            // This is the parent; we exit here.
-            return 0;
-        }
-        // We are the new child. Close fds, session, etc.
-        close(0);
-        close(1);
-        close(2);
-        config->log_init();
-        if (-1 == setsid()) {
-            METRE_LOG(Metre::Log::CRIT, "setsid() failed with " << strerror(errno));
-        }
-        // Now fork again. Like we did last summer.
-        child = fork();
-        if (child == -1) {
-            METRE_LOG(Metre::Log::CRIT, "fork(2) failed with " << strerror(errno));
-            exit(1);
-        }
-        if (child != 0) {
-            std::ofstream pidfile(config->pidfile(), std::ios_base::trunc);
-            pidfile << child << std::endl;
-            return 0;
-        }
-        chdir(config->runtime_dir().c_str());
-        signal(SIGPIPE, SIG_IGN);
-        signal(SIGHUP, hup_handler);
-        signal(SIGTERM, term_handler);
-        Metre::Router::main();
-    } else if (bc->boot_method == "none") {
-        config->log_init();
-        signal(SIGPIPE, SIG_IGN);
-        signal(SIGHUP, hup_handler);
-        signal(SIGTERM, term_handler);
-        signal(SIGINT, term_handler);
-        Metre::Router::main();
-    } else if (bc->boot_method == "systemd") {
-        config->log_init(true);
-        signal(SIGPIPE, SIG_IGN);
-        signal(SIGHUP, hup_handler);
-        signal(SIGTERM, term_handler);
-        Metre::Router::main();
-    } else {
-        std::cerr << "I don't know what " << bc->boot_method << " means." << std::endl;
+    } catch (std::runtime_error &e) {
+        std::cout << "Error while loading config: " << e.what() << std::endl;
         return 1;
+    }
+    try {
+        if (bc->boot_method == "sysv") {
+            pid_t child = fork();
+            if (child == -1) {
+                std::cerr << "Fork failed: " << strerror(errno) << std::endl;
+                exit(1);
+            }
+            if (child != 0) {
+                // This is the parent; we exit here.
+                return 0;
+            }
+            // We are the new child. Close fds, session, etc.
+            close(0);
+            close(1);
+            close(2);
+            config->log_init();
+            if (-1 == setsid()) {
+                METRE_LOG(Metre::Log::CRIT, "setsid() failed with " << strerror(errno));
+            }
+            // Now fork again. Like we did last summer.
+            child = fork();
+            if (child == -1) {
+                METRE_LOG(Metre::Log::CRIT, "fork(2) failed with " << strerror(errno));
+                exit(1);
+            }
+            if (child != 0) {
+                std::ofstream pidfile(config->pidfile(), std::ios_base::trunc);
+                pidfile << child << std::endl;
+                return 0;
+            }
+            chdir(config->runtime_dir().c_str());
+            signal(SIGPIPE, SIG_IGN);
+            signal(SIGHUP, hup_handler);
+            signal(SIGTERM, term_handler);
+            Metre::Router::main();
+        } else if (bc->boot_method == "none") {
+            config->log_init();
+            signal(SIGPIPE, SIG_IGN);
+            signal(SIGHUP, hup_handler);
+            signal(SIGTERM, term_handler);
+            signal(SIGINT, term_handler);
+            Metre::Router::main();
+        } else if (bc->boot_method == "systemd") {
+            config->log_init(true);
+            signal(SIGPIPE, SIG_IGN);
+            signal(SIGHUP, hup_handler);
+            signal(SIGTERM, term_handler);
+            Metre::Router::main();
+        } else {
+            std::cerr << "I don't know what " << bc->boot_method << " means." << std::endl;
+            return 1;
+        }
+    } catch (std::runtime_error &e) {
+        std::cout << "Error while loading config: " << e.what() << std::endl;
+        return 2;
     }
     config.reset(nullptr);
     bc.reset(nullptr);

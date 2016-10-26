@@ -30,7 +30,7 @@ SOFTWARE.
 
 using namespace Metre;
 
-Stanza::Stanza(const char *name, rapidxml::xml_node<> const *node) : m_name(name) {
+Stanza::Stanza(const char *name, rapidxml::xml_node<> const *node) : m_name(name), m_node(node) {
     auto to = node->first_attribute("to");
     if (to) m_to = Jid(to->value());
     auto from = node->first_attribute("from");
@@ -77,7 +77,11 @@ void Stanza::render(rapidxml::xml_document<> &d) {
         auto att = d.allocate_attribute("id", m_id.c_str());
         hdr->append_attribute(att);
     }
-    if (m_payload && m_payload_l) {
+    if (m_node) {
+        for (auto child = m_node->first_node(); child; child = child->next_sibling()) {
+            hdr->append_node(child);
+        }
+    } else if (m_payload && m_payload_l) {
         auto lit = d.allocate_node(rapidxml::node_literal);
         lit->value(m_payload, m_payload_l);
         hdr->append_node(lit);

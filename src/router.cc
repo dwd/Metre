@@ -75,6 +75,7 @@ namespace {
                         to->xml_stream().send(d);
                         to->xml_stream().s2s_auth_pair(r.local(), r.domain(), OUTBOUND, XMLStream::REQUESTED);
                     }
+                    // Fallthrough
                 case XMLStream::REQUESTED:
                     to->xml_stream().onAuthenticated.connect(&r, &Route::SessionAuthenticated);
             }

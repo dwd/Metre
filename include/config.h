@@ -192,12 +192,12 @@ namespace Metre {
         private:
             std::string m_domain;
             SESSION_TYPE m_type;
-            bool m_forward;
-            bool m_require_tls;
-            bool m_block;
-            bool m_auth_pkix;
-            bool m_auth_crls;
-            bool m_auth_dialback;
+            bool m_forward = false;
+            bool m_require_tls = true;
+            bool m_block = false;
+            bool m_auth_pkix = true;
+            bool m_auth_crls = true;
+            bool m_auth_dialback = false;
             bool m_dnssec_required = false;
             unsigned m_stanza_timeout = 20;
             unsigned m_connect_timeout = 10;

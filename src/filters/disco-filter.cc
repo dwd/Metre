@@ -53,6 +53,10 @@ namespace {
                 if (hash) {
                     // Translate to the new caps, if available.
                     auto ver = caps->first_attribute("ver");
+                    if (!ver) {
+                        // s.node()->remove_node(caps); // Maybe??
+                        return PASS;
+                    }
                     auto it = m_caps_translation.find(std::string{ver->value(), ver->value_size()});
                     if (it == m_caps_translation.end()) {
                         // Freeze the stream (?) and do a disco query.

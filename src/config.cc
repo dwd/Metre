@@ -1141,6 +1141,7 @@ void Config::Domain::tlsa(std::string const &hostname, unsigned short port, DNS:
                 }
             }
         }
+            break;
         default: {
             bool read_ok = false;
             if (value.find('\n') == std::string::npos && value.find('/') != std::string::npos) {

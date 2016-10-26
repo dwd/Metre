@@ -233,6 +233,7 @@ namespace Metre {
                 switch (rr.certUsage) {
                     case DNS::TlsaRR::CertConstraint:
                         if (!valid) continue;
+                        // Fallthrough
                     case DNS::TlsaRR::DomainCert:
                         if (tlsa_matches(rr, sk_X509_value(verified, 0))) {
                             dane_ok = true;
@@ -241,6 +242,7 @@ namespace Metre {
                         break;
                     case DNS::TlsaRR::CAConstraint:
                         if (!valid) continue;
+                        // Fallthrough
                     case DNS::TlsaRR::TrustAnchorAssertion:
                         if (sk_X509_num(verified) == 0) continue; // Problem there.
                         X509 *ta = sk_X509_value(verified, sk_X509_num(verified) - 1);
