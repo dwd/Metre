@@ -49,8 +49,10 @@ namespace Metre {
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
         Jid const m_domain;
+        bool m_srv_valid = false;
         DNS::Srv m_srv;
         std::vector<DNS::SrvRR>::const_iterator m_rr;
+        bool m_a_valid = false;
         DNS::Address m_addr;
         std::vector<struct sockaddr_storage>::const_iterator m_arr;
         std::vector<DNS::Tlsa> m_tlsa;

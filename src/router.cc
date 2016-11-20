@@ -99,7 +99,7 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
         // Otherwise, start SRV lookups.
         v->freeze();
         m_dialback.push_back(std::move(v));
-        Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult);
+        Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult, true);
     }
 
 }
@@ -165,8 +165,6 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
 void Route::doSrvLookup() {
     if (m_srv.domain.empty() || !m_srv.error.empty()) {
         Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult, true);
-    } else {
-        SrvResult(&m_srv);
     }
 }
 
@@ -193,7 +191,10 @@ void Route::SrvResult(DNS::Srv const *srv) {
         onNamesCollated.emit(*this);
         return;
     }
+    if (m_srv_valid) return;
     m_srv = *srv;
+    m_rr = m_srv.rrs.begin();
+    m_srv_valid = true;
     // Scan through TLSA records if DNSSEC has been used.
     if (m_srv.dnssec) {
         for (auto &rr : m_srv.rrs) {
@@ -210,13 +211,13 @@ void Route::SrvResult(DNS::Srv const *srv) {
         check_to(*this, m_to.lock());
         return;
     }
-    m_rr = m_srv.rrs.begin();
     try_srv();
 }
 
 void Route::try_srv() {
     if (m_rr == m_srv.rrs.end()) {
         // Give up and go home.
+        m_srv_valid = false;
         bounce_stanzas(Stanza::remote_server_not_found);
         bounce_dialback(false);
         return;
@@ -236,6 +237,7 @@ void Route::try_srv() {
 
 void Route::AddressResult(DNS::Address const *addr) {
     METRE_LOG(Log::DEBUG, "AddressResult for " << addr->hostname << " (" << m_domain.domain() << ")");
+    if (m_a_valid) return;
     auto vrfy = m_vrfy.lock();
     if (vrfy) {
         return;
@@ -248,6 +250,7 @@ void Route::AddressResult(DNS::Address const *addr) {
     }
     m_addr = *addr;
     m_arr = m_addr.addr.begin();
+    m_a_valid = true;
     try_addr();
 }
 
@@ -259,6 +262,7 @@ void Route::try_addr() {
         }
         if (m_arr == m_addr.addr.end()) {
             // RUn out of A/AAAA records to try.
+            m_a_valid = false;
             ++m_rr;
             try_srv();
             return;
