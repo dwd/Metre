@@ -252,28 +252,36 @@ void Route::AddressResult(DNS::Address const *addr) {
 }
 
 void Route::try_addr() {
-    auto vrfy = m_vrfy.lock();
-    if (vrfy) {
-        return;
+    for (;;) {
+        auto vrfy = m_vrfy.lock();
+        if (vrfy) {
+            return;
+        }
+        if (m_arr == m_addr.addr.end()) {
+            // RUn out of A/AAAA records to try.
+            ++m_rr;
+            try_srv();
+            return;
+        }
+        try {
+            vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
+                                   const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&(*m_arr))),
+                                   (*m_rr).port, m_rr->tls ? IMMEDIATE : STARTTLS);
+            METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
+            vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
+            vrfy->onClosed.connect(this, &Route::SessionClosed);
+            m_vrfy = vrfy;
+            if (m_to.expired()) {
+                m_to = vrfy;
+                check_to(*this, vrfy);
+            }
+            // m_vrfy->connected.connect(...);
+            return;
+        } catch (std::runtime_error &e) {
+            METRE_LOG(Log::DEBUG, "Connection failed, reloop: " << e.what());
+            ++m_arr;
+        }
     }
-    if (m_arr == m_addr.addr.end()) {
-        // RUn out of A/AAAA records to try.
-        ++m_rr;
-        try_srv();
-        return;
-    }
-    vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
-                           const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&(*m_arr))),
-                           (*m_rr).port, m_rr->tls ? IMMEDIATE : STARTTLS);
-    METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
-    vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
-    vrfy->onClosed.connect(this, &Route::SessionClosed);
-    m_vrfy = vrfy;
-    if (m_to.expired()) {
-        m_to = vrfy;
-        check_to(*this, vrfy);
-    }
-    // m_vrfy->connected.connect(...);
 }
 
 void Route::SessionClosed(NetSession &n) {

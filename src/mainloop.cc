@@ -234,12 +234,13 @@ namespace Metre {
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
             if (!bev) {
                 METRE_LOG(Metre::Log::CRIT, "Error creating BEV");
-                // TODO ARGH!
+                throw std::runtime_error("Connection failed: cannot create BEV");
             }
             if (0 > bufferevent_socket_connect(bev, sin, addrlen)) {
                 METRE_LOG(Metre::Log::ERR, "Error connecting BEV");
                 // TODO Something bad happened.
                 bufferevent_free(bev);
+                throw std::runtime_error("Connection failed: Socket connect failed");
             }
             METRE_LOG(Metre::Log::DEBUG, "BEV fd is " << bufferevent_getfd(bev));
             struct timeval tv = {0, 0};

@@ -290,6 +290,8 @@ void XMLStream::stream_open() {
     std::string from;
     if (auto fromat = stream->first_attribute("from")) {
         from = Jid(std::string(fromat->value(), fromat->value_size())).domain();
+    } else {
+        throw Metre::bad_format("Missing from attribute; can't continue right now.");
     }
     METRE_LOG(Metre::Log::DEBUG, "Requesting domain is " << from);
     check_domain_pair(from, domainname);
