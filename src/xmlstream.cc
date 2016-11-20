@@ -181,6 +181,7 @@ void XMLStream::handle_exception(Metre::base::xmpp_exception &e) {
 void XMLStream::in_context(std::function<void()> &&fn, Stanza &s) {
     try {
         try {
+            fn();
         } catch (Metre::base::xmpp_exception) {
             throw;
         } catch (Metre::base::stanza_exception) {
@@ -200,6 +201,7 @@ void XMLStream::in_context(std::function<void()> &&fn, Stanza &s) {
 void XMLStream::in_context(std::function<void()> &&fn) {
     try {
         try {
+            fn();
         } catch (Metre::base::xmpp_exception &) {
             throw;
         } catch (Metre::base::stanza_exception &e) {
