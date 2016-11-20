@@ -338,14 +338,16 @@ void Route::SessionDialback(XMLStream &stream) {
 void Route::SessionAuthenticated(XMLStream &stream) {
     auto to = m_to.lock();
     if (stream.auth_ready()
-        && !m_stanzas.empty()
         && &stream.session() == &*to
         && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::AUTHORIZED) {
-        METRE_LOG(Metre::Log::DEBUG, "Stream now ready for stanzas.");
-        for (auto &s : m_stanzas) {
-            to->xml_stream().send(std::move(s));
+        m_a_valid = m_srv_valid = false; // Any new lookups will restart, now.
+        if (!m_stanzas.empty()) {
+            METRE_LOG(Metre::Log::DEBUG, "Stream now ready for stanzas.");
+            for (auto &s : m_stanzas) {
+                to->xml_stream().send(std::move(s));
+            }
+            m_stanzas.clear();
         }
-        m_stanzas.clear();
     } else {
         METRE_LOG(Metre::Log::DEBUG, "Auth, but not ready: " << stream.auth_ready() << " " << !m_stanzas.empty() << " "
                                                              << (&stream.session() == to.get()) << " "
