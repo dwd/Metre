@@ -53,10 +53,14 @@ Stanza::Stanza(const char *name, Jid const &from, Jid const &to, std::string con
 
 void Stanza::freeze() {
     if (!m_payload_str.empty()) return;
-    if (!m_payload) return;
+    if (!m_payload) {
+        m_node = nullptr;
+        return;
+    }
     m_payload_str.assign(m_payload, m_payload_l);
     METRE_LOG(Metre::Log::DEBUG, "Frozen stanza: " + m_payload_str);
     m_payload = m_payload_str.data();
+    m_node = nullptr;
 }
 
 void Stanza::render(rapidxml::xml_document<> &d) {
