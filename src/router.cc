@@ -131,6 +131,8 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
     auto to = m_to.lock();
     if (check_to(*this, to)) {
         if (!m_stanzas.empty()) {
+            METRE_LOG(Metre::Log::DEBUG,
+                      "Queuing stanza (backlog) for " << m_local.domain() << "=>" << m_domain.domain());
             queue(std::move(s));
             return;
         } else {
@@ -149,6 +151,7 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
             transmit(std::move(s)); // Retry;
             return;
         }
+        METRE_LOG(Metre::Log::DEBUG, "Queuing stanza (spinup) for " << m_local.domain() << "=>" << m_domain.domain());
         queue(std::move(s));
         Config::Domain const &conf = Config::config().domain(m_domain.domain());
         if (conf.transport_type() == S2S) {
@@ -158,6 +161,7 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
         }
         // Otherwise wait.
     } else { // Got a to but it's not ready yet.
+        METRE_LOG(Metre::Log::DEBUG, "Queuing stanza (waiting) for " << m_local.domain() << "=>" << m_domain.domain());
         queue(std::move(s));
     }
 }
