@@ -115,6 +115,7 @@ void Route::bounce_stanzas(Stanza::Error e) {
         RouteTable::routeTable(bounce->from()).route(bounce->to())->transmit(std::move(bounce));
     }
     m_stanzas.clear();
+    m_srv_valid = m_a_valid = false;
 }
 
 void Route::queue(std::unique_ptr<Stanza> &&s) {
@@ -301,7 +302,16 @@ void Route::SessionClosed(NetSession &n) {
             ++m_arr;
             try_addr();
             return;
+        } else {
+            auto to = m_to.lock();
+            if (to.get() == &n) {
+                m_to.reset();
+                ++m_arr;
+                try_addr();
+            }
         }
+    } else {
+        m_srv_valid = m_a_valid = false;
     }
 }
 
