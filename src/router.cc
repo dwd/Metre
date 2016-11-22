@@ -363,9 +363,11 @@ void Route::SessionAuthenticated(XMLStream &stream) {
             m_stanzas.clear();
         }
     } else {
-        METRE_LOG(Metre::Log::DEBUG, "Auth, but not ready: " << stream.auth_ready() << " " << !m_stanzas.empty() << " "
-                                                             << (&stream.session() == to.get()) << " "
-                                                             << (stream.s2s_auth_pair(m_local.domain(),
+        METRE_LOG(Metre::Log::DEBUG, m_local.domain() << "=>" << m_domain.domain() << " NS" << stream.session().serial()
+                                                      << " Auth, but not ready: " << stream.auth_ready() << " "
+                                                      << !m_stanzas.empty() << " "
+                                                      << (&stream.session() == to.get()) << " "
+                                                      << (stream.s2s_auth_pair(m_local.domain(),
                                                                                       m_domain.domain(),
                                                                                       OUTBOUND) ==
                                                                  XMLStream::AUTHORIZED));
