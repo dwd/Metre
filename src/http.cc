@@ -60,6 +60,7 @@ void Http::done_crl(struct evhttp_request *req, std::uintptr_t key) {
 
 Http::crl_callback_t &Http::do_crl(std::string const &urix) {
     std::string uri{urix};
+    // Step one: Look in cache.
     auto iter = m_crl_cache.find(uri);
     if (iter != m_crl_cache.end()) {
         auto data = iter->second;
@@ -75,6 +76,13 @@ Http::crl_callback_t &Http::do_crl(std::string const &urix) {
             return m_crl_waiting[uri];
         }
     }
+    // Step two: Are we fetching this already?
+    for (auto const &k : m_requests) {
+        if (k.second == uri) {
+            return m_crl_waiting[uri];
+        }
+    }
+    // Step three: Actually issue a new HTTP request:
     try {
         auto parsed = evhttp_uri_parse(uri.c_str());
         if (!parsed) {
