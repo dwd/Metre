@@ -146,12 +146,13 @@ void NetSession::read_cb(struct bufferevent *, void *arg) {
 }
 
 void NetSession::bev_closed() {
-    if (m_xml_stream->frozen()) {
+    // TODO : I had this here, but I think it's useless. It causes a nasty wait-free loop, though.
+    /*if (m_xml_stream->frozen()) {
         Router::defer([this]() {
             this->bev_closed();
         });
         return;
-    }
+    }*/
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Closed.");
     onClosed.emit(*this);
 }
