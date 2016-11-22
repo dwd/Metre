@@ -53,13 +53,12 @@ SOFTWARE.
 namespace Metre {
     class Mainloop : public sigslot::has_slots<> {
     private:
-        struct event_base *m_event_base;
-        struct event *m_listen;
+        struct event_base *m_event_base = nullptr;
         std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;
         std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_id;
         std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_domain;
         std::map<std::pair<std::string, unsigned short>, std::weak_ptr<NetSession>> m_sessions_by_address;
-        struct event *m_ub_event;
+        struct event *m_ub_event = nullptr;
         std::list<struct evconnlistener *> m_listeners;
         static std::atomic<unsigned long long> s_serial;
         std::list<std::shared_ptr<NetSession>> m_closed_sessions;
@@ -69,14 +68,18 @@ namespace Metre {
     public:
         static Mainloop *s_mainloop;
 
-        Mainloop() : m_event_base(0), m_listen(0), m_sessions(), m_ub_event(0) {
+        Mainloop() : m_sessions() {
             s_mainloop = this;
         }
 
         ~Mainloop() {
-            event_del(m_ub_event);
-            event_free(m_ub_event);
-            event_base_free(m_event_base);
+            if (m_ub_event) {
+                event_del(m_ub_event);
+                event_free(m_ub_event);
+            }
+            if (m_event_base) {
+                event_base_free(m_event_base);
+            }
         }
 
         struct event_base * event_base() const {
@@ -325,8 +328,11 @@ namespace Metre {
         }
 
         void reload() {
-            event_del(m_ub_event);
-            event_free(m_ub_event);
+            if (m_ub_event) {
+                event_del(m_ub_event);
+                event_free(m_ub_event);
+                m_ub_event = nullptr;
+            }
             dns_setup();
         }
 
