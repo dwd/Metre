@@ -519,7 +519,7 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
 }
 
 Config::~Config() {
-    ub_ctx_delete(m_ub_ctx);
+    // TODO: Should really do this, but need to shut it down first: ub_ctx_delete(m_ub_ctx);
 }
 
 void Config::load(std::string const &filename) {
