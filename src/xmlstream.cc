@@ -292,7 +292,12 @@ void XMLStream::stream_open() {
     std::string from;
     if (auto fromat = stream->first_attribute("from")) {
         from = Jid(std::string(fromat->value(), fromat->value_size())).domain();
-    } else {
+        if (m_dir == OUTBOUND) {
+            if (from != m_stream_remote) {
+                throw Metre::host_unknown("You're not who I was expecting.");
+            }
+        }
+    } else if (m_dir == INBOUND) {
         throw Metre::bad_format("Missing from attribute; can't continue right now.");
     }
     METRE_LOG(Metre::Log::DEBUG, "Requesting domain is " << from);
@@ -316,12 +321,8 @@ void XMLStream::stream_open() {
     }
     if (m_dir == INBOUND) {
         m_stream_local = domainname;
-        m_stream_remote = from;
-        if (m_stream_remote == m_stream_local) {
-            throw std::runtime_error("That's me, you fool");
-        }
-        auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-        r->onNamesCollated.connect(this, [this, with_ver](Route &) {
+        if (from.empty()) {
+            // TODO: A bit cut'n'pastey here.
             send_stream_open(with_ver);
             if (with_ver) {
                 rapidxml::xml_document<> doc;
@@ -332,10 +333,28 @@ void XMLStream::stream_open() {
                 }
                 m_session->send(doc);
             }
-            thaw();
-        }, true);
-        freeze();
-        r->collateNames();
+        } else {
+            m_stream_remote = from;
+            if (m_stream_remote == m_stream_local) {
+                throw std::runtime_error("That's me, you fool");
+            }
+            auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
+            r->onNamesCollated.connect(this, [this, with_ver](Route &) {
+                send_stream_open(with_ver);
+                if (with_ver) {
+                    rapidxml::xml_document<> doc;
+                    auto features = doc.allocate_node(rapidxml::node_element, "stream:features");
+                    doc.append_node(features);
+                    for (auto f : Feature::features(m_type)) {
+                        f->offer(features, *this);
+                    }
+                    m_session->send(doc);
+                }
+                thaw();
+            }, true);
+            freeze();
+            r->collateNames();
+        }
     } else if (m_dir == OUTBOUND) {
         if (m_type == S2S) {
             auto id_att = stream->first_attribute("id");
