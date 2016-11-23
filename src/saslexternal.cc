@@ -48,6 +48,7 @@ namespace {
             Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
 
             virtual void offer(xml_node<> *node, XMLStream &stream) override {
+                if (stream.remote_domain().empty()) return;
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) ==
                     XMLStream::AUTHORIZED)
                     return;
@@ -66,6 +67,7 @@ namespace {
         };
 
         void auth(rapidxml::xml_node<> *node) {
+            if (m_stream.remote_domain().empty()) return;
             auto mechattr = node->first_attribute("mechanism");
             if (!mechattr || !mechattr->value()) throw std::runtime_error("No mechanism attribute");
             std::string mechname = mechattr->value();
