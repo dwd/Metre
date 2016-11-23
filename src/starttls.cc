@@ -115,7 +115,7 @@ namespace {
                         m_stream.remote_domain());
                 route->onNamesCollated.connect(this, [this](Route &r) {
                     METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
-                    m_stream.in_context([this]() { start_tls(m_stream); });
+                    m_stream.in_context([this]() { start_tls(m_stream, true); });
                 }, true);
                 m_stream.freeze();
                 route->collateNames();
@@ -309,7 +309,7 @@ namespace Metre {
         return fetch_any;
     }
 
-    bool start_tls(XMLStream &stream) {
+    bool start_tls(XMLStream &stream, bool send_proceed) {
         SSL_CTX *ctx = Config::config().domain(stream.local_domain()).ssl_ctx();
         if (!ctx) ctx = Config::config().domain("").ssl_ctx();
         if (!ctx) throw new std::runtime_error("Failed to load certificates");
@@ -319,11 +319,13 @@ namespace Metre {
         bufferevent_ssl_state st = BUFFEREVENT_SSL_ACCEPTING;
         if (stream.direction() == INBOUND) {
             SSL_set_accept_state(ssl);
-            xml_document<> d;
-            auto n = d.allocate_node(node_element, "proceed");
-            n->append_attribute(d.allocate_attribute("xmlns", tls_ns.c_str()));
-            d.append_node(n);
-            stream.send(d);
+            if (send_proceed) {
+                xml_document<> d;
+                auto n = d.allocate_node(node_element, "proceed");
+                n->append_attribute(d.allocate_attribute("xmlns", tls_ns.c_str()));
+                d.append_node(n);
+                stream.send(d);
+            }
         } else { //m_stream.direction() == OUTBOUND
             SSL_set_connect_state(ssl);
             SSL_set_tlsext_host_name(ssl, stream.remote_domain().c_str());

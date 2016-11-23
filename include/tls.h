@@ -39,7 +39,7 @@ namespace Metre {
 
     bool prep_crl(XMLStream &stream);
 
-    bool start_tls(XMLStream &stream);
+    bool start_tls(XMLStream &stream, bool send_proceed);
 }
 
 #endif //METRE_TLS_H

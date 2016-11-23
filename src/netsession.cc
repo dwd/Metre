@@ -47,7 +47,7 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
         m_xml_stream->local_domain(listen->local_domain);
     }
     if (listen->tls_mode == IMMEDIATE) {
-        start_tls(*m_xml_stream);
+        start_tls(*m_xml_stream, false);
     }
 }
 
@@ -57,7 +57,7 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::
     bufferevent(bev);
     METRE_LOG(Log::INFO, "New OUTBOUND session NS" << serial);
     if (tls_mode == IMMEDIATE) {
-        start_tls(*m_xml_stream);
+        start_tls(*m_xml_stream, false);
     }
 }
 
