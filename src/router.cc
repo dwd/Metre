@@ -168,7 +168,7 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
 }
 
 void Route::doSrvLookup() {
-    if (m_srv.domain.empty() || !m_srv.error.empty()) {
+    if (m_srv.domain.empty() || !m_srv.error.empty() || !m_srv_valid || !m_a_valid) {
         Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult, true);
     }
 }
