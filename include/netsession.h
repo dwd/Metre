@@ -43,7 +43,7 @@ namespace Metre {
     class NetSession {
         unsigned long long m_serial;
         struct bufferevent *m_bev;
-        XMLStream *m_xml_stream;
+        std::unique_ptr<XMLStream> m_xml_stream;
     public:
         NetSession(unsigned long long serial, struct bufferevent *bev, Config::Listener const *listen); /* Inbound */
         NetSession(unsigned long long serial, struct bufferevent *bev, std::string const &stream_from,

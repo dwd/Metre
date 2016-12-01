@@ -112,14 +112,14 @@ void NetSession::send(rapidxml::xml_document<> &d) {
     if (!buf) {
         return;
     }
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << m_xml_stream << ": " << tmp);
+    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << tmp);
     evbuffer_add(buf, tmp.data(),
                  tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
 }
 
 void NetSession::send(std::string const &s) {
     struct evbuffer *buf = bufferevent_get_output(m_bev);
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << m_xml_stream << ": " << s);
+    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << s);
     if (!buf) {
         return;
     }
