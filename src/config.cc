@@ -661,6 +661,7 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
                            const char *address, unsigned short port, TLS_MODE atls,
                            SESSION_TYPE asess)
         : session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
+    memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
     if (1 == inet_pton(AF_INET6, address, &(reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr)->sin6_addr))) {
         struct sockaddr_in6 *sa = reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr);
         sa->sin6_family = AF_INET6;
