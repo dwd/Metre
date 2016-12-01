@@ -47,9 +47,14 @@ void Http::done_crl(struct evhttp_request *req, std::uintptr_t key) {
         auto len = evbuffer_get_length(buffer);
         auto buf = evbuffer_pullup(buffer, len);
         X509_CRL *data = d2i_X509_CRL(nullptr, const_cast<const unsigned char **>(&buf), len);
-        m_crl_cache[uri] = data;
-        m_crl_waiting[uri].emit(uri, 200, data);
-        m_crl_waiting[uri].disconnect_all();
+        if (data) {
+            m_crl_cache[uri] = data;
+            m_crl_waiting[uri].emit(uri, 200, data);
+            m_crl_waiting[uri].disconnect_all();
+        } else {
+            m_crl_waiting[uri].emit(uri, 400, nullptr);
+            m_crl_waiting[uri].disconnect_all();
+        }
         METRE_LOG(Log::INFO, " - Got " << len << " bytes");
     } else {
         m_crl_waiting[uri].emit(uri, response, nullptr);
@@ -62,7 +67,7 @@ Http::crl_callback_t &Http::do_crl(std::string const &urix) {
     std::string uri{urix};
     // Step one: Look in cache.
     auto iter = m_crl_cache.find(uri);
-    if (iter != m_crl_cache.end()) {
+    if (iter != m_crl_cache.end() && iter->second) {
         auto data = iter->second;
         auto nextupdate = X509_CRL_get_nextUpdate(data);
         int day, sec;
