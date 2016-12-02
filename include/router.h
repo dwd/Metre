@@ -73,9 +73,9 @@ namespace Metre {
 
         void doSrvLookup();
 
-        void try_srv();
+        void try_srv(bool init = false);
 
-        void try_addr();
+        void try_addr(bool init = false);
 
         // Callbacks:
         void SrvResult(DNS::Srv const *);

@@ -198,8 +198,6 @@ void Route::SrvResult(DNS::Srv const *srv) {
     }
     if (m_srv_valid) return;
     m_srv = *srv;
-    m_rr = m_srv.rrs.begin();
-    m_srv_valid = true;
     // Scan through TLSA records if DNSSEC has been used.
     if (m_srv.dnssec) {
         for (auto &rr : m_srv.rrs) {
@@ -216,11 +214,15 @@ void Route::SrvResult(DNS::Srv const *srv) {
         check_to(*this, m_to.lock());
         return;
     }
-    try_srv();
+    try_srv(true);
 }
 
-void Route::try_srv() {
-    if (m_rr == m_srv.rrs.end()) {
+void Route::try_srv(bool init) {
+    if (init) {
+        m_rr = m_srv.rrs.begin();
+        m_srv_valid = true;
+    }
+    if (!m_srv_valid || m_rr == m_srv.rrs.end()) {
         // Give up and go home.
         m_srv_valid = false;
         bounce_stanzas(Stanza::remote_server_not_found);
@@ -249,26 +251,31 @@ void Route::AddressResult(DNS::Address const *addr) {
     }
     if (!addr->error.empty()) {
         METRE_LOG(Metre::Log::DEBUG, "Got an error during DNS: ");
-        ++m_rr; // Next SRV record.
         try_srv();
         return;
     }
     m_addr = *addr;
-    m_arr = m_addr.addr.begin();
-    m_a_valid = true;
     try_addr();
 }
 
-void Route::try_addr() {
+void Route::try_addr(bool init) {
+    if (init) {
+        m_arr = m_addr.addr.begin();
+        m_a_valid = true;
+    }
     for (;;) {
         auto vrfy = m_vrfy.lock();
         if (vrfy) {
             return;
         }
-        if (m_arr == m_addr.addr.end()) {
+        if (init) {
+            init = false;
+        } else {
+            ++m_arr;
+        }
+        if (!m_a_valid || m_arr == m_addr.addr.end()) {
             // RUn out of A/AAAA records to try.
             m_a_valid = false;
-            ++m_rr;
             try_srv();
             return;
         }
@@ -288,7 +295,6 @@ void Route::try_addr() {
             return;
         } catch (std::runtime_error &e) {
             METRE_LOG(Log::DEBUG, "Connection failed, reloop: " << e.what());
-            ++m_arr;
         }
     }
 }
@@ -299,14 +305,12 @@ void Route::SessionClosed(NetSession &n) {
         auto vrfy = m_vrfy.lock();
         if (vrfy.get() == &n) {
             m_vrfy.reset();
-            ++m_arr;
             try_addr();
             return;
         } else {
             auto to = m_to.lock();
             if (to.get() == &n) {
                 m_to.reset();
-                ++m_arr;
                 try_addr();
             }
         }
