@@ -221,6 +221,8 @@ void Route::try_srv(bool init) {
     if (init) {
         m_rr = m_srv.rrs.begin();
         m_srv_valid = true;
+    } else {
+        ++m_rr;
     }
     if (!m_srv_valid || m_rr == m_srv.rrs.end()) {
         // Give up and go home.
@@ -255,7 +257,7 @@ void Route::AddressResult(DNS::Address const *addr) {
         return;
     }
     m_addr = *addr;
-    try_addr();
+    try_addr(true);
 }
 
 void Route::try_addr(bool init) {
