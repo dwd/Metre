@@ -113,6 +113,8 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
 }
 
 void Route::bounce_dialback(bool timeout) {
+    if (m_stanzas.empty()) return;
+    METRE_LOG(Log::DEBUG, "Timeout on verify");
     m_srv_valid = m_a_valid = false;
     auto verify = m_vrfy.lock();
     if (verify) {
@@ -122,6 +124,8 @@ void Route::bounce_dialback(bool timeout) {
 }
 
 void Route::bounce_stanzas(Stanza::Error e) {
+    if (m_stanzas.empty()) return;
+    METRE_LOG(Log::DEBUG, "Timeout on stanzas");
     for (auto &stanza : m_stanzas) {
         if (stanza->type_str() && *stanza->type_str() == "error") continue;
         auto bounce = stanza->create_bounce(e);

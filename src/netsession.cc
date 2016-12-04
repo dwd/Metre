@@ -193,12 +193,12 @@ void NetSession::event_cb(struct bufferevent *b, short events, void *arg) {
 }
 
 void NetSession::close() {
-    if (m_xml_stream->frozen()) {
+    /**if (m_xml_stream->frozen()) {
         Router::defer([this]() {
             this->close();
         });
         return;
-    }
+    }*/
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Closing.");
     bufferevent_flush(m_bev, EV_WRITE, BEV_FINISHED);
     onClosed.emit(*this);
