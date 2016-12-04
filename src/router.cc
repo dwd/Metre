@@ -84,12 +84,21 @@ namespace {
     }
 }
 
+void Route::queue(std::unique_ptr<DB::Verify> &&s) {
+    s->freeze();
+    if (m_dialback.empty())
+        Router::defer([this]() {
+            bounce_dialback(true);
+        }, Config::config().domain(m_domain.domain()).stanza_timeout());
+    m_dialback.push_back(std::move(s));
+    METRE_LOG(Metre::Log::DEBUG, "Queued stanza for " << m_local.domain() << "=>" << m_domain.domain());
+}
+
 void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
     auto vrfy = m_vrfy.lock();
     if (check_verify(*this, vrfy)) {
         if (!m_dialback.empty()) {
-            v->freeze();
-            m_dialback.push_back(std::move(v));
+            queue(std::move(v));
             return;
         } else {
             vrfy->xml_stream().send(std::move(v));
@@ -97,15 +106,19 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
     } else {
         // TODO Look for an existing session and use that.
         // Otherwise, start SRV lookups.
-        v->freeze();
-        m_dialback.push_back(std::move(v));
+        queue(std::move(v));
         Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult, true);
     }
 
 }
 
 void Route::bounce_dialback(bool timeout) {
-    // TODO : verify->failed(timeout); // Or something.
+    m_srv_valid = m_a_valid = false;
+    auto verify = m_vrfy.lock();
+    if (verify) {
+        verify->close();
+        m_vrfy.reset();
+    }
 }
 
 void Route::bounce_stanzas(Stanza::Error e) {
@@ -116,6 +129,11 @@ void Route::bounce_stanzas(Stanza::Error e) {
     }
     m_stanzas.clear();
     m_srv_valid = m_a_valid = false;
+    auto to = m_to.lock();
+    if (to) {
+        to->close();
+        m_to.reset();
+    }
 }
 
 void Route::queue(std::unique_ptr<Stanza> &&s) {
