@@ -1284,7 +1284,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
     } else {
         DNS::Srv &srv = m_current_srv;
         bool xmpps = false;
-        srv.dnssec = !!result->secure;
+        srv.dnssec = srv.dnssec && !!result->secure;
         srv.domain = result->qname;
         if (srv.domain.find("_xmpps") == 0) {
             xmpps = true;
@@ -1321,9 +1321,11 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
             DNS::Srv srv;
             srv.error = error;
             srv.domain = result->qname;
+            srv.dnssec = srv.dnssec && !!result->secure;
             m_srv_pending[srv.domain].emit(&srv);
         } else {
             srv_sort(m_current_srv);
+            m_current_srv.dnssec = m_current_srv.dnssec && !!result->secure;
             m_srv_pending[m_current_srv.domain].emit(&m_current_srv);
         }
     }
@@ -1410,6 +1412,8 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else {
         m_current_arec.hostname = "";
+        m_current_arec.addr.clear();
+        m_current_arec.ipv6 = m_current_arec.ipv4 = false;
         ub_resolve_async(Config::config().ub_ctx(), hostname.c_str(), 28, 1,
                          const_cast<void *>(reinterpret_cast<const void *>(this)), a_lookup_done_cb, NULL);
         ub_resolve_async(Config::config().ub_ctx(),
@@ -1443,6 +1447,8 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         });
     } else {
         m_current_srv.xmpp = m_current_srv.xmpps = false;
+        m_current_srv.rrs.clear();
+        m_current_srv.dnssec = true;
         ub_resolve_async(Config::config().ub_ctx(),
                          domain.c_str(),
                          33, /* SRV */

@@ -297,6 +297,13 @@ void Route::try_addr(bool init) {
         } else {
             ++m_arr;
         }
+        if (!m_srv_valid || m_rr == m_srv.rrs.end()) {
+            // Give up and go home.
+            m_srv_valid = false;
+            bounce_stanzas(Stanza::remote_server_not_found);
+            bounce_dialback(false);
+            return;
+        }
         if (!m_a_valid || m_arr == m_addr.addr.end()) {
             // RUn out of A/AAAA records to try.
             m_a_valid = false;
