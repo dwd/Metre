@@ -1452,6 +1452,7 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         m_current_srv.xmpp = m_current_srv.xmpps = false;
         m_current_srv.rrs.clear();
         m_current_srv.dnssec = true;
+        m_current_srv.error.clear();
         ub_resolve_async(Config::config().ub_ctx(),
                          domain.c_str(),
                          33, /* SRV */
