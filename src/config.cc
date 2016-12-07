@@ -495,6 +495,9 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
     SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
     SSL_CTX_set_default_verify_paths(m_ssl_ctx);
     SSL_CTX_set_tlsext_servername_callback(m_ssl_ctx, ssl_servername_cb);
+    std::string ctx = "Metre::" + m_domain;
+    SSL_CTX_set_session_id_context(m_ssl_ctx, reinterpret_cast<const unsigned char *>(ctx.c_str()),
+                                   static_cast<unsigned int>(ctx.size()));
 }
 
 Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(random_identifier()) {
