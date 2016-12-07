@@ -9,6 +9,7 @@
 #include <log.h>
 #include <openssl/ossl_typ.h>
 #include <openssl/x509.h>
+#include <openssl/err.h>
 
 using namespace Metre;
 
@@ -52,6 +53,10 @@ void Http::done_crl(struct evhttp_request *req, std::uintptr_t key) {
             m_crl_waiting[uri].emit(uri, 200, data);
             m_crl_waiting[uri].disconnect_all();
         } else {
+            while (unsigned long ssl_err = ERR_get_error()) {
+                char buf[1024];
+                METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, buf));
+            }
             m_crl_waiting[uri].emit(uri, 400, nullptr);
             m_crl_waiting[uri].disconnect_all();
         }
