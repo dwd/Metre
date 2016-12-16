@@ -18,20 +18,23 @@ Dave Cridland.
 In particular, this is not (yet) finished.
 
 Currently working:
-* Component hosting (XEP-0114)
+* Component hosting [XEP-0114](https://xmpp.org/extensions/xep-0114.html)
 * TLS
 * X.509 auth (PKIX)
-* Dialback and S2S
+* Dialback and S2S [XEP-0220](https://xmpp.org/extensions/xep-0220.html)
+* Dialback without Dialback  [XEP-0344](https://xmpp.org/extensions/xep-0344.html)
 * Basic forwarding/routing
-* DNSSEC (Including RFC 6125 additional reference identifiers)
+* DNSSEC (Including [RFC 6125](https://tools.ietf.org/html/rfc6125) additional reference identifiers)
 * S2S <-> S2S proxying
 * DNS overrides (SRV, A, and TLSA per-domain)
 * DANE (including via TLSA overrides as above)
-
-Currently poorly tested:
 * Basic Filtering
 * Daemonizing
+* IPv6
+
+Currently poorly tested:
+* [XEP-0368](https://xmpp.org/extensions/xep-0368.html)
+* [XEP-0361](https://xmpp.org/extensions/xep-0361.html)
 
 Currently unimplemented but planned:
 * Semantic filtering
-* IPv6
