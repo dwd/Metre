@@ -1292,6 +1292,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
         if (srv.domain.find("_xmpps") == 0) {
             xmpps = true;
             srv.xmpps = true;
+            srv.domain = std::string("_xmpp") + (srv.domain.c_str() + 6);
         } else {
             srv.xmpp = true;
         }
