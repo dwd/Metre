@@ -294,7 +294,9 @@ void XMLStream::stream_open() {
         from = Jid(std::string(fromat->value(), fromat->value_size())).domain();
         if (m_dir == OUTBOUND) {
             if (from != m_stream_remote) {
-                throw Metre::host_unknown("You're not who I was expecting.");
+                // throw Metre::host_unknown("You're not who I was expecting.");
+                METRE_LOG(Log::WARNING, "Remote server responded with " << from << ", not " << m_stream_remote);
+                from = m_stream_remote;
             }
         }
         METRE_LOG(Metre::Log::DEBUG, "Requesting domain is " << from);
