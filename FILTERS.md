@@ -8,14 +8,14 @@ links (ie, not XEP-0114).
 
 Filters may have global configuration, within a `<filters/>` inside the `<globals/>` section,
 and must have per-domain configuration within the domain's `<filter-in/>` section. Ordering
-is signficiant here, since filters are applied in order.
+is significant here, since filters are applied in order.
 
 Filters may DROP, or PASS - and if they pass a stanza may have changed it.
 
 Existing Filters
 ========
 
-The only existing filter is the disco-cache filter. It is a non-mutating filter which intercepts
+The only existing (working) filter is the disco-cache filter. It is a non-mutating filter which intercepts
 and caches disco responses from clients (which themselves do not change) and intercepts and
 responds to those disco requests to nodes it has cached.
 
