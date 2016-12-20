@@ -1320,7 +1320,14 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
         return;
     }
     METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
-    if (m_current_srv.xmpp || m_current_srv.xmpps) {
+    m_current_srv.domain = result->qname;
+    if (m_current_srv.domain.find("_xmpps") == 0) {
+        m_current_srv.xmpps = true;
+        m_current_srv.domain = std::string("_xmpp") + (m_current_srv.domain.c_str() + 6);
+    } else {
+        m_current_srv.xmpp = true;
+    }
+    if (m_current_srv.xmpp && m_current_srv.xmpps) {
         if (m_current_srv.rrs.empty()) {
             DNS::Srv srv;
             srv.error = error;
