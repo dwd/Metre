@@ -7,7 +7,7 @@ set(FILTER_SOURCES
         src/filters/disco-filter.cc
         src/filters/spiffing.cc
         src/filters/disco-cache.cc
-        src/filters/unicode.cc)
+        src/filters/unicode.cc src/filters/domain-translation.cc)
 
 set(SOURCE_FILES
         ${FILTER_SOURCES}
