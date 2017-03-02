@@ -4,12 +4,14 @@ all: metre keys
 	@echo Done.
 
 OBJS:=$(patsubst src/%.cc,build/src/%.o,$(wildcard src/*.cc))
+OBJS+=$(patsubst src/filters/%.cc,build/src/filters/%.o,$(wildcard src/filters/*.cc))
+OBJS+=$(patsubst gen/%.cc,build/gen/%.o,$(wildcard gen/*.cc))
 TESTOBJS:=$(patsubst tests/%.cc,build/tests/%.o,$(wildcard tests/*.cc))
-ETOBJS:=$(filter-out build/src/dialback.o build/src/mainloop.o,$(OBJS))
+ETOBJS:=build/src/jid.o build/src/stanza.o build/src/log.o
 
 LIBDIRS=/usr/local/lib
-LIBS=event_core unbound ssl event_openssl crypto
-INCDIRS=include/ ../rapidxml-1.13/ ../SigSlot/ /usr/local/include
+LIBS=event_core unbound ssl event_openssl crypto event_extra icudata icuuc
+INCDIRS=include/ ./deps/rapidxml/ ./deps/sigslot/ /usr/local/include
 
 LINKLIBS=$(LIBS:%=-l%)
 LINKLIBDIRS=$(LIBDIRS:%=-L%)
@@ -18,7 +20,6 @@ FINCDIRS=$(INCDIRS:%=-I%)
 metre-test: $(TESTOBJS) $(ETOBJS)
 	@echo [LINK] $+ '=>' $@
 	@g++ --std=c++11 -o $@ $+ $(LINKLIBDIRS) $(LINKLIBS)
-	@./$@
 
 metre: $(OBJS)
 	@echo [LINK] $< '=>' $@

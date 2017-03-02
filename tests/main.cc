@@ -1,25 +1,6 @@
 #include "tests.h"
-#include "dns.h"
 #include <iostream>
 #include <memory>
-#include "netsession.h"
-
-namespace {
-	class DummyResolver : public Metre::DNS::Resolver{
-	public:
-		Metre::DNS::Resolver::srv_callback_t & SrvLookup(std::string const & domain) {
-			return *(new Metre::DNS::Resolver::srv_callback_t);
-		}
-		Metre::DNS::Resolver::addr_callback_t & AddressLookup(std::string const & domain) {
-			return *(new Metre::DNS::Resolver::addr_callback_t);
-		}
-	};
-}
-
-Metre::DNS::Resolver & Metre::DNS::Resolver::resolver() {
-	static DummyResolver r;
-	return r;
-}
 
 Metre::Test::Test(std::string const & name) : m_name(name) {
 	Metre::Test::add(this);
@@ -32,14 +13,6 @@ std::list<Metre::Test*> & Metre::Test::tests() {
 }
 void Metre::Test::add(Metre::Test * t) {
 	Metre::Test::tests().push_back(t);
-}
-
-namespace Metre {
-	namespace Router {
-		std::shared_ptr<Metre::NetSession> connect(std::string const &, std::string const &, std::string const &, uint32_t, unsigned short) {
-			return std::shared_ptr<Metre::NetSession>();
-		}
-	}
 }
 
 int main(int argc, char *argv[]) {

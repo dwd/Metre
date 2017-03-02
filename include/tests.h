@@ -23,8 +23,8 @@ SOFTWARE.
 
 ***/
 
-#ifndef ELOQUENCE_TESTS__H
-#define ELOQUENCE_TESTS__H
+#ifndef METRE_TESTS__H
+#define METRE_TESTS__H
 
 #include <list>
 #include <string>
