@@ -24,6 +24,12 @@ I/O, which should work well both on Linux and Windows.
 Finally OpenSSL supplies crypto, X.509 primitives, and TLS. This was chosen mostly due
 to OpenSSL having a FIPS certificate.
 
+An Ubuntu/Debian APT line reads like:
+
+```sh
+apt-get install git build-essential g++ cmake libicu-dev libssl-dev libevent-dev libunbound-dev
+```
+
 Method
 ----
 
