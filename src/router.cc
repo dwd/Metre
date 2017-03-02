@@ -37,6 +37,7 @@ using namespace Metre;
 
 Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to), onNamesCollated() {
     METRE_LOG(Metre::Log::DEBUG, "Route created, local is " << m_local.domain() << " remote is " << m_domain.domain());
+    if (m_domain.domain().empty() || m_local.domain().empty()) throw std::runtime_error("Cannot have route to/from empty domain");
 }
 
 namespace {

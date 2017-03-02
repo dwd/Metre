@@ -1449,6 +1449,13 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
             m_srv_pending[addr->domain].emit(addr);
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
+    } else if (base_domain.empty()) {
+        srv_callback_t &cb = m_srv_pending[domain];
+        Router::defer([this, &cb]() {
+            DNS::Srv r;
+            r.error = "Empty Domain - DNS aborted";
+            cb.emit(&r);
+        });
     } else if (m_type == X2X) {
         srv_callback_t &cb = m_srv_pending[domain];
         Router::defer([this, &cb]() {
