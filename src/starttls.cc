@@ -334,8 +334,8 @@ namespace Metre {
         struct bufferevent *bev = stream.session().bufferevent();
         struct bufferevent *bev_ssl = bufferevent_openssl_filter_new(bufferevent_get_base(bev), bev, ssl, st,
                                                                      BEV_OPT_CLOSE_ON_FREE);
+        stream.session().bufferevent(bev_ssl); // Might set it to NULL - this is OK!
         if (!bev_ssl) throw std::runtime_error("Cannot create OpenSSL filter");
-        stream.session().bufferevent(bev_ssl);
         stream.set_secured();
         return true;
     }

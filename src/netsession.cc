@@ -62,7 +62,10 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::
 }
 
 void NetSession::bufferevent(struct bufferevent *bev) {
-    if (!bev) throw std::runtime_error("NULL BEV");
+    if (!bev) {
+        m_bev = 0;
+        return;
+    }
     bufferevent_setcb(bev, NetSession::read_cb, NULL, NetSession::event_cb, this);
     bufferevent_enable(bev, EV_READ | EV_WRITE);
     m_bev = bev;
@@ -101,11 +104,13 @@ bool NetSession::drain() {
 }
 
 void NetSession::used(size_t n) {
+    if (!m_bev) return;
     struct evbuffer *buf = bufferevent_get_input(m_bev);
     evbuffer_drain(buf, n);
 }
 
 void NetSession::send(rapidxml::xml_document<> &d) {
+    if (!m_bev) return;
     std::string tmp;
     rapidxml::print(std::back_inserter(tmp), d, rapidxml::print_no_indenting);
     struct evbuffer *buf = bufferevent_get_output(m_bev);
@@ -118,6 +123,7 @@ void NetSession::send(rapidxml::xml_document<> &d) {
 }
 
 void NetSession::send(std::string const &s) {
+    if (!m_bev) return;
     struct evbuffer *buf = bufferevent_get_output(m_bev);
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << s);
     if (!buf) {
@@ -200,6 +206,7 @@ void NetSession::close() {
         return;
     }*/
     METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Closing.");
+    if (!m_bev) return;
     bufferevent_flush(m_bev, EV_WRITE, BEV_FINISHED);
     onClosed.emit(*this);
 }
