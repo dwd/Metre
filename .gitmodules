@@ -4,3 +4,6 @@
 [submodule "deps/sigslot"]
 	path = deps/sigslot
 	url = http://github.com/dwd/sigslot
+[submodule "deps/spiffing"]
+	path = deps/spiffing
+	url = http://github.com/surevine/spiffing
