@@ -16,7 +16,8 @@ Ingredients
 * CMake 2.8 (or so)
 
 Source control is within Git (github is the public one). The software is built using CMake
-for production builds - there's a (broken) Makefile as well which you should ignore.
+for production builds - there's a Makefile as well which you should ignore, though it will
+configure all the dependencies for you.
 
 libunbound provides async DNS, including DNSSEC, and libevent provides buffered async
 I/O, which should work well both on Linux and Windows.
@@ -51,10 +52,10 @@ the same ones as everyone else might mean that weaker ones, at least, could be c
 
 Metre may, in the future, generate the shorter keys on boot to improve their security.
 
-Now initialize and clone the submodules:
+Now initialize and clone the submodules, and setup dependencies:
 
 ```sh
-git submodule update --init
+make pre-build
 ```
 
 Create a build directory and change to it. I usually use something like "build" within the
