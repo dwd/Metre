@@ -147,6 +147,7 @@ namespace {
         bool auth_dialback = false;
         bool dnssec_required = false;
         bool auth_pkix_crls = Config::config().fetch_pkix_status();
+        bool auth_host = false;
         int stanza_timeout = 20;
         int connect_timeout = 10;
         std::string dhparam = "4096";
@@ -224,15 +225,23 @@ namespace {
                         auth_dialback = true;
                     } else if (type == "secret") {
                         auth_secret.emplace(auth->value(), auth->value_size());
+                    } else if (type == "host") {
+                        auth_host = true;
+                        if (sess == X2X) {
+                            dnssec_required = true;
+                        }
                     } else {
                         throw std::runtime_error("Unknown authentication type");
                     }
                 }
             }
+            if (!(block || auth_pkix || auth_dialback || auth_secret || auth_pkix)) {
+                throw std::runtime_error("Cannot authenticate domain, but not blocked.");
+            }
         }
         std::unique_ptr<Config::Domain> dom(
                 new Config::Domain(name, sess, forward, tls_required, block, auth_pkix, auth_dialback,
-                                   std::move(auth_secret)));
+                                   auth_host, std::move(auth_secret)));
         dom->auth_pkix_status(auth_pkix_crls);
         dom->stanza_timeout(stanza_timeout);
         dom->connect_timeout(connect_timeout);
@@ -362,15 +371,17 @@ namespace {
 }
 
 Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls,
-                       bool block, bool auth_pkix, bool auth_dialback, std::optional<std::string> &&auth_secret)
+                       bool block, bool auth_pkix, bool auth_dialback, bool auth_host,
+                       std::optional<std::string> &&auth_secret)
         : m_domain(domain), m_type(transport_type), m_forward(forward), m_require_tls(require_tls), m_block(block),
-          m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_secret(auth_secret), m_ssl_ctx(nullptr) {
+          m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(auth_secret),
+          m_ssl_ctx(nullptr) {
 }
 
 Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
         : m_domain(domain), m_type(any.m_type), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
           m_block(any.m_block), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
-          m_auth_dialback(any.m_auth_dialback), m_dnssec_required(any.m_dnssec_required),
+          m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
           m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist),
           m_ssl_ctx(nullptr) {
     m_domain = domain;
@@ -605,7 +616,7 @@ void Config::load(std::string const &filename) {
             m_domains[dom->domain()] = std::move(dom);
         } else {
             m_domains[""] = std::unique_ptr<Config::Domain>(
-                    new Config::Domain("", INT, false, true, true, true, true, std::optional<std::string>()));
+                    new Config::Domain("", INT, false, true, true, true, true, false, std::optional<std::string>()));
         }
         for (auto domain = external->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
             std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, S2S));
@@ -1022,12 +1033,27 @@ void Config::log_init(bool systemd) {
 }
 
 Config::Domain const &Config::domain(std::string const &dom) const {
+    std::string search{dom};
     auto it = m_domains.find(dom);
-    if (it == m_domains.end()) {
-        it = m_domains.find("");
+    while (it == m_domains.end()) {
+        it = m_domains.find("*." + search);
+        if (it == m_domains.end()) {
+            auto dot = search.find('.');
+            if (dot == std::string::npos) {
+                search = "";
+            } else {
+                search = search.substr(dot + 1);
+            }
+            it = m_domains.find(search);
+        }
+        if (it == m_domains.end()) {
+            assert(search != "");
+            continue;
+        }
         std::unique_ptr<Config::Domain> newdom{new Config::Domain(*(*it).second, dom)};
         std::tie(it, std::ignore) = const_cast<Config *>(this)->m_domains.insert(
                 std::make_pair(dom, std::move(newdom)));
+        break;
     }
     return *(*it).second;
 }

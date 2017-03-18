@@ -580,10 +580,25 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     }
     auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto it = m.find(std::make_pair(local, remote));
+    AUTH_STATE auth_state = NONE;
     if (it != m.end()) {
-        return (*it).second;
+        auth_state = (*it).second;
     }
-    return NONE;
+    if (auth_state != AUTHORIZED && x2x_mode()) {
+        if (dir == INBOUND) {
+            if (!secured()) {
+                // TODO : Needs to be checking the host is correct.
+                if (Config::config().domain(remote).auth_host()) {
+                    const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
+                    return AUTHORIZED;
+                }
+            }
+        } else if (dir == OUTBOUND) {
+            const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
+            return AUTHORIZED;
+        }
+    }
+    return auth_state;
 }
 
 XMLStream::AUTH_STATE
