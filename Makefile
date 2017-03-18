@@ -18,9 +18,9 @@ LINKLIBDIRS=$(LIBDIRS:%=-L%)
 FINCDIRS=$(INCDIRS:%=-I%)
 
 pre-build:
-  git submodule update --init
-  make -C deps/spiffing pre-build
-  make -C deps/spiffing gen-ber/.marker
+	git submodule update --init
+	make -C deps/spiffing pre-build
+	make -C deps/spiffing gen-ber/.marker
 
 metre-test: $(TESTOBJS) $(ETOBJS)
 	@echo [LINK] $+ '=>' $@
