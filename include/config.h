@@ -211,12 +211,12 @@ namespace Metre {
             std::optional<std::string> m_auth_secret;
             struct ssl_ctx_st *m_ssl_ctx = nullptr;
             std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
-            std::map<std::string, std::unique_ptr<DNS::Srv>> m_srvrecs;
+            std::unique_ptr<DNS::Srv> m_srvrec;
             std::map<std::string, std::unique_ptr<DNS::Tlsa>> m_tlsarecs;
             mutable DNS::Address m_current_arec;
             mutable DNS::Srv m_current_srv;
             mutable std::vector<DNS::Tlsa> m_tlsa_all;
-            mutable std::map<std::string, srv_callback_t> m_srv_pending;
+            mutable srv_callback_t m_srv_pending;
             mutable std::map<std::string, addr_callback_t> m_a_pending;
             mutable std::map<std::string, tlsa_callback_t> m_tlsa_pending;
             std::list<std::unique_ptr<Filter>> m_filters;

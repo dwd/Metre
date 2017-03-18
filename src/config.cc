@@ -818,8 +818,9 @@ std::string Config::asString() {
                 dns->append_node(
                         doc.allocate_node(node_comment, nullptr,
                                           "DNS overrides are always treated as if signed with DNSSEC."));
-                for (auto &srv : dom.m_srvrecs) {
-                    for (auto &rr : srv.second->rrs) {
+                if (dom.m_srvrec) {
+                    auto &srv = dom.m_srvrec;
+                    for (auto &rr : srv->rrs) {
                         auto s = doc.allocate_node(node_element, "srv");
                         s->append_attribute(doc.allocate_attribute("host", rr.hostname.c_str()));
                         s->append_attribute(doc.allocate_attribute("port", alloc_short(rr.port)));
@@ -1297,17 +1298,12 @@ namespace {
 
 void
 Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port, bool tls) {
-    DNS::Srv *srv;
-    std::string domain = toASCII("_xmpp-server._tcp." + m_domain + "."); // Confusing: We fake a non-tls SRV record with TLS set in RR.
-    auto it = m_srvrecs.find(domain);
-    if (it == m_srvrecs.end()) {
-        std::unique_ptr<DNS::Srv> s(new DNS::Srv);
-        s->dnssec = true;
-        s->domain = domain;
-        srv = &*s;
-        m_srvrecs[domain] = std::move(s);
-    } else {
-        srv = &*(it->second);
+    if (!m_srvrec) {
+        m_srvrec.reset(new DNS::Srv);
+        std::string domain = toASCII(
+                "_xmpp-server._tcp." + m_domain + "."); // Confusing: We fake a non-tls SRV record with TLS set in RR.
+        m_srvrec->dnssec = true;
+        m_srvrec->domain = domain;
     }
     DNS::SrvRR rr;
     rr.priority = priority;
@@ -1315,7 +1311,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     rr.port = port;
     rr.hostname = toASCII(hostname) + ".";
     rr.tls = tls;
-    srv->rrs.push_back(rr);
+    m_srvrec->rrs.push_back(rr);
 }
 
 void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
@@ -1359,7 +1355,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
         }
         if (srv.xmpp && srv.xmpps) {
             srv_sort(srv);
-            m_srv_pending[srv.domain].emit(&srv);
+            m_srv_pending.emit(&srv);
         }
         return;
     }
@@ -1377,11 +1373,11 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
             srv.error = error;
             srv.domain = result->qname;
             srv.dnssec = srv.dnssec && !!result->secure;
-            m_srv_pending[srv.domain].emit(&srv);
+            m_srv_pending.emit(&srv);
         } else {
             srv_sort(m_current_srv);
             m_current_srv.dnssec = m_current_srv.dnssec && !!result->secure;
-            m_srv_pending[m_current_srv.domain].emit(&m_current_srv);
+            m_srv_pending.emit(&m_current_srv);
         }
     }
 }
@@ -1494,30 +1490,28 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
     std::string domain = toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
     METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain << " context:" << m_domain);
-    auto recs = &m_srvrecs;
-    if (recs->empty()) {
+    auto rec = &*m_srvrec;
+    if (!rec) {
         for (Domain const *d = this; d; d = d->m_parent) {
             METRE_LOG(Metre::Log::DEBUG, "DNS overrides empty, trying parent {" << d->domain() << "}");
-            recs = &d->m_srvrecs;
-            if (!recs->empty()) break;
+            rec = &*d->m_srvrec;
+            if (rec) break;
         }
     }
-    auto it = recs->find(domain);
-    if (it != recs->end()) {
-        auto addr = &*(it->second);
-        Router::defer([addr, this]() {
-            m_srv_pending[addr->domain].emit(addr);
+    if (rec) {
+        Router::defer([rec, this]() {
+            m_srv_pending.emit(rec);
         });
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else if (base_domain.empty()) {
-        srv_callback_t &cb = m_srv_pending[domain];
+        srv_callback_t &cb = m_srv_pending;
         Router::defer([this, &cb]() {
             DNS::Srv r;
             r.error = "Empty Domain - DNS aborted";
             cb.emit(&r);
         });
     } else if (m_type == X2X) {
-        srv_callback_t &cb = m_srv_pending[domain];
+        srv_callback_t &cb = m_srv_pending;
         Router::defer([this, &cb]() {
             DNS::Srv r;
             r.error = "X2X - DNS aborted";
@@ -1543,7 +1537,7 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
                          srv_lookup_done_cb,
                          NULL); /* int * async_id */
     }
-    return m_srv_pending[domain];
+    return m_srv_pending;
 }
 
 Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::string const &base_domain) const {
