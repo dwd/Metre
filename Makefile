@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-all: metre keys
+all: pre-build metre keys
 	@echo Done.
 
 OBJS:=$(patsubst src/%.cc,build/src/%.o,$(wildcard src/*.cc))
@@ -16,6 +16,11 @@ INCDIRS=include/ ./deps/rapidxml/ ./deps/sigslot/ /usr/local/include
 LINKLIBS=$(LIBS:%=-l%)
 LINKLIBDIRS=$(LIBDIRS:%=-L%)
 FINCDIRS=$(INCDIRS:%=-I%)
+
+pre-build:
+  git submodule update --init
+  make -C deps/spiffing pre-build
+  make -C deps/spiffing gen-ber/.marker
 
 metre-test: $(TESTOBJS) $(ETOBJS)
 	@echo [LINK] $+ '=>' $@
