@@ -99,7 +99,7 @@ namespace {
             }
         }
 
-        virtual void do_dump_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) {
+        virtual void do_dump_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) override {
             for (auto const &block : m_banned_blocks) {
                 auto b = doc.allocate_node(node_element, "banned-block");
                 std::ostringstream start_ss;
