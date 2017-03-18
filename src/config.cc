@@ -1060,6 +1060,7 @@ Config::Domain const &Config::domain(std::string const &dom) const {
             assert(search != "");
             continue;
         }
+        METRE_LOG(Metre::Log::INFO, "Creating new domain config " << dom << " from parent {" << (*it).second->domain() <<"}");
         std::unique_ptr<Config::Domain> newdom{new Config::Domain(*(*it).second, dom)};
         std::tie(it, std::ignore) = const_cast<Config *>(this)->m_domains.insert(
                 std::make_pair(dom, std::move(newdom)));
@@ -1460,6 +1461,7 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
     auto arecs = &m_host_arecs;
     if (arecs->empty()) {
         for (Domain const *d = this; d; d = d->m_parent) {
+            METRE_LOG(Metre::Log::DEBUG, "DNS overrides empty, trying parent {" << d->domain() << "}");
             arecs = &d->m_host_arecs;
             if (!arecs->empty()) break;
         }
@@ -1495,6 +1497,7 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
     auto recs = &m_srvrecs;
     if (recs->empty()) {
         for (Domain const *d = this; d; d = d->m_parent) {
+            METRE_LOG(Metre::Log::DEBUG, "DNS overrides empty, trying parent {" << d->domain() << "}");
             recs = &d->m_srvrecs;
             if (!recs->empty()) break;
         }
@@ -1551,6 +1554,7 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
     auto recs = &m_tlsarecs;
     if (recs->empty()) {
         for (Domain const *d = this; d; d = d->m_parent) {
+            METRE_LOG(Metre::Log::DEBUG, "DNS overrides empty, trying parent {" << d->domain() << "}");
             recs = &d->m_tlsarecs;
             if (!recs->empty()) break;
         }
