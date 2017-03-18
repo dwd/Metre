@@ -383,8 +383,7 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
           m_block(any.m_block), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
           m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist),
-          m_ssl_ctx(nullptr) {
-    m_domain = domain;
+          m_ssl_ctx(nullptr), m_parent(&any) {
 }
 
 FILTER_RESULT Config::Domain::filter(SESSION_DIRECTION dir, Stanza &s) const {
@@ -509,6 +508,17 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
     std::string ctx = "Metre::" + m_domain;
     SSL_CTX_set_session_id_context(m_ssl_ctx, reinterpret_cast<const unsigned char *>(ctx.c_str()),
                                    static_cast<unsigned int>(ctx.size()));
+}
+
+SSL_CTX *Config::Domain::ssl_ctx() const {
+    SSL_CTX *ctx = m_ssl_ctx;
+    if (!ctx) {
+        for (Domain const *d = this; d; d = d->m_parent) {
+            ctx = d->m_ssl_ctx;
+            if (ctx) break;
+        }
+    }
+    return ctx;
 }
 
 Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(random_identifier()) {
@@ -1191,7 +1201,14 @@ void Config::Domain::tlsa(std::string const &hostname, unsigned short port, DNS:
 
 std::vector<DNS::Tlsa> const &Config::Domain::tlsa() const {
     if (m_tlsa_all.empty()) {
-        for (auto &item : m_tlsarecs) {
+        auto recs = &m_tlsarecs;
+        if (recs->empty()) {
+            for (Domain const *d = this; d; d = d->m_parent) {
+                recs = &d->m_tlsarecs;
+                if (!recs->empty()) break;
+            }
+        }
+        for (auto &item : *recs) {
             m_tlsa_all.push_back(*item.second);
         }
     }
@@ -1440,8 +1457,15 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
 Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostname) const {
     std::string hostname = toASCII(ihostname);
     METRE_LOG(Metre::Log::DEBUG, "A/AAAA lookup for " << hostname << " context:" << m_domain);
-    auto it = m_host_arecs.find(hostname);
-    if (it != m_host_arecs.end()) {
+    auto arecs = &m_host_arecs;
+    if (arecs->empty()) {
+        for (Domain const *d = this; d; d = d->m_parent) {
+            arecs = &d->m_host_arecs;
+            if (!arecs->empty()) break;
+        }
+    }
+    auto it = arecs->find(hostname);
+    if (it != arecs->end()) {
         auto addr = &*(it->second);
         Router::defer([addr, this]() {
             m_a_pending[addr->hostname].emit(addr);
@@ -1468,8 +1492,15 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
     std::string domain = toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
     METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain << " context:" << m_domain);
-    auto it = m_srvrecs.find(domain);
-    if (it != m_srvrecs.end()) {
+    auto recs = &m_srvrecs;
+    if (recs->empty()) {
+        for (Domain const *d = this; d; d = d->m_parent) {
+            recs = &d->m_srvrecs;
+            if (!recs->empty()) break;
+        }
+    }
+    auto it = recs->find(domain);
+    if (it != recs->end()) {
         auto addr = &*(it->second);
         Router::defer([addr, this]() {
             m_srv_pending[addr->domain].emit(addr);
@@ -1517,8 +1548,15 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = toASCII(out.str());
     METRE_LOG(Metre::Log::DEBUG, "TLSA lookup for " << domain);
-    auto it = m_tlsarecs.find(domain);
-    if (it != m_tlsarecs.end()) {
+    auto recs = &m_tlsarecs;
+    if (recs->empty()) {
+        for (Domain const *d = this; d; d = d->m_parent) {
+            recs = &d->m_tlsarecs;
+            if (!recs->empty()) break;
+        }
+    }
+    auto it = recs->find(domain);
+    if (it != recs->end()) {
         auto addr = &*(it->second);
         Router::defer([addr, this]() {
             m_tlsa_pending[addr->domain].emit(addr);

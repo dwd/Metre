@@ -142,9 +142,7 @@ namespace Metre {
                 return m_auth_secret;
             }
 
-            struct ssl_ctx_st *ssl_ctx() const {
-                return m_ssl_ctx;
-            }
+            struct ssl_ctx_st *ssl_ctx() const;
 
             /* Loading functions */
             void x509(std::string const &chain, std::string const &key);
@@ -223,6 +221,7 @@ namespace Metre {
             mutable std::map<std::string, tlsa_callback_t> m_tlsa_pending;
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;
+            Domain const *m_parent = nullptr;
         };
 
         Config(std::string const &filename);
