@@ -47,8 +47,10 @@ set(SOURCE_FILES
         src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h)
 
 add_executable(metre ${SOURCE_FILES})
-target_link_libraries(metre event_core ssl crypto event_openssl event_extra unbound icudata icuuc)
+add_subdirectory(deps/spiffing)
+target_link_libraries(metre event_core ssl crypto event_openssl event_extra unbound icudata icuuc spiffing spiffing-asn)
 include_directories(include)
 include_directories(./deps/rapidxml)
 include_directories(./deps/sigslot)
+include_directories(./deps/spiffing/include)
 

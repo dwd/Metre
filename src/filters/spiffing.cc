@@ -24,6 +24,11 @@ SOFTWARE.
 ***/
 
 #include "filter.h"
+#include "jid.h"
+#include "stanza.h"
+#include <spiffing/spiffing.h>
+#include <spiffing/clearance.h>
+#include <fstream>
 
 using namespace Metre;
 
@@ -32,13 +37,68 @@ namespace {
     public:
         class Description : public Filter::Description<Spiffing> {
             Description(std::string &&name) : Filter::Description<Spiffing>(std::move(name)) {};
+
+            void do_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) override {
+                for (auto const &fname : m_policy_filenames) {
+                    auto policy = doc.allocate_node(rapidxml::node_element, "policy");
+                    policy->value(doc.allocate_string(fname.c_str()));
+                    config->append_node(policy);
+                }
+            }
+
+            void config(rapidxml::xml_node<> *config) override {
+                for (auto policy = config->first_node("policy"); policy; policy = policy->next_sibling("policy")) {
+                    if (!policy->value()) throw std::runtime_error("Policy requires a filename as value");
+                    std::string fname{policy->value(), policy->value_size()};
+                    m_policy_filenames.emplace(fname);
+                    std::ifstream ifs(fname);
+                    m_site.load(ifs);
+                }
+            }
+
+            std::set<std::string> m_policy_filenames;
+            ::Spiffing::Site m_site;
         };
 
         Spiffing(BaseDescription &b, Config::Domain &s, rapidxml::xml_node<> *config) : Filter(b) {
+            for (auto policy = config->first_node("allowed-policy"); policy; policy->next_sibling("allowed-policy")) {
+                auto att = policy->first_attribute("id");
+                if (!att) {
+                    policy->first_attribute("name");
+                }
+                if (!att) throw std::runtime_error("Allowed-policy requires an id or a name attribute");
+                std::string oid{att->value(), att->value_size()};
+                std::shared_ptr<::Spiffing::Spif> spif;
+                try {
+                    spif = ::Spiffing::Site::site().spif(oid);
+                } catch (std::runtime_error &e) {
+                    spif = ::Spiffing::Site::site().spif_by_name(oid);
+                }
+                m_allowed_policies.emplace(spif->policy_id());
+            }
+            for (auto clearance = config->first_node("clearance"); clearance; clearance->next_sibling("clearance")) {
+                std::shared_ptr<::Spiffing::Clearance> clr{
+                        new ::Spiffing::Clearance(std::string{clearance->contents(), clearance->contents_size()},
+                                                  ::Spiffing::Format::ANY)};
+                m_clearances[clr->policy_id()] = clr;
+            }
+            // Load config (clearances and default label, and allowed policies)
         }
 
-        virtual FILTER_RESULT apply(SESSION_DIRECTION, Metre::Stanza &) override {
+        virtual void do_dump_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) override {
+            // Dump config.
+        }
+
+        virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Metre::Stanza &s) override {
+            if (dir == OUTBOUND) {
+                return PASS;
+            }
+            // Check inbound ACDF.
+            // Check outbound ACDF.
             return PASS;
         }
+
+        std::set<std::string> m_allowed_policies;
+        std::map<std::string, std::shared_ptr<::Spiffing::Clearance>> m_clearances;
     };
 }

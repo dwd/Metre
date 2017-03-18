@@ -173,7 +173,7 @@ namespace Metre {
             void tlsa_lookup_done(int err, struct ub_result *result);
 
             Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block,
-                   bool auth_pkix, bool auth_dialback, std::optional<std::string> &&m_auth_secret);
+                   bool auth_pkix, bool auth_dialback, bool auth_host, std::optional<std::string> &&m_auth_secret);
 
             Domain(Domain const &, std::string const &domain);
 
@@ -189,6 +189,12 @@ namespace Metre {
                 return m_filters;
             }
 
+            bool auth_endpoint(std::string const &ip, unsigned short port) const;
+
+            bool auth_host() const {
+                return m_auth_host;
+            }
+
         private:
             std::string m_domain;
             SESSION_TYPE m_type;
@@ -198,6 +204,7 @@ namespace Metre {
             bool m_auth_pkix = true;
             bool m_auth_crls = true;
             bool m_auth_dialback = false;
+            bool m_auth_host = false;
             bool m_dnssec_required = false;
             unsigned m_stanza_timeout = 20;
             unsigned m_connect_timeout = 10;
@@ -215,6 +222,7 @@ namespace Metre {
             mutable std::map<std::string, addr_callback_t> m_a_pending;
             mutable std::map<std::string, tlsa_callback_t> m_tlsa_pending;
             std::list<std::unique_ptr<Filter>> m_filters;
+            std::list<struct sockaddr_storage> m_auth_endpoint;
         };
 
         Config(std::string const &filename);
