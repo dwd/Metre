@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(metre)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -Werror -O0 -g -DSIGSLOT_PURE_ISO")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -O0 -g -DSIGSLOT_PURE_ISO")
 
 set(FILTER_SOURCES
         src/filters/disco-filter.cc
