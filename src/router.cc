@@ -314,7 +314,8 @@ void Route::try_addr(bool init) {
         try {
             vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
                                    const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&(*m_arr))),
-                                   (*m_rr).port, m_rr->tls ? IMMEDIATE : STARTTLS);
+                                   (*m_rr).port, Config::config().domain(m_domain.domain()).transport_type(),
+                                   m_rr->tls ? IMMEDIATE : STARTTLS);
             METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
             vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
             vrfy->onClosed.connect(this, &Route::SessionClosed);

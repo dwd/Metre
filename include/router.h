@@ -134,7 +134,7 @@ namespace Metre {
 
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
-                unsigned short port, TLS_MODE tls_mode);
+                unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode);
 
         std::shared_ptr<NetSession> session_by_stream_id(std::string const &stream_id);
 

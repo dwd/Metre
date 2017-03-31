@@ -52,8 +52,8 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
 }
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::string const &stream_from,
-                       std::string const &stream_to, TLS_MODE tls_mode)
-        : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, OUTBOUND, S2S, stream_from, stream_to)) {
+                       std::string const &stream_to, SESSION_TYPE stype, TLS_MODE tls_mode)
+        : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, OUTBOUND, stype, stream_from, stream_to)) {
     bufferevent(bev);
     METRE_LOG(Log::INFO, "New OUTBOUND session NS" << serial);
     if (tls_mode == IMMEDIATE) {
@@ -63,7 +63,7 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::
 
 void NetSession::bufferevent(struct bufferevent *bev) {
     if (!bev) {
-        m_bev = 0;
+        m_bev = nullptr;
         return;
     }
     bufferevent_setcb(bev, NetSession::read_cb, NULL, NetSession::event_cb, this);

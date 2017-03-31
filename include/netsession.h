@@ -47,7 +47,7 @@ namespace Metre {
     public:
         NetSession(unsigned long long serial, struct bufferevent *bev, Config::Listener const *listen); /* Inbound */
         NetSession(unsigned long long serial, struct bufferevent *bev, std::string const &stream_from,
-                   std::string const &stream_to, TLS_MODE tls_mode); /* Outbound S2S */
+                   std::string const &stream_to, SESSION_TYPE, TLS_MODE tls_mode); /* Outbound S2S */
 
         // Scary stuff only used for buffer juggling.
         struct bufferevent *bufferevent() {

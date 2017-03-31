@@ -206,7 +206,7 @@ namespace Metre {
 
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
-                unsigned short port, TLS_MODE tls_mode) {
+                unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
             void *inx_addr;
             if (addr->sa_family == AF_INET) {
                 struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(addr);
@@ -221,7 +221,7 @@ namespace Metre {
             METRE_LOG(Metre::Log::DEBUG,
                       "Connecting to " << inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN) << ":" << port);
             std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, addr,
-                                                       sizeof(struct sockaddr_storage), port, tls_mode);
+                                                       sizeof(struct sockaddr_storage), port, stype, tls_mode);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
             auto it = m_sessions_by_domain.find(tod);
             if (it == m_sessions_by_domain.end() ||
@@ -233,7 +233,7 @@ namespace Metre {
 
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *sin,
-                size_t addrlen, unsigned short port, TLS_MODE tls_mode) {
+                size_t addrlen, unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
             if (!bev) {
                 METRE_LOG(Metre::Log::CRIT, "Error creating BEV");
@@ -250,7 +250,7 @@ namespace Metre {
             tv.tv_sec = Config::config().domain(tod).connect_timeout();
             bufferevent_set_timeouts(bev, nullptr, &tv);
             std::shared_ptr<NetSession> session(
-                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, tls_mode));
+                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, stype, tls_mode));
             auto it = m_sessions.find(session->serial());
             if (it != m_sessions.end()) {
                 // We already have one for this socket. This seems unlikely to be safe.
@@ -353,8 +353,8 @@ namespace Metre {
     namespace Router {
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
-                unsigned short port, TLS_MODE tls_mode) {
-            return Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port, tls_mode);
+                unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
+            return Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port, stype, tls_mode);
         }
 
         void register_stream_id(std::string const &id, NetSession &session) {
