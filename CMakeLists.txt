@@ -1,6 +1,27 @@
 cmake_minimum_required(VERSION 2.8)
 project(metre)
 
+set(CPACK_PACKAGE_CONTACT "dave.cridland@surevine.com")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "XMPP-S2S filtering and security proxy")
+set(CPACK_PACKAGE_VERSION "0.0.1")
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave.cridland@surevine.com>")
+
+# Pick package formats.
+
+message(STATUS "Platform id is ${CMAKE_C_PLATFORM_ID}")
+if (UNIX)
+    set(CPACK_GENERATOR "TGZ")
+    if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+        find_program(LSB_RELEASE lsb_release)
+        execute_process(COMMAND ${LSB_RELEASE} -is OUTPUT_VARIABLE LSB_RELEASE_ID OUTPUT_STRIP_TRAILING_WHITESPACE)
+        message(STATUS "Linux distro is ${LSB_RELEASE_ID}")
+        if (${LSB_RELEASE_ID} MATCHES "Ubuntu")
+            set(CPACK_GENERATOR "${CPACK_GENERATOR};DEB")
+        endif (${LSB_RELEASE_ID} MATCHES "Ubuntu")
+    endif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+endif (UNIX)
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -O0 -g -DSIGSLOT_PURE_ISO")
 
 set(FILTER_SOURCES
@@ -53,4 +74,12 @@ include_directories(include)
 include_directories(./deps/rapidxml)
 include_directories(./deps/sigslot)
 include_directories(./deps/spiffing/include)
+
+install(TARGETS metre DESTINATION bin)
+# These install into stupid places:
+#
+# install(FILES metre.conf.xml DESTINATION ./etc/metre)
+# install(FILES data/README.md DESTINATION ./var/cache/metre)
+
+include(CPack)
 
