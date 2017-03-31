@@ -48,9 +48,6 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
-        if (dir == INBOUND) {
-            send_stream_open(true);
-        }
     }
 }
 
@@ -61,9 +58,6 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
-        if (dir == INBOUND) {
-            send_stream_open(true);
-        }
     }
 }
 
@@ -367,7 +361,7 @@ void XMLStream::send_stream_open(bool with_version) {
             }
         }
         std::string stream_buf;
-        stream_buf == "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
+        stream_buf = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
         stream_buf += content_namespace();
         stream_buf += "' to='";
         stream_buf += m_stream_local;
