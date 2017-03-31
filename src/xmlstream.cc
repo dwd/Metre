@@ -360,6 +360,7 @@ void XMLStream::send_stream_open(bool with_version) {
                 throw host_unknown("Cannot authenticate host");
             }
         }
+        set_auth_ready();
         m_stream_buf == "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
         m_stream_buf += content_namespace();
         m_stream_buf += "' to='";
