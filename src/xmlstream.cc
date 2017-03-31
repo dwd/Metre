@@ -604,8 +604,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
 XMLStream::AUTH_STATE
 XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION dir,
                          XMLStream::AUTH_STATE state) {
-    if (state == AUTHORIZED && !m_secured &&
-        (Config::config().domain(local).require_tls() || Config::config().domain(remote).require_tls())) {
+    if (state == AUTHORIZED && !m_secured && Config::config().domain(remote).require_tls()) {
         throw Metre::not_authorized("Authorization attempt without TLS");
     }
     auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
