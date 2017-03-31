@@ -48,6 +48,9 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
+        if (dir == INBOUND) {
+            send_stream_open(true);
+        }
     }
 }
 
@@ -58,6 +61,9 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
+        if (dir == INBOUND) {
+            send_stream_open(true);
+        }
     }
 }
 
@@ -360,14 +366,16 @@ void XMLStream::send_stream_open(bool with_version) {
                 throw host_unknown("Cannot authenticate host");
             }
         }
+        std::string stream_buf;
+        stream_buf == "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
+        stream_buf += content_namespace();
+        stream_buf += "' to='";
+        stream_buf += m_stream_local;
+        stream_buf += "' from='";
+        stream_buf += m_stream_remote;
+        stream_buf += "'>";
+        process(reinterpret_cast<unsigned char *>(const_cast<char *>(stream_buf.data())), stream_buf.size());
         set_auth_ready();
-        m_stream_buf == "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
-        m_stream_buf += content_namespace();
-        m_stream_buf += "' to='";
-        m_stream_buf += m_stream_local;
-        m_stream_buf += "' from='";
-        m_stream_buf += m_stream_remote;
-        m_stream_buf += "' version='1.0'>";
     } else {
         /*
         *   We write this out as a string, to avoid trying to make rapidxml
