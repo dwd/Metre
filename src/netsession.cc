@@ -86,7 +86,23 @@ NetSession::~NetSession() {
     if (m_bev) bufferevent_free(m_bev);
 }
 
+namespace {
+    class Latch {
+        bool &m_b;
+    public:
+        Latch(bool &b) : m_b(b) {
+            m_b = true;
+        }
+
+        ~Latch() {
+            m_b = false;
+        }
+    };
+}
+
 bool NetSession::drain() {
+    if (m_in_progress) return false;
+    std::unique_ptr<Latch> latch{new Latch(m_in_progress)};
     // While there is data, see how much we can consume with the XMLStream.
     struct evbuffer *buf = nullptr; // This gets refreshed each time through the loops.
     size_t len;
