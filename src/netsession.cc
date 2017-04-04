@@ -49,14 +49,17 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
     if (listen->tls_mode == IMMEDIATE) {
         start_tls(*m_xml_stream, false);
     }
-    std::string stream_buf;
-    stream_buf = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:server' to='";
-    stream_buf += listen->local_domain;
-    stream_buf += "' from='";
-    stream_buf += listen->remote_domain;
-    stream_buf += "'>";
-    m_xml_stream->process(reinterpret_cast<unsigned char *>(const_cast<char *>(stream_buf.data())), stream_buf.size());
-    m_xml_stream->set_auth_ready();
+    if (listen->session_type == X2X) {
+        std::string stream_buf;
+        stream_buf = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:server' to='";
+        stream_buf += listen->local_domain;
+        stream_buf += "' from='";
+        stream_buf += listen->remote_domain;
+        stream_buf += "'>";
+        m_xml_stream->process(reinterpret_cast<unsigned char *>(const_cast<char *>(stream_buf.data())),
+                              stream_buf.size());
+        m_xml_stream->set_auth_ready();
+    }
 }
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::string const &stream_from,
