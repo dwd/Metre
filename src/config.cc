@@ -49,6 +49,7 @@ SOFTWARE.
 #include <iomanip>
 #include <unicode/uidna.h>
 #include <filter.h>
+#include <cstring>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -439,7 +440,9 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
         cert_name.resize(cert_name.find('\0'));
         METRE_LOG(Metre::Log::DEBUG, "Cert passed basic verification: " + cert_name);
         if (Config::config().m_fetch_crls) {
-            auto crldp = X509_STORE_CTX_get_current_cert(st)->crldp;
+            auto cert = X509_STORE_CTX_get_current_cert(st);
+            std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
+            auto crldp = crldp_ptr.get();
             if (crldp) {
                 for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
                     DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
@@ -685,7 +688,7 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
                            const char *address, unsigned short port, TLS_MODE atls,
                            SESSION_TYPE asess)
         : session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
-    memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
+    std::memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
     if (1 == inet_pton(AF_INET6, address, &(reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr)->sin6_addr))) {
         struct sockaddr_in6 *sa = reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr);
         sa->sin6_family = AF_INET6;

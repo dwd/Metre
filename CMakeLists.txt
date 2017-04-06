@@ -22,6 +22,11 @@ if (UNIX)
     endif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 endif (UNIX)
 
+set(OPENSSL_USE_STATIC_LIBS true)
+set(OPENSSL_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/deps/openssl)
+
+find_package(OpenSSL REQUIRED)
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -O0 -g -DSIGSLOT_PURE_ISO")
 
 set(FILTER_SOURCES
@@ -69,11 +74,15 @@ set(SOURCE_FILES
 
 add_executable(metre ${SOURCE_FILES})
 add_subdirectory(deps/spiffing)
-target_link_libraries(metre event_core ssl crypto event_openssl event_extra unbound icudata icuuc spiffing spiffing-asn)
+add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
+target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound icudata icuuc spiffing spiffing-asn dl pthread)
 include_directories(include)
 include_directories(./deps/rapidxml)
 include_directories(./deps/sigslot)
 include_directories(./deps/spiffing/include)
+include_directories(./deps/openssl/include)
+include_directories(./deps/libevent/include)
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
 
 install(TARGETS metre DESTINATION bin)
 # These install into stupid places:

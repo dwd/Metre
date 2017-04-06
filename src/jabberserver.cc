@@ -141,5 +141,5 @@ namespace {
         }
     };
 
-    bool declared = Feature::declare<JabberServer>(S2S);
+    DECLARE_FEATURE(JabberServer, S2S);
 }

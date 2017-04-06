@@ -74,7 +74,7 @@ Http::crl_callback_t &Http::do_crl(std::string const &urix) {
     auto iter = m_crl_cache.find(uri);
     if (iter != m_crl_cache.end() && iter->second) {
         auto data = iter->second;
-        auto nextupdate = X509_CRL_get_nextUpdate(data);
+        auto nextupdate = X509_CRL_get0_nextUpdate(data);
         int day, sec;
         ASN1_TIME_diff(&day, &sec, nullptr, nextupdate);
         if (day > 0) {

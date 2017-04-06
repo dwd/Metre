@@ -142,5 +142,5 @@ namespace {
         }
     };
 
-    bool declared = Feature::declare<Component>(COMP);
+    DECLARE_FEATURE(Component, COMP);
 }

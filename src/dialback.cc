@@ -247,6 +247,6 @@ namespace {
         }
     };
 
-    bool declared_classic = Feature::declare<Dialback>(S2S);
-    bool declared_new = Feature::declare<NewDialback>(S2S);
+    DECLARE_FEATURE(Dialback, S2S);
+    DECLARE_FEATURE(NewDialback, S2S);
 }

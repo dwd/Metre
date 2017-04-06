@@ -21,6 +21,8 @@ pre-build:
 	git submodule update --init
 	make -C deps/spiffing pre-build
 	make -C deps/spiffing gen-ber/.marker
+	cd deps/openssl && ./config --prefix=/usr/local --openssldir=/etc/metre/ssl no-shared
+	make -C deps/openssl
 
 metre-test: $(TESTOBJS) $(ETOBJS)
 	@echo [LINK] $+ '=>' $@
