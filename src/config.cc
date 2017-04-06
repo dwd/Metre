@@ -539,7 +539,7 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
         throw std::runtime_error(ub_strerror(retval));
     }
     if (!m_dns_keys.empty()) {
-        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, m_dns_keys.c_str())) != 0) {
+        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, const_cast<char *>(m_dns_keys.c_str()))) != 0) {
             throw std::runtime_error(ub_strerror(retval));
         }
     }
@@ -847,9 +847,10 @@ std::string Config::asString() {
                         e->append_attribute(
                                 doc.allocate_attribute("hostname", doc.allocate_string(hostname.c_str() + 6)));
                         e->append_attribute(doc.allocate_attribute("port", alloc_short(port)));
-                        const char *match = "Full";
+                        const char *match;
                         switch (rr.matchType) {
                             case DNS::TlsaRR::Full:
+                            default:
                                 match = "Full";
                                 break;
                             case DNS::TlsaRR::Sha256:
@@ -863,6 +864,7 @@ std::string Config::asString() {
                         const char *selector;
                         switch (rr.selector) {
                             case DNS::TlsaRR::FullCert:
+                            default:
                                 selector = "FullCert";
                                 break;
                             case DNS::TlsaRR::SubjectPublicKeyInfo:
@@ -879,6 +881,7 @@ std::string Config::asString() {
                                 certUsage = "CertConstraint";
                                 break;
                             case DNS::TlsaRR::DomainCert:
+                            default:
                                 certUsage = "DomainCert";
                                 break;
                             case DNS::TlsaRR::TrustAnchorAssertion:
@@ -1476,10 +1479,10 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
         m_current_arec.hostname = "";
         m_current_arec.addr.clear();
         m_current_arec.ipv6 = m_current_arec.ipv4 = false;
-        ub_resolve_async(Config::config().ub_ctx(), hostname.c_str(), 28, 1,
+        ub_resolve_async(Config::config().ub_ctx(), const_cast<char *>(hostname.c_str()), 28, 1,
                          const_cast<void *>(reinterpret_cast<const void *>(this)), a_lookup_done_cb, NULL);
         ub_resolve_async(Config::config().ub_ctx(),
-                         hostname.c_str(),
+                         const_cast<char *>(hostname.c_str()),
                          1, /* A */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
@@ -1526,14 +1529,14 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         m_current_srv.dnssec = true;
         m_current_srv.error.clear();
         ub_resolve_async(Config::config().ub_ctx(),
-                         domain.c_str(),
+                         const_cast<char *>(domain.c_str()),
                          33, /* SRV */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
                          srv_lookup_done_cb,
                          NULL); /* int * async_id */
         ub_resolve_async(Config::config().ub_ctx(),
-                         domains.c_str(),
+                         const_cast<char *>(domains.c_str()),
                          33, /* SRV */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
@@ -1572,7 +1575,7 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
         });
     } else {
         ub_resolve_async(Config::config().ub_ctx(),
-                         domain.c_str(),
+                         const_cast<char *>(domain.c_str()),
                          52, /* TLSA */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
