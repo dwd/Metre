@@ -26,14 +26,33 @@ set(OPENSSL_USE_STATIC_LIBS true)
 set(OPENSSL_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/deps/openssl)
 
 find_package(OpenSSL REQUIRED)
+find_path(ICU2_INCLUDE_DIR NAMES unicode/unorm2.h)
+find_path(ICU_INCLUDE_DIR NAMES unicode/unorm.h)
+message("ICU2 dir is ${ICU2_INCLUDE_DIR}")
+message("ICU dir is ${ICU_INCLUDE_DIR}")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -pedantic -O0 -g -DSIGSLOT_PURE_ISO")
+set(ICU_LIBS)
+if (ICU2_INCLUDE_DIR)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAVE_ICU2")
+    message("Found ICU2")
+    set(ICU_LIBS icudata icuuc)
+elseif (ICU_INCLUDE_DIR)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAVE_ICU")
+    message("Found ICU")
+    set(ICU_LIBS icudata icuuc)
+else ()
+    message("No ICU Found")
+endif ()
 
 set(FILTER_SOURCES
         src/filters/disco-filter.cc
         src/filters/spiffing.cc
         src/filters/disco-cache.cc
-        src/filters/unicode.cc src/filters/domain-translation.cc)
+        src/filters/domain-translation.cc)
+if (${ICU2_INCLUDE_DIR})
+    set(FILTER_SOURCES ${FILTER_SOURCES} src/filters/unicode.cc)
+endif ()
 
 set(SOURCE_FILES
         ${FILTER_SOURCES}
@@ -72,10 +91,17 @@ set(SOURCE_FILES
     src/starttls.cc
         src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h)
 
+#set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+#set(BUILD_SHARED_LIBS  OFF)
+#set(CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++")
+#find_library(LIBUNBOUND_STATIC libunbound.a)
+#find_library(LIBLDNS_STATIC libldns.a)
 add_executable(metre ${SOURCE_FILES})
 add_subdirectory(deps/spiffing)
 add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
-target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound icudata icuuc spiffing spiffing-asn dl pthread)
+#set_target_properties(metre PROPERTIES LINK_SEARCH_START_STATIC 1)
+#set_target_properties(metre PROPERTIES LINK_SEARCH_END_STATIC 1)
+target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound ${ICU_LIBS} spiffing spiffing-asn dl pthread)
 include_directories(include)
 include_directories(./deps/rapidxml)
 include_directories(./deps/sigslot)

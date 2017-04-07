@@ -55,6 +55,7 @@ using namespace Metre;
 using namespace rapidxml;
 
 namespace {
+#ifdef HAVE_ICU2
     std::string toASCII(std::string const &input) {
         if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end())
             return input;
@@ -71,6 +72,38 @@ namespace {
         ret.resize(sz);
         return ret;
     }
+#else
+#ifdef HAVE_ICUXX
+    std::string toASCII(std::string const &input) {
+        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end())
+            return input;
+        static UIDNA *idna = 0;
+        UErrorCode error = U_ZERO_ERROR;
+        if (!idna) {
+            idna = uidna_openUTS46(UIDNA_DEFAULT, &error);
+        }
+        std::string ret;
+        ret.resize(1024);
+        UIDNAInfo pInfo = UIDNA_INFO_INITIALIZER;
+        auto sz = uidna_nameToASCII_UTF8(idna, input.data(), input.size(), const_cast<char *>(ret.data()), 1024, &pInfo,
+                                         &error);
+        ret.resize(sz);
+        return ret;
+    }
+#else
+
+    std::string toASCII(std::string const &input) {
+        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end()) {
+            std::string ret = input;
+            std::transform(ret.begin(), ret.end(), ret.begin(),
+                           [](const char c) { return static_cast<char>(tolower(c)); });
+            return ret;
+        }
+        throw std::runtime_error("IDNA domain but no ICU");
+    }
+
+#endif
+#endif
 
     std::string const any_element = "any";
     std::string const xmlns = "http://surevine.com/xmlns/metre/config";
