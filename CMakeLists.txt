@@ -99,7 +99,7 @@ set(SOURCE_FILES
 add_executable(metre ${SOURCE_FILES})
 add_subdirectory(deps/spiffing)
 add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
-find_library(LIBUNBOUND NAMES unbound ldns PATHS ./deps/unbound-1.6.1/.libs)
+set(LIBUNBOUND ${CMAKE_SOURCE_DIR}/deps/unbound-1.6.1/.libs/libunbound.a)
 message("Found libunbound as ${LIBUNBOUND}")
 #set_target_properties(metre PROPERTIES LINK_SEARCH_START_STATIC 1)
 #set_target_properties(metre PROPERTIES LINK_SEARCH_END_STATIC 1)
