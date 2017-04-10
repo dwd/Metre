@@ -12,7 +12,7 @@ pre-build: deps/unbound-1.6.1/configure
 	cd deps/unbound-1.6.1 && ./configure CPPFLAGS=-I`pwd`/../../build/deps/libevent/include/ LDFLAGS=-L`pwd`/../openssl --disable-flto --enable-pie --disable-shared --with-ssl=`pwd`/../openssl --with-libevent=`pwd`/../libevent --with-libunbound-only
 	mkdir -p build
 	cd build && cmake ..
-	cd build && make event_core_static
+	cd build && make -j12 event_core_static
 	make -C deps/unbound-1.6.1
 
 deps/unbound-1.6.1.tar.gz:
@@ -28,4 +28,7 @@ keys:
 metre:
 	mkdir -p build
 	cd build && cmake ..
-	make -C build
+	make -C build -j12
+
+package: all
+  make -C build package
