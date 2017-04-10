@@ -9,7 +9,7 @@ pre-build: deps/unbound-1.6.1/configure
 	make -C deps/spiffing gen-ber/.marker
 	cd deps/openssl && ./config --prefix=/usr/local --openssldir=/etc/ssl no-shared
 	make -C deps/openssl
-	cd deps/unbound-1.6.1 && ./configure CPPFLAGS=-I`pwd`/../../build/deps/libevent/include/ LDFLAGS=-L`pwd`/../openssl --disable-flto --enable-pie --disable-shared --enable-tfo-client --with-ssl=`pwd`/../openssl --with-libevent=`pwd`/../libevent --with-libunbound-only
+	cd deps/unbound-1.6.1 && ./configure CPPFLAGS=-I`pwd`/../../build/deps/libevent/include/ LDFLAGS=-L`pwd`/../openssl --disable-flto --enable-pie --disable-shared --with-ssl=`pwd`/../openssl --with-libevent=`pwd`/../libevent --with-libunbound-only
 	mkdir -p build
 	cd build && cmake ..
 	cd build && make event_core_static
