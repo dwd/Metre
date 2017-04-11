@@ -768,7 +768,7 @@ std::string Config::asString() {
         }
 
         auto global = [&] (const char * elname, std::string const & val, const char * comment) {
-            globals->append_node(doc.allocate_node(node_element, elname, val.c_str()));
+            globals->append_node(doc.allocate_node(node_element, elname, doc.allocate_string(val.c_str())));
             globals->append_node(doc.allocate_node(node_comment, nullptr, comment));
             globals->append_node(doc.allocate_node(node_data, nullptr, "\n"));
         };
