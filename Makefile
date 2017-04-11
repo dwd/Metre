@@ -31,4 +31,5 @@ metre:
 	make -C build -j12
 
 package: all
-  make -C build package
+	make -C build package
+
