@@ -31,38 +31,39 @@ SOFTWARE.
 namespace std {
     template<typename T>
     class optional {
-        char m_void[sizeof(T)];
+        char m_void_spc[sizeof(T)];
+        char * m_void;
         bool m_engaged = false;
     private:
         void doset(T const &t) {
-            new(m_void) T(t);
+            new(reinterpret_cast<T *>(m_void)) T(t);
             m_engaged = true;
         }
 
         void dounset() {
-            reinterpret_cast<T *>(&m_void)->~T();
+            reinterpret_cast<T *>(m_void)->~T();
             m_engaged = false;
         }
 
         T *real() {
             if (!m_engaged) throw std::runtime_error("Deref when unengaged");
-            return reinterpret_cast<T *>(&m_void);
+            return reinterpret_cast<T *>(m_void);
         }
 
         T const *real() const {
             if (!m_engaged) throw std::runtime_error("Deref when unengaged");
-            return reinterpret_cast<T const *>(&m_void);
+            return reinterpret_cast<T const *>(m_void);
         }
 
     public:
-        optional(T const &t) {
+        optional(T const &t) : m_void(m_void_spc) {
             doset(t);
         }
 
-        optional() {
+        optional() : m_void(m_void_spc) {
         }
 
-        optional(optional<T> const &t) {
+        optional(optional<T> const &t) : m_void(m_void_spc) {
             if (t.m_engaged) doset(t.value());
         }
 

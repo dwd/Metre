@@ -49,11 +49,13 @@ SOFTWARE.
 #include <iomanip>
 #include <unicode/uidna.h>
 #include <filter.h>
+#include <cstring>
 
 using namespace Metre;
 using namespace rapidxml;
 
 namespace {
+#ifdef HAVE_ICU2
     std::string toASCII(std::string const &input) {
         if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end())
             return input;
@@ -70,6 +72,38 @@ namespace {
         ret.resize(sz);
         return ret;
     }
+#else
+#ifdef HAVE_ICUXX
+    std::string toASCII(std::string const &input) {
+        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end())
+            return input;
+        static UIDNA *idna = 0;
+        UErrorCode error = U_ZERO_ERROR;
+        if (!idna) {
+            idna = uidna_openUTS46(UIDNA_DEFAULT, &error);
+        }
+        std::string ret;
+        ret.resize(1024);
+        UIDNAInfo pInfo = UIDNA_INFO_INITIALIZER;
+        auto sz = uidna_nameToASCII_UTF8(idna, input.data(), input.size(), const_cast<char *>(ret.data()), 1024, &pInfo,
+                                         &error);
+        ret.resize(sz);
+        return ret;
+    }
+#else
+
+    std::string toASCII(std::string const &input) {
+        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end()) {
+            std::string ret = input;
+            std::transform(ret.begin(), ret.end(), ret.begin(),
+                           [](const char c) { return static_cast<char>(tolower(c)); });
+            return ret;
+        }
+        throw std::runtime_error("IDNA domain but no ICU");
+    }
+
+#endif
+#endif
 
     std::string const any_element = "any";
     std::string const xmlns = "http://surevine.com/xmlns/metre/config";
@@ -439,7 +473,9 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
         cert_name.resize(cert_name.find('\0'));
         METRE_LOG(Metre::Log::DEBUG, "Cert passed basic verification: " + cert_name);
         if (Config::config().m_fetch_crls) {
-            auto crldp = X509_STORE_CTX_get_current_cert(st)->crldp;
+            auto cert = X509_STORE_CTX_get_current_cert(st);
+            std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
+            auto crldp = crldp_ptr.get();
             if (crldp) {
                 for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
                     DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
@@ -536,7 +572,7 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
         throw std::runtime_error(ub_strerror(retval));
     }
     if (!m_dns_keys.empty()) {
-        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, m_dns_keys.c_str())) != 0) {
+        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, const_cast<char *>(m_dns_keys.c_str()))) != 0) {
             throw std::runtime_error(ub_strerror(retval));
         }
     }
@@ -685,7 +721,7 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
                            const char *address, unsigned short port, TLS_MODE atls,
                            SESSION_TYPE asess)
         : session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
-    memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
+    std::memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
     if (1 == inet_pton(AF_INET6, address, &(reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr)->sin6_addr))) {
         struct sockaddr_in6 *sa = reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr);
         sa->sin6_family = AF_INET6;
@@ -732,7 +768,7 @@ std::string Config::asString() {
         }
 
         auto global = [&] (const char * elname, std::string const & val, const char * comment) {
-            globals->append_node(doc.allocate_node(node_element, elname, val.c_str()));
+            globals->append_node(doc.allocate_node(node_element, elname, doc.allocate_string(val.c_str())));
             globals->append_node(doc.allocate_node(node_comment, nullptr, comment));
             globals->append_node(doc.allocate_node(node_data, nullptr, "\n"));
         };
@@ -844,9 +880,10 @@ std::string Config::asString() {
                         e->append_attribute(
                                 doc.allocate_attribute("hostname", doc.allocate_string(hostname.c_str() + 6)));
                         e->append_attribute(doc.allocate_attribute("port", alloc_short(port)));
-                        const char *match = "Full";
+                        const char *match;
                         switch (rr.matchType) {
                             case DNS::TlsaRR::Full:
+                            default:
                                 match = "Full";
                                 break;
                             case DNS::TlsaRR::Sha256:
@@ -860,6 +897,7 @@ std::string Config::asString() {
                         const char *selector;
                         switch (rr.selector) {
                             case DNS::TlsaRR::FullCert:
+                            default:
                                 selector = "FullCert";
                                 break;
                             case DNS::TlsaRR::SubjectPublicKeyInfo:
@@ -876,6 +914,7 @@ std::string Config::asString() {
                                 certUsage = "CertConstraint";
                                 break;
                             case DNS::TlsaRR::DomainCert:
+                            default:
                                 certUsage = "DomainCert";
                                 break;
                             case DNS::TlsaRR::TrustAnchorAssertion:
@@ -1473,10 +1512,10 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
         m_current_arec.hostname = "";
         m_current_arec.addr.clear();
         m_current_arec.ipv6 = m_current_arec.ipv4 = false;
-        ub_resolve_async(Config::config().ub_ctx(), hostname.c_str(), 28, 1,
+        ub_resolve_async(Config::config().ub_ctx(), const_cast<char *>(hostname.c_str()), 28, 1,
                          const_cast<void *>(reinterpret_cast<const void *>(this)), a_lookup_done_cb, NULL);
         ub_resolve_async(Config::config().ub_ctx(),
-                         hostname.c_str(),
+                         const_cast<char *>(hostname.c_str()),
                          1, /* A */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
@@ -1523,14 +1562,14 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         m_current_srv.dnssec = true;
         m_current_srv.error.clear();
         ub_resolve_async(Config::config().ub_ctx(),
-                         domain.c_str(),
+                         const_cast<char *>(domain.c_str()),
                          33, /* SRV */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
                          srv_lookup_done_cb,
                          NULL); /* int * async_id */
         ub_resolve_async(Config::config().ub_ctx(),
-                         domains.c_str(),
+                         const_cast<char *>(domains.c_str()),
                          33, /* SRV */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),
@@ -1569,7 +1608,7 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
         });
     } else {
         ub_resolve_async(Config::config().ub_ctx(),
-                         domain.c_str(),
+                         const_cast<char *>(domain.c_str()),
                          52, /* TLSA */
                          1,  /* IN */
                          const_cast<void *>(reinterpret_cast<const void *>(this)),

@@ -184,5 +184,5 @@ namespace {
         }
     };
 
-    bool s2s_declared = Feature::declare<SaslExternal>(S2S);
+    DECLARE_FEATURE(SaslExternal, S2S);
 }

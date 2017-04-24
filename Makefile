@@ -3,45 +3,33 @@
 all: pre-build metre keys
 	@echo Done.
 
-OBJS:=$(patsubst src/%.cc,build/src/%.o,$(wildcard src/*.cc))
-OBJS+=$(patsubst src/filters/%.cc,build/src/filters/%.o,$(wildcard src/filters/*.cc))
-OBJS+=$(patsubst gen/%.cc,build/gen/%.o,$(wildcard gen/*.cc))
-TESTOBJS:=$(patsubst tests/%.cc,build/tests/%.o,$(wildcard tests/*.cc))
-ETOBJS:=build/src/jid.o build/src/stanza.o build/src/log.o
-
-LIBDIRS=/usr/local/lib
-LIBS=event_core unbound ssl event_openssl crypto event_extra icudata icuuc
-INCDIRS=include/ ./deps/rapidxml/ ./deps/sigslot/ /usr/local/include
-
-LINKLIBS=$(LIBS:%=-l%)
-LINKLIBDIRS=$(LIBDIRS:%=-L%)
-FINCDIRS=$(INCDIRS:%=-I%)
-
-pre-build:
+pre-build: deps/unbound-1.6.1/configure
 	git submodule update --init
 	make -C deps/spiffing pre-build
 	make -C deps/spiffing gen-ber/.marker
+	cd deps/openssl && ./config --prefix=/usr/local --openssldir=/etc/ssl no-shared
+	make -C deps/openssl
+	cd deps/unbound-1.6.1 && ./configure CPPFLAGS=-I`pwd`/../../build/deps/libevent/include/ LDFLAGS=-L`pwd`/../openssl --disable-flto --enable-pie --disable-shared --with-ssl=`pwd`/../openssl --with-libevent=`pwd`/../libevent --with-libunbound-only
+	mkdir -p build
+	cd build && cmake ..
+	cd build && make -j12 event_core_static
+	make -C deps/unbound-1.6.1
 
-metre-test: $(TESTOBJS) $(ETOBJS)
-	@echo [LINK] $+ '=>' $@
-	@g++ --std=c++11 -o $@ $+ $(LINKLIBDIRS) $(LINKLIBS)
+deps/unbound-1.6.1.tar.gz:
+	cd deps && wget http://unbound.nlnetlabs.nl/downloads/unbound-1.6.1.tar.gz
 
-metre: $(OBJS)
-	@echo [LINK] $< '=>' $@
-	g++ --std=c++11 -o $@ $+ $(LINKLIBDIRS) $(LINKLIBS)
-
-build/%.o: %.cc
-	@echo [C++] $< '=>' $@
-	@mkdir -p $(dir $@)
-	@g++ -g --std=c++11 $(FINCDIRS) -DVALGRIND -o $@ -c $< -MT $@ -MMD -MF $(patsubst %.o,%.d,$@)
-
-clean:
-	@echo [CLEAN] build/ metre metre-test
-	@rm -rf build metre metre-test
+deps/unbound-1.6.1/configure: deps/unbound-1.6.1.tar.gz
+	cd deps && tar zxvf unbound-1.6.1.tar.gz
 
 keys:
 	@echo [DNSSEC] . '=>' $@
 	@dig . DNSKEY >$@
 
--include $(wildcard build/src/*.d)
--include $(wildcard build/tests/*.d)
+metre:
+	mkdir -p build
+	cd build && cmake ..
+	make -C build -j12
+
+package: all
+	make -C build package
+

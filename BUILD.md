@@ -9,15 +9,13 @@ Approximately one minute.
 Ingredients
 ----
 
-* libunbound 2.0
-* libevent 2.0
-* OpenSSL 1.0.2
 * git
 * CMake 2.8 (or so)
+* libicu
 
 Source control is within Git (github is the public one). The software is built using CMake
-for production builds - there's a Makefile as well which you should ignore, though it will
-configure all the dependencies for you.
+for production builds - there's a Makefile as well which will
+configure and build all the dependencies for you.
 
 libunbound provides async DNS, including DNSSEC, and libevent provides buffered async
 I/O, which should work well both on Linux and Windows.
@@ -28,8 +26,16 @@ to OpenSSL having a FIPS certificate.
 An Ubuntu/Debian APT line reads like:
 
 ```sh
-apt-get install git build-essential g++ cmake libicu-dev libssl-dev libevent-dev libunbound-dev
+apt-get install git build-essential g++ cmake libicu-dev libexpat-dev
 ```
+
+A CentOS yum line might instead read:
+
+```sh
+yum install git build-essential gcc gcc-c++ libicu-devel autoconf libtool valgrind make wget tar rpm-build redhat-lsb-core expat-devel bind-utils
+```
+
+... though for CentOS you'll also need devtoolset-2 and a manually compiled CMake.
 
 Method
 ----
@@ -52,6 +58,8 @@ the same ones as everyone else might mean that weaker ones, at least, could be c
 
 Metre may, in the future, generate the shorter keys on boot to improve their security.
 
+A simple `make` will do the following for you - but if you're developing, you'll just need the final stage.
+
 Now initialize and clone the submodules, and setup dependencies:
 
 ```sh
@@ -63,7 +71,7 @@ source directory, but you can do anything you like, really. The instructions wil
 you do **EXACTLY AS I SAY** however:
 
 ```sh
-mkdir build
+mkdir -p build
 cd build
 ```
 

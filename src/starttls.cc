@@ -135,8 +135,9 @@ namespace {
         }
     };
 
-    bool s2s_declared = Feature::declare<StartTls>(S2S);
-    bool c2s_declared = Feature::declare<StartTls>(C2S);
+    DECLARE_FEATURE(StartTls, S2S);
+    DECLARE_FEATURE(StartTls, C2S);
+    DECLARE_FEATURE(StartTls, COMP);
 }
 
 namespace Metre {
@@ -285,7 +286,9 @@ namespace Metre {
         X509_verify_cert(st);
         STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
         for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
-            auto crldp = sk_X509_value(verified, certnum)->crldp;
+            auto cert = sk_X509_value(verified, certnum);
+            std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
+            auto crldp = crldp_ptr.get();
             if (crldp) {
                 for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
                     DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
