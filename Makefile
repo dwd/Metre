@@ -16,7 +16,7 @@ pre-build: deps/unbound-1.6.1/configure
 	make -C deps/unbound-1.6.1
 
 deps/unbound-1.6.1.tar.gz:
-	cd deps && wget http://unbound.nlnetlabs.nl/downloads/unbound-1.6.1.tar.gz
+	cd deps && wget https://unbound.nlnetlabs.nl/downloads/unbound-1.6.1.tar.gz
 
 deps/unbound-1.6.1/configure: deps/unbound-1.6.1.tar.gz
 	cd deps && tar zxvf unbound-1.6.1.tar.gz
