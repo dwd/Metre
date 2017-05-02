@@ -53,7 +53,7 @@ set(FILTER_SOURCES
         src/filters/spiffing.cc
         src/filters/disco-cache.cc
         src/filters/domain-translation.cc)
-if (${ICU2_INCLUDE_DIR})
+if (ICU2_INCLUDE_DIR)
     set(FILTER_SOURCES ${FILTER_SOURCES} src/filters/unicode.cc)
 endif ()
 
