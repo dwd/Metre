@@ -111,15 +111,26 @@ namespace {
             std::string name = node->name();
             if ((name == "starttls" && m_stream.direction() == INBOUND) ||
                 (name == "proceed" && m_stream.direction() == OUTBOUND)) {
-                std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
-                        m_stream.remote_domain());
-                route->onNamesCollated.connect(this, [this](Route &r) {
-                    METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
-                    m_stream.in_context([this]() { start_tls(m_stream, true); });
-                }, true);
-                m_stream.freeze();
-                route->collateNames();
-                return true;
+                if (!m_stream.remote_domain().empty()) {
+                    std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
+                            m_stream.remote_domain());
+                    route->onNamesCollated.connect(this, [this](Route &r) {
+                        METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
+                        m_stream.in_context([this]() { start_tls(m_stream, true); });
+                    }, true);
+                    m_stream.freeze();
+                    route->collateNames();
+                    return true;
+                } else if (m_stream.type() == COMP) {
+                    start_tls(m_stream, true);
+                    return true;
+                } else {
+                    xml_document<> doc;
+                    auto failure = doc.allocate_node(node_element, "failure");
+                    failure->append_attribute(doc.allocate_attribute("xmlns", tls_ns.c_str()));
+                    m_stream.send(doc);
+                    return false;
+                }
             } else {
                 throw std::runtime_error("Unimplemented");
             }
