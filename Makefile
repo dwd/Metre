@@ -33,3 +33,7 @@ metre:
 package: all
 	make -C build package
 
+dhparams: gen/dh1024.cc gen/dh2048.cc gen/dh4096.cc
+
+gen/dh%.cc:
+	./deps/openssl/apps/openssl dhparam -C -noout $* >$@
