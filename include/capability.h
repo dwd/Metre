@@ -46,7 +46,7 @@ namespace Metre {
             explicit Description(std::string const &name) : BaseDescription(name) {}
 
             Capability *instantiate(Jid const &endpoint) override {
-                return new T(this, endpoint);
+                return new T(*this, endpoint);
             }
         };
 
