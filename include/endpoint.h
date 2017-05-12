@@ -29,6 +29,8 @@ namespace Metre {
 
         void process(Stanza const &stanza);
 
+        void send(std::unique_ptr<Stanza> &&stanza);
+
         // Config API:
         void add_capability(std::string const &name);
 

@@ -89,8 +89,16 @@ namespace Metre {
             return *m_to;
         }
 
+        void to(Jid const &jid) {
+            m_to.emplace(jid);
+        }
+
         Jid const &from() const {
             return *m_from;
+        }
+
+        void from(Jid const &jid) {
+            m_from.emplace(jid);
         }
 
         std::optional<std::string> const &type_str() const {
