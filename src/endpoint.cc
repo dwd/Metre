@@ -63,6 +63,10 @@ void Endpoint::add_capability(std::string const &name) {
     m_capabilities.emplace_back(Capability::create(name, *this));
 }
 
+void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
+    RouteTable::routeTable(m_jid.domain()).route(stanza->to())->transmit(std::move(stanza));
+}
+
 #include "../src/endpoints/simple.cc"
 
 Endpoint &Endpoint::endpoint(Jid const &jid) {

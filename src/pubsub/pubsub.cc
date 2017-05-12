@@ -5,9 +5,10 @@
 #include <stanza.h>
 #include <map>
 #include <spiffing/label.h>
+#include <capability.h>
 
 namespace Metre {
-    class Pubsub {
+    class Pubsub : public Capability {
         enum class AFFILIATION {
             OUTCAST,
             NONE,
