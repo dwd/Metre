@@ -13,11 +13,11 @@ std::map<std::string, Metre::Capability::BaseDescription *> &Metre::Capability::
     return s_capabilities;
 }
 
-Metre::Capability::Capability(BaseDescription const &d, Jid const &jid) : m_description(d), m_endpoint(jid) {}
+Metre::Capability::Capability(BaseDescription const &d, Endpoint &jid) : m_description(d), m_endpoint(jid) {}
 
 Metre::Capability::~Capability() {}
 
-std::unique_ptr<Metre::Capability> Metre::Capability::create(std::string const &name, Jid const &jid) {
+std::unique_ptr<Metre::Capability> Metre::Capability::create(std::string const &name, Endpoint &jid) {
     auto i = all_capabilities().find(name);
     if (i == all_capabilities().end()) {
         throw std::runtime_error("No such capability " + name);

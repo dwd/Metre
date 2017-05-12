@@ -17,13 +17,13 @@ namespace {
             }
         };
 
-        Ping(BaseDescription const &descr, Jid const &jid) : Capability(descr, jid) {}
-
-        bool handle(Iq const &iq) override {
-            std::unique_ptr<Stanza> pong{new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id())};
-            std::shared_ptr<Route> route = RouteTable::routeTable(iq.to()).route(iq.from());
-            route->transmit(std::move(pong));
-            return true;
+        Ping(BaseDescription const &descr, Endpoint &jid) : Capability(descr, jid) {
+            jid.add_handler("urn:xmpp:ping", "ping", [](Iq const &iq) {
+                std::unique_ptr<Stanza> pong{new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id())};
+                std::shared_ptr<Route> route = RouteTable::routeTable(iq.to()).route(iq.from());
+                route->transmit(std::move(pong));
+                return true;
+            });
         }
     };
 
