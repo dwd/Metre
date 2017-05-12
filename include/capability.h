@@ -10,8 +10,10 @@
 #include <map>
 #include "jid.h"
 #include "stanza.h"
+#include "endpoint.h"
 
 namespace Metre {
+    class Endpoint;
     class Capability {
     public:
         class BaseDescription {
@@ -26,34 +28,32 @@ namespace Metre {
                 return m_disco;
             }
 
-            virtual Capability *instantiate(Jid const &endpoint) = 0;
+            virtual Capability *instantiate(Endpoint &endpoint) = 0;
 
             virtual ~BaseDescription();
         };
 
     protected:
         BaseDescription const &m_description;
-        Jid m_endpoint;
+        Endpoint const &m_endpoint;
 
         static std::map<std::string, BaseDescription *> &all_capabilities();
 
     public:
-        Capability(BaseDescription const &, Jid const &);
+        Capability(BaseDescription const &, Endpoint &);
 
         template<typename T>
         class Description : public BaseDescription {
         public:
             explicit Description(std::string const &name) : BaseDescription(name) {}
 
-            Capability *instantiate(Jid const &endpoint) override {
+            Capability *instantiate(Endpoint &endpoint) override {
                 return new T(*this, endpoint);
             }
         };
 
 
-        virtual bool handle(Iq const &) = 0;
-
-        static std::unique_ptr<Capability> create(std::string const &name, Jid const &jid);
+        static std::unique_ptr<Capability> create(std::string const &name, Endpoint &jid);
 
         template<typename T>
         static bool declare(std::string const &name) {

@@ -81,7 +81,7 @@ namespace Metre {
 
         virtual ~Stanza() {}
 
-        const char *name() {
+        const char *name() const {
             return m_name;
         }
 

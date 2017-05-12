@@ -173,7 +173,7 @@ std::unique_ptr<Stanza> Stanza::create_forward() {
     return stanza;
 }
 
-Message::Message(rapidxml::xml_node<> const *node) : Stanza(name, node) {
+Message::Message(rapidxml::xml_node<> const *node) : Stanza(Message::name, node) {
     m_type = set_type();
 }
 
@@ -200,7 +200,7 @@ Message::Type Message::set_type() const {
     throw std::runtime_error("Unknown Message type");
 }
 
-Iq::Iq(Jid const &from, Jid const &to, Type t, std::string const &id) : Stanza("iq", from, to,
+Iq::Iq(Jid const &from, Jid const &to, Type t, std::string const &id) : Stanza(Iq::name, from, to,
                                                                                Iq::type_toString(t), id), m_type(t) {}
 
 Iq::Iq(rapidxml::xml_node<> const *node) : Stanza(name, node) {
