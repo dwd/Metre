@@ -13,6 +13,9 @@ namespace Metre {
     class Capability;
 
     class Endpoint {
+    protected:
+        Jid m_jid;
+
     public:
         static Endpoint &endpoint(Jid const &);
 
@@ -34,7 +37,6 @@ namespace Metre {
         virtual ~Endpoint();
 
     private:
-        Jid m_jid;
         std::list<std::unique_ptr<Capability>> m_capabilities;
         std::map<std::pair<std::string, std::string>, std::function<void(Iq const &)>> m_handlers;
     };

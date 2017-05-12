@@ -12,5 +12,12 @@ namespace {
         Simple(Jid const &jid) : Endpoint(jid) {
             add_capability("ping");
         };
+
+        void process(Iq const &iq) override {
+            if (iq.to().full() != m_jid.domain()) {
+                throw stanza_service_unavailable();
+            }
+            Endpoint::process(iq);
+        }
     };
 }
