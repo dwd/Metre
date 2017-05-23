@@ -66,7 +66,7 @@ namespace Metre {
         std::optional<Jid> m_from;
         std::optional<Jid> m_to;
         std::optional<std::string> m_type_str;
-        std::string m_id;
+        std::optional<std::string> m_id;
         std::string m_lang;
         std::string m_payload_str;
         const char *m_payload = nullptr;
@@ -77,7 +77,8 @@ namespace Metre {
 
         explicit Stanza(const char *name);
 
-        Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type, std::string const &id);
+        Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type,
+               std::optional<std::string> const &id);
 
         virtual ~Stanza() = default;
 
@@ -105,8 +106,12 @@ namespace Metre {
             return m_type_str;
         }
 
-        std::string const &id() const {
+        std::optional<std::string> const &id() const {
             return m_id;
+        }
+
+        void id(std::string const &s) {
+            m_id = s;
         }
 
         std::string const &lang() const {
@@ -171,7 +176,7 @@ namespace Metre {
     public:
         explicit Iq(rapidxml::xml_node<> const *node);
 
-        Iq(Jid const &from, Jid const &to, Type t, std::string const &id);
+        Iq(Jid const &from, Jid const &to, Type t, std::optional<std::string> const &id);
 
         Type type() const {
             return m_type;

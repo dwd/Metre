@@ -11,6 +11,13 @@ using namespace Metre;
 Endpoint::Endpoint(Jid const &jid) : m_jid(jid) {}
 
 void Endpoint::process(Stanza const &stanza) {
+    if (stanza.id()) {
+        auto it = m_stanza_callbacks.find(*stanza.id());
+        if (it != m_stanza_callbacks.end()) {
+            (*it).second(stanza);
+            return;
+        }
+    }
     if (stanza.name() == Message::name) {
         process(dynamic_cast<Message const &>(stanza));
     } else if (stanza.name() == Presence::name) {
@@ -64,6 +71,14 @@ void Endpoint::add_capability(std::string const &name) {
 }
 
 void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
+    RouteTable::routeTable(m_jid.domain()).route(stanza->to())->transmit(std::move(stanza));
+}
+
+void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &fn) {
+    if (!stanza->id()) {
+        stanza->id(Config::config().random_identifier());
+    }
+    m_stanza_callbacks[stanza->id().value()] = fn;
     RouteTable::routeTable(m_jid.domain()).route(stanza->to())->transmit(std::move(stanza));
 }
 

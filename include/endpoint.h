@@ -31,6 +31,8 @@ namespace Metre {
 
         void send(std::unique_ptr<Stanza> &&stanza);
 
+        void send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &);
+
         // Config API:
         void add_capability(std::string const &name);
 
@@ -41,6 +43,7 @@ namespace Metre {
     private:
         std::list<std::unique_ptr<Capability>> m_capabilities;
         std::map<std::pair<std::string, std::string>, std::function<void(Iq const &)>> m_handlers;
+        std::map<std::string, std::function<void(Stanza const &)>> m_stanza_callbacks;
     };
 }
 
