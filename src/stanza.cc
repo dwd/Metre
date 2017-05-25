@@ -64,6 +64,14 @@ void Stanza::freeze() {
     m_node = nullptr;
 }
 
+void Stanza::payload(rapidxml::xml_node<> *node) {
+    m_payload_str.clear();
+    rapidxml::print(std::back_inserter(m_payload_str), *node, rapidxml::print_no_indenting);
+    m_payload = m_payload_str.data();
+    m_payload_l = m_payload_str.length();
+    m_node = nullptr;
+}
+
 void Stanza::render(rapidxml::xml_document<> &d) {
     auto hdr = d.allocate_node(rapidxml::node_element, m_name);
     if (m_to) {
@@ -90,7 +98,7 @@ void Stanza::render(rapidxml::xml_document<> &d) {
     d.append_node(hdr);
 }
 
-std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) {
+std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) const {
     std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
     stanza->m_from = m_to;
     stanza->m_to = m_from;
@@ -144,7 +152,7 @@ void Stanza::render_error(Stanza::Error e) {
     }
 }
 
-std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) {
+std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) const {
     switch (e) {
         case remote_server_timeout:
             return create_bounce(stanza_remote_server_timeout());
@@ -160,7 +168,7 @@ std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) {
     }
 }
 
-std::unique_ptr<Stanza> Stanza::create_forward() {
+std::unique_ptr<Stanza> Stanza::create_forward() const {
     std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
     stanza->m_from = m_from;
     stanza->m_to = m_to;

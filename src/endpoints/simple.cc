@@ -11,6 +11,7 @@ namespace {
     public:
         Simple(Jid const &jid) : Endpoint(jid) {
             add_capability("ping");
+            add_capability("disco");
         };
 
         void process(Iq const &iq) override {
