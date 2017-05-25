@@ -41,6 +41,12 @@ namespace Metre {
         Datastore(Datastore &&) = delete;
 
         std::optional<std::string> m_empty;
+
+        // Fake, temporary, implementation:
+        typedef std::map<std::string, std::string> itemmap;
+        typedef std::map<std::string, itemmap> nodemap;
+        typedef std::map<std::string, nodemap> scopemap;
+        scopemap m_scopes;
     };
 }
 

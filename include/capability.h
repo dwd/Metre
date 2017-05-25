@@ -35,12 +35,16 @@ namespace Metre {
 
     protected:
         BaseDescription const &m_description;
-        Endpoint const &m_endpoint;
+        Endpoint &m_endpoint;
 
         static std::map<std::string, BaseDescription *> &all_capabilities();
 
     public:
         Capability(BaseDescription const &, Endpoint &);
+
+        BaseDescription const &description() const {
+            return m_description;
+        }
 
         template<typename T>
         class Description : public BaseDescription {
@@ -65,5 +69,5 @@ namespace Metre {
     };
 }
 
-#define DECLARE_CAPABILITY(cls, name) bool declare_##cls __attribute__((unused)) { Metre::Capability::declare<cls>(name) }
+#define DECLARE_CAPABILITY(cls, name) bool declare_cap_##cls __attribute__((unused)) { Metre::Capability::declare<cls>(name) }
 #endif //METRE_CAPABILITY_H

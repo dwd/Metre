@@ -15,11 +15,14 @@ namespace Metre {
     class Endpoint {
     protected:
         Jid m_jid;
+        std::optional<std::string> m_node;
 
     public:
         static Endpoint &endpoint(Jid const &);
 
         Endpoint(Jid const &);
+
+        Endpoint(Jid const &, std::string const &node);
 
         virtual void process(Presence const &presence);
 
@@ -35,6 +38,10 @@ namespace Metre {
 
         // Config API:
         void add_capability(std::string const &name);
+
+        std::list<std::unique_ptr<Capability>> const &capabilities() const {
+            return m_capabilities;
+        }
 
         void add_handler(std::string const &xmlns, std::string const &local, std::function<void(Iq const &)> const &fn);
 

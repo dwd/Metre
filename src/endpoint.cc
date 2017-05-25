@@ -8,7 +8,9 @@
 
 using namespace Metre;
 
-Endpoint::Endpoint(Jid const &jid) : m_jid(jid) {}
+Endpoint::Endpoint(Jid const &jid) : m_jid(jid), m_node() {}
+
+Endpoint::Endpoint(Jid const &jid, std::string const &node) : m_jid(jid), m_node(node) {}
 
 void Endpoint::process(Stanza const &stanza) {
     if (stanza.id()) {

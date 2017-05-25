@@ -68,7 +68,7 @@ namespace Metre {
         std::optional<std::string> m_type_str;
         std::optional<std::string> m_id;
         std::string m_lang;
-        std::string m_payload_str;
+        mutable std::string m_payload_str;
         const char *m_payload = nullptr;
         size_t m_payload_l = 0;
         rapidxml::xml_node<> const *m_node = nullptr;
@@ -128,13 +128,15 @@ namespace Metre {
             m_payload_l = m_payload_str.size();
         }
 
+        void payload(rapidxml::xml_node<> *node);
+
         void render(rapidxml::xml_document<> &d);
 
-        std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e);
+        std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e) const;
 
-        std::unique_ptr<Stanza> create_bounce(Stanza::Error e);
+        std::unique_ptr<Stanza> create_bounce(Stanza::Error e) const;
 
-        std::unique_ptr<Stanza> create_forward();
+        std::unique_ptr<Stanza> create_forward() const;
 
         void freeze(); // Make sure nothing is in volatile storage anymore.
 
