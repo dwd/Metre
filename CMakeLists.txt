@@ -117,6 +117,10 @@ include_directories(./deps/unbound-1.6.1/libunbound)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
 
 install(TARGETS metre DESTINATION bin)
+
+add_executable(metre-test src/log.cc tests/main.cc src/stanza.cc tests/stanza.cc src/jid.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc tests/endpoint.cc)
+target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS})
+target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
 # These install into stupid places:
 #
 # install(FILES metre.conf.xml DESTINATION ./etc/metre)

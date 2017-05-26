@@ -27,8 +27,8 @@ namespace {
         }
 
         bool info(Iq const &iq) {
-            auto query = iq.node()->first_node();
-            auto node = query->first_attribute("node");
+            auto &query = iq.query();
+            auto node = query.first_attribute("node");
             if (node) {
                 // We don't know what to do here yet!
                 // TODO : dispatch to node endpoint.

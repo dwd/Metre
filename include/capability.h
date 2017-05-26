@@ -65,6 +65,9 @@ namespace Metre {
             return true;
         }
 
+        virtual void nodes(std::map<std::string, std::string> &) const {
+        }
+
         virtual ~Capability();
     };
 }

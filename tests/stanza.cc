@@ -14,7 +14,7 @@ public:
         rapidxml::xml_document<> doc;
         doc.parse<rapidxml::parse_full>(const_cast<char *>(msg_xml.c_str()));
         Message msg(doc.first_node());
-        assert::equal(msg.id(), "1234", "message/id");
+        assert::equal(msg.id(), std::string("1234"), "message/id");
         assert::equal(msg.type(), Message::Type::CHAT, "message/type");
         assert::equal(msg.from().full(), "foo@example.org/lmas", "message/from");
         assert::equal(msg.to().full(), "bar@example.net/laks", "message/to");
@@ -48,7 +48,7 @@ public:
     IqGenTest() : Test("Iq Gen") {}
 
     bool run() {
-        Iq iq(std::string("foo@example.org/lmas"), std::string("bar@example.net/laks"), Iq::GET, "1234");
+        Iq iq(std::string("foo@example.org/lmas"), std::string("bar@example.net/laks"), Iq::GET, std::string("1234"));
         iq.payload("<ping xmlns='urn:xmpp:ping'/>");
         rapidxml::xml_document<> doc;
         iq.render(doc);

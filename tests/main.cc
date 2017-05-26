@@ -1,6 +1,7 @@
 #include "tests.h"
 #include <iostream>
 #include <memory>
+#include <router.h>
 
 Metre::Test::Test(std::string const & name) : m_name(name) {
 	Metre::Test::add(this);
