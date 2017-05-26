@@ -36,7 +36,21 @@ namespace Metre {
         template<typename T1, typename T2>
         void equal(T1 const &t1, T2 const &t2, const char *c) {
             if (t1 != t2) throw std::runtime_error(c);
-            if (t2 != t1) throw std::runtime_error(c);
+        }
+
+        template<typename T1, typename T2>
+        void not_equal(T1 const &t1, T2 const &t2, const char *c) {
+            if (t1 == t2) throw std::runtime_error(c);
+        }
+
+        template<typename T1>
+        void not_null(T1 const &t1, const char *c) {
+            if (t1 == nullptr) throw std::runtime_error(c);
+        }
+
+        template<typename T1>
+        void null(T1 const &t1, const char *c) {
+            if (t1 != nullptr) throw std::runtime_error(c);
         }
     }
 

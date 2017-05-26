@@ -27,6 +27,7 @@ SOFTWARE.
 #define OPTIONAL__H
 
 #include <stdexcept>
+#include <optional>
 
 namespace std {
     template<typename T>
@@ -114,6 +115,32 @@ namespace std {
             if (m_engaged) dounset();
             doset(t.value());
             return *this;
+        }
+
+        bool operator==(optional<T> const &t) const {
+            if (t.m_engaged) {
+                if (m_engaged) return true;
+                return (t.value() == value());
+            }
+            return !m_engaged;
+        }
+
+        bool operator!=(optional<T> const &t) const {
+            if (t.m_engaged) {
+                if (m_engaged) return false;
+                return (t.value() != value());
+            }
+            return m_engaged;
+        }
+
+        bool operator==(T const &t) const {
+            if (!m_engaged) return false;
+            return value() == t;
+        }
+
+        bool operator!=(T const &t) const {
+            if (!m_engaged) return true;
+            return value() != t;
         }
     };
 }

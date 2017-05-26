@@ -250,6 +250,10 @@ Iq::Type Iq::set_type() const {
     throw std::runtime_error("Unknown IQ type");
 }
 
+rapidxml::xml_node<> const &Iq::query() const {
+    return *m_node->first_node();
+}
+
 const char *Iq::name = "iq";
 const char *Message::name = "message";
 const char *Presence::name = "presence";

@@ -5,6 +5,8 @@
 #ifndef METRE_ENDPOINT_H
 #define METRE_ENDPOINT_H
 
+#include <random>
+#include <sigslot/sigslot.h>
 #include "jid.h"
 #include "stanza.h"
 #include "capability.h"
@@ -15,7 +17,10 @@ namespace Metre {
     class Endpoint {
     protected:
         Jid m_jid;
-        std::optional<std::string> m_node;
+        static const size_t id_len = 16;
+        static const char characters[];
+        std::default_random_engine m_random;
+        std::uniform_int_distribution<> m_dist;
 
     public:
         static Endpoint &endpoint(Jid const &);
@@ -32,6 +37,8 @@ namespace Metre {
 
         void process(Stanza const &stanza);
 
+        std::string random_identifier();
+
         void send(std::unique_ptr<Stanza> &&stanza);
 
         void send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &);
@@ -46,6 +53,10 @@ namespace Metre {
         void add_handler(std::string const &xmlns, std::string const &local, std::function<void(Iq const &)> const &fn);
 
         virtual ~Endpoint();
+
+#ifdef METRE_TESTING
+        sigslot::signal<sigslot::thread::st, Stanza &, Jid const &, Jid const &> sent_stanza;
+#endif
 
     private:
         std::list<std::unique_ptr<Capability>> m_capabilities;

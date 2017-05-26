@@ -5,12 +5,19 @@
 #include <endpoint.h>
 #include <router.h>
 #include <config.h>
+#include <algorithm>
 
 using namespace Metre;
 
-Endpoint::Endpoint(Jid const &jid) : m_jid(jid), m_node() {}
+const char Endpoint::characters[] = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
 
-Endpoint::Endpoint(Jid const &jid, std::string const &node) : m_jid(jid), m_node(node) {}
+Endpoint::Endpoint(Jid const &jid) : m_jid(jid), m_random(std::random_device{}()), m_dist(0, sizeof(characters) - 2) {}
+
+std::string Endpoint::random_identifier() {
+    std::string id(id_len, char{});
+    std::generate_n(id.begin(), id_len, [this]() { return characters[m_dist(m_random)]; });
+    return std::move(id);
+}
 
 void Endpoint::process(Stanza const &stanza) {
     if (stanza.id()) {
@@ -73,28 +80,29 @@ void Endpoint::add_capability(std::string const &name) {
 }
 
 void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
+#ifdef METRE_TESTING
+    sent_stanza(*stanza, m_jid, stanza->to());
+#else
     RouteTable::routeTable(m_jid.domain()).route(stanza->to())->transmit(std::move(stanza));
+#endif
 }
 
 void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &fn) {
     if (!stanza->id()) {
-        stanza->id(Config::config().random_identifier());
+        stanza->id(random_identifier());
     }
     m_stanza_callbacks[stanza->id().value()] = fn;
-    RouteTable::routeTable(m_jid.domain()).route(stanza->to())->transmit(std::move(stanza));
+    send(std::move(stanza));
 }
 
 #include "../src/endpoints/simple.cc"
 
 Endpoint &Endpoint::endpoint(Jid const &jid) {
     static std::map<std::string, std::unique_ptr<Endpoint>> s_endpoints;
-    if (Config::config().domain(jid.domain()).transport_type() == INT) {
-        auto i = s_endpoints.find(jid.domain());
-        if (i == s_endpoints.end()) {
-            s_endpoints[jid.domain()].reset(new Simple(jid.domain()));
-            return *s_endpoints[jid.domain()];
-        }
-        return *((*i).second);
+    auto i = s_endpoints.find(jid.domain());
+    if (i == s_endpoints.end()) {
+        s_endpoints[jid.domain()].reset(new Simple(jid.domain()));
+        return *s_endpoints[jid.domain()];
     }
-    throw std::runtime_error("Endpoint requested for external domain.");
+    return *((*i).second);
 }

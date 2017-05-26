@@ -184,6 +184,8 @@ namespace Metre {
             return m_type;
         }
 
+        rapidxml::xml_node<> const &query() const;
+
     protected:
         static const char *type_toString(Type t);
 
