@@ -3,12 +3,12 @@
 //
 
 #include <capability.h>
+#include "node.h"
 
 using namespace Metre;
 
 namespace {
     class Pubsub : public Capability {
-        std::map<std::string, bool> m_nodes;
     public:
         class Description : public Capability::Description<Pubsub> {
         public:
@@ -29,7 +29,13 @@ namespace {
                     }
                     std::string node_name{node_attr->value(), node_attr->value_size()};
                     // Auto-create the node if it doesn't exist.
-                    m_nodes[node_name] = true;
+                    auto &node = m_endpoint.node(node_name, true);
+                    auto facet = node.facet("pubsub-items");
+                    if (!facet) {
+                        facet = node.add_facet(
+                                std::unique_ptr<Node::Facet>(new Node::Facet(*this, "pubsub-items", true)));
+                    }
+                    //// facet->add_item(std::unique_ptr<Node::Item>(new Node::Item()))
                     // TODO : Extract payload and metadata and give in gracelessly.
                 } else {
                     // Not known.
@@ -40,4 +46,6 @@ namespace {
             });
         }
     };
+
+    DECLARE_CAPABILITY(Pubsub, "pubsub");
 }

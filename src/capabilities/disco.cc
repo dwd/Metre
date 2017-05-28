@@ -19,11 +19,37 @@ namespace {
 
         Disco(BaseDescription const &descr, Endpoint &endpoint) : Capability(descr, endpoint) {
             endpoint.add_handler("http://jabber.org/protocol/disco#items", "query", [this](Iq const &iq) {
-
+                return items(iq);
             });
             endpoint.add_handler("http://jabber.org/protocol/disco#info", "query", [this](Iq const &iq) {
                 return info(iq);
             });
+        }
+
+        bool items(Iq const &iq) {
+            auto &query = iq.query();
+            auto node = query.first_attribute("node");
+            if (node) {
+                // We don't know what to do here yet!
+                // TODO : dispatch to node endpoint.
+                auto bounce = iq.create_bounce(Stanza::Error::service_unavailable);
+                m_endpoint.send(std::move(bounce));
+            } else {
+                rapidxml::xml_document<> doc;
+                auto response = doc.allocate_node(rapidxml::node_element, "query");
+                response->append_attribute(doc.allocate_attribute("xmlns", "http://jabber.org/protocol/disco#items"));
+                for (auto const &node : m_endpoint.nodes()) {
+                    auto item = doc.allocate_node(rapidxml::node_element, "item");
+                    item->append_attribute(doc.allocate_attribute("jid", m_endpoint.jid().full().c_str()));
+                    item->append_attribute(doc.allocate_attribute("node", node.second->name().c_str()));
+                    item->append_attribute(doc.allocate_attribute("name", node.second->title().c_str()));
+                    response->append_node(item);
+                }
+                std::unique_ptr<Iq> result{new Iq(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id())};
+                result->payload(response);
+                m_endpoint.send(std::move(result));
+            }
+            return true;
         }
 
         bool info(Iq const &iq) {

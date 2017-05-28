@@ -53,7 +53,7 @@ public:
             auto var = feature->first_attribute("var");
             m_features.emplace(var->value(), var->value_size());
         }
-        assert::equal(m_features.size(), 3u, "3 features advertised");
+        assert::equal(m_features.size(), 4u, "4 features advertised");
     }
 
     bool run() {

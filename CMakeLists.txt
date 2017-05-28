@@ -98,7 +98,7 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc src/bidi.cc
-        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc)
+        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
 
 add_executable(metre ${SOURCE_FILES})
 add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
@@ -118,7 +118,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
 
 install(TARGETS metre DESTINATION bin)
 
-add_executable(metre-test src/log.cc tests/main.cc src/stanza.cc tests/stanza.cc src/jid.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc tests/endpoint.cc)
+add_executable(metre-test src/log.cc tests/main.cc src/stanza.cc tests/stanza.cc src/jid.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc src/capabilities/pubsub.cc src/capabilities/node.cc tests/endpoint.cc)
 target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS})
 target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
 # These install into stupid places:

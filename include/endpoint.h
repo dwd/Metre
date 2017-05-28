@@ -10,24 +10,20 @@
 #include "jid.h"
 #include "stanza.h"
 #include "capability.h"
+#include "node.h"
 
 namespace Metre {
     class Capability;
 
     class Endpoint {
-    protected:
-        Jid m_jid;
-        static const size_t id_len = 16;
-        static const char characters[];
-        std::default_random_engine m_random;
-        std::uniform_int_distribution<> m_dist;
-
     public:
         static Endpoint &endpoint(Jid const &);
 
         Endpoint(Jid const &);
 
-        Endpoint(Jid const &, std::string const &node);
+        Jid const &jid() const {
+            return m_jid;
+        }
 
         virtual void process(Presence const &presence);
 
@@ -54,9 +50,23 @@ namespace Metre {
 
         virtual ~Endpoint();
 
+        Node &node(std::string const &name, bool create = false);
+
+        std::map<std::string, std::unique_ptr<Node>> const &nodes() const {
+            return m_nodes;
+        };
+
 #ifdef METRE_TESTING
         sigslot::signal<sigslot::thread::st, Stanza &, Jid const &, Jid const &> sent_stanza;
 #endif
+    protected:
+        Jid m_jid;
+        static const size_t id_len = 16;
+        static const char characters[];
+        std::default_random_engine m_random;
+        std::uniform_int_distribution<> m_dist;
+        std::map<std::string, std::unique_ptr<Node>> m_nodes;
+
 
     private:
         std::list<std::unique_ptr<Capability>> m_capabilities;

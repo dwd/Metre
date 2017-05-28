@@ -95,6 +95,19 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza 
     send(std::move(stanza));
 }
 
+Node &Endpoint::node(std::string const &name, bool create) {
+    auto it = m_nodes.find(name);
+    if (it == m_nodes.end()) {
+        if (create) {
+            m_nodes.emplace(std::make_pair(name, std::unique_ptr<Node>(new Node(*this, name))));
+            it = m_nodes.find(name);
+        } else {
+            throw std::runtime_error("Node not found");
+        }
+    }
+    return *(it->second.get());
+}
+
 #include "../src/endpoints/simple.cc"
 
 Endpoint &Endpoint::endpoint(Jid const &jid) {
