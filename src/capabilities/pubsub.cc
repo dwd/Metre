@@ -37,6 +37,9 @@ namespace {
                     }
                     //// facet->add_item(std::unique_ptr<Node::Item>(new Node::Item()))
                     // TODO : Extract payload and metadata and give in gracelessly.
+                    std::unique_ptr<Stanza> pong{new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id())};
+                    m_endpoint.send(std::move(pong));
+                    return true;
                 } else {
                     // Not known.
                     auto error = iq.create_bounce(Stanza::Error::feature_not_implemented);
