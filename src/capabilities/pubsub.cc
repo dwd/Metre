@@ -18,8 +18,8 @@ namespace {
         };
 
         Pubsub(BaseDescription const &descr, Endpoint &endpoint) : Capability(descr, endpoint) {
-            endpoint.add_handler("http://jabber.org/protocol/pubsub", "pubsub", [this](Iq const &iq) {
-                auto operation = iq.query().first_node();
+            endpoint.add_handler("http://jabber.org/protocol/pubsub", "pubsub", [this](std::unique_ptr<Iq> &&iq) {
+                auto operation = iq->query().first_node();
                 std::string op_name{operation->name(), operation->name_size()};
                 if (op_name == "publish") {
                     // Do publish.
@@ -29,20 +29,25 @@ namespace {
                     }
                     std::string node_name{node_attr->value(), node_attr->value_size()};
                     // Auto-create the node if it doesn't exist.
-                    auto &node = m_endpoint.node(node_name, true);
-                    auto facet = node.facet("pubsub-items");
-                    if (!facet) {
-                        facet = node.add_facet(
-                                std::unique_ptr<Node::Facet>(new Node::Facet(*this, "pubsub-items", true)));
-                    }
-                    //// facet->add_item(std::unique_ptr<Node::Item>(new Node::Item()))
-                    // TODO : Extract payload and metadata and give in gracelessly.
-                    std::unique_ptr<Stanza> pong{new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id())};
-                    m_endpoint.send(std::move(pong));
+                    m_endpoint.node(node_name,
+                                    [this, niq = iq.release()](Node &node) { // move semantics don't work here. Weird?
+                                        std::unique_ptr<Iq> iq(niq);
+                                        auto facet = node.facet("pubsub-items");
+                                        if (!facet) {
+                                            facet = node.add_facet(
+                                                    std::unique_ptr<Node::Facet>(
+                                                            new Node::Facet(*this, "pubsub-items", true)));
+                                        }
+                                        //// facet->add_item(std::unique_ptr<Node::Item>(new Node::Item()))
+                                        // TODO : Extract payload and metadata and give in gracelessly.
+                                        std::unique_ptr<Stanza> pong{
+                                                new Iq(iq->to(), iq->from(), Iq::RESULT, iq->id())};
+                                        m_endpoint.send(std::move(pong));
+                                    }, true);
                     return true;
                 } else {
                     // Not known.
-                    auto error = iq.create_bounce(Stanza::Error::feature_not_implemented);
+                    auto error = iq->create_bounce(Stanza::Error::feature_not_implemented);
                     m_endpoint.send(std::move(error));
                 }
                 return true;

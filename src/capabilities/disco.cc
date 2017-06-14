@@ -18,21 +18,21 @@ namespace {
         };
 
         Disco(BaseDescription const &descr, Endpoint &endpoint) : Capability(descr, endpoint) {
-            endpoint.add_handler("http://jabber.org/protocol/disco#items", "query", [this](Iq const &iq) {
+            endpoint.add_handler("http://jabber.org/protocol/disco#items", "query", [this](std::unique_ptr<Iq> &&iq) {
                 return items(iq);
             });
-            endpoint.add_handler("http://jabber.org/protocol/disco#info", "query", [this](Iq const &iq) {
+            endpoint.add_handler("http://jabber.org/protocol/disco#info", "query", [this](std::unique_ptr<Iq> &&iq) {
                 return info(iq);
             });
         }
 
-        bool items(Iq const &iq) {
-            auto &query = iq.query();
+        bool items(std::unique_ptr<Iq> const &iq) {
+            auto &query = iq->query();
             auto node = query.first_attribute("node");
             if (node) {
                 // We don't know what to do here yet!
                 // TODO : dispatch to node endpoint.
-                auto bounce = iq.create_bounce(Stanza::Error::service_unavailable);
+                auto bounce = iq->create_bounce(Stanza::Error::service_unavailable);
                 m_endpoint.send(std::move(bounce));
             } else {
                 rapidxml::xml_document<> doc;
@@ -45,20 +45,20 @@ namespace {
                     item->append_attribute(doc.allocate_attribute("name", node.second->title().c_str()));
                     response->append_node(item);
                 }
-                std::unique_ptr<Iq> result{new Iq(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id())};
+                std::unique_ptr<Iq> result{new Iq(iq->to(), iq->from(), Metre::Iq::RESULT, iq->id())};
                 result->payload(response);
                 m_endpoint.send(std::move(result));
             }
             return true;
         }
 
-        bool info(Iq const &iq) {
-            auto &query = iq.query();
+        bool info(std::unique_ptr<Iq> const &iq) {
+            auto &query = iq->query();
             auto node = query.first_attribute("node");
             if (node) {
                 // We don't know what to do here yet!
                 // TODO : dispatch to node endpoint.
-                auto bounce = iq.create_bounce(Stanza::Error::service_unavailable);
+                auto bounce = iq->create_bounce(Stanza::Error::service_unavailable);
                 m_endpoint.send(std::move(bounce));
             } else {
                 rapidxml::xml_document<> doc;
@@ -71,7 +71,7 @@ namespace {
                         response->append_node(feat);
                     }
                 }
-                std::unique_ptr<Iq> result{new Iq(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id())};
+                std::unique_ptr<Iq> result{new Iq(iq->to(), iq->from(), Metre::Iq::RESULT, iq->id())};
                 result->payload(response);
                 m_endpoint.send(std::move(result));
             }

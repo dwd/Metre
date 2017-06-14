@@ -8,12 +8,49 @@
 #include <functional>
 #include <memory>
 
-struct sqlite3;
-struct sqlite3_stmt;
-
 namespace Metre {
-    class SqlDB {
-        std::unique_ptr<sqlite3, std::function<void(sqlite3 *)>> m_db;
+    class Database {
+    protected:
+        Database()
+
+    public:
+        Database &database();
+
+        ~Database();
+
+        class StatementBase {
+            std::string m_statement;
+
+        protected:
+            StatementBase(std::string const &);
+
+        public:
+            virtual ~StatementBase();
+        };
+
+        template<typename ..._Types>
+        class Statement : public StatementBase {
+        public:
+            Statement(std::string const &sql) : StatementBase(sql) {}
+
+            std::unique_ptr<Query> execute(...
+
+            _Types) {
+                // Bind each parameter.
+            }
+        };
+
+        template<>
+        class Statement : public StatementBase {
+        public:
+            Statement(std::string const &sql);
+
+            std::unique_ptr<Query> execute();
+        };
+
+        class Query {
+
+        };
 
     };
 }

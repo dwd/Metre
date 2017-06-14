@@ -15,11 +15,11 @@ namespace {
             add_capability("pubsub");
         };
 
-        void process(Iq const &iq) override {
-            if (iq.to().full() != m_jid.domain()) {
+        void process(std::unique_ptr<Iq> &&iq) override {
+            if (iq->to().full() != m_jid.domain()) {
                 throw stanza_service_unavailable();
             }
-            Endpoint::process(iq);
+            Endpoint::process(std::move(iq));
         }
     };
 }

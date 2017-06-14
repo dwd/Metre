@@ -19,44 +19,47 @@ std::string Endpoint::random_identifier() {
     return std::move(id);
 }
 
-void Endpoint::process(Stanza const &stanza) {
-    if (stanza.id()) {
-        auto it = m_stanza_callbacks.find(*stanza.id());
+void Endpoint::process(std::unique_ptr<Stanza> &&stanza) {
+    if (stanza->id()) {
+        auto it = m_stanza_callbacks.find(*stanza->id());
         if (it != m_stanza_callbacks.end()) {
-            (*it).second(stanza);
+            (*it).second(std::move(stanza));
             return;
         }
     }
-    if (stanza.name() == Message::name) {
-        process(dynamic_cast<Message const &>(stanza));
-    } else if (stanza.name() == Presence::name) {
-        process(dynamic_cast<Presence const &>(stanza));
-    } else if (stanza.name() == Iq::name) {
-        process(dynamic_cast<Iq const &>(stanza));
+    if (stanza->name() == Message::name) {
+        std::unique_ptr<Message> msg(dynamic_cast<Message *>(stanza.release()));
+        process(std::move(msg));
+    } else if (stanza->name() == Presence::name) {
+        std::unique_ptr<Presence> pres(dynamic_cast<Presence *>(stanza.release()));
+        process(std::move(pres));
+    } else if (stanza->name() == Iq::name) {
+        std::unique_ptr<Iq> iq(dynamic_cast<Iq *>(stanza.release()));
+        process(std::move(iq));
     } else {
         throw stanza_service_unavailable();
     }
 }
 
-void Endpoint::process(Presence const &presence) {
+void Endpoint::process(std::unique_ptr<Presence> &&presence) {
     throw stanza_service_unavailable();
 }
 
-void Endpoint::process(Message const &message) {
+void Endpoint::process(std::unique_ptr<Message> &&message) {
     throw stanza_service_unavailable();
 }
 
-void Endpoint::process(Iq const &iq) {
-    switch (iq.type()) {
+void Endpoint::process(std::unique_ptr<Iq> &&iq) {
+    switch (iq->type()) {
         case Iq::GET:
         case Iq::SET: {
-            auto payload = iq.node()->first_node();
+            auto payload = iq->node()->first_node();
             if (payload) {
                 std::string xmlns{payload->xmlns(), payload->xmlns_size()};
                 std::string local{payload->name(), payload->name_size()};
                 auto i = m_handlers.find(std::make_pair(xmlns, local));
                 if (i != m_handlers.end()) {
-                    (*i).second(iq);
+                    (*i).second(std::move(iq));
                     return;
                 }
             }
@@ -71,8 +74,8 @@ void Endpoint::process(Iq const &iq) {
 Endpoint::~Endpoint() {}
 
 void Endpoint::add_handler(std::string const &xmlns, std::string const &local,
-                           const std::function<void(const Iq &)> &fn) {
-    m_handlers.emplace(std::make_pair(xmlns, local), fn);
+                           std::function<void(std::unique_ptr<Iq> &&)> &&fn) {
+    m_handlers.emplace(std::make_pair(xmlns, local), std::move(fn));
 }
 
 void Endpoint::add_capability(std::string const &name) {
@@ -87,7 +90,7 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
 #endif
 }
 
-void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &fn) {
+void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(std::unique_ptr<Stanza> &&)> const &fn) {
     if (!stanza->id()) {
         stanza->id(random_identifier());
     }
@@ -95,17 +98,19 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza 
     send(std::move(stanza));
 }
 
-Node &Endpoint::node(std::string const &name, bool create) {
-    auto it = m_nodes.find(name);
-    if (it == m_nodes.end()) {
-        if (create) {
-            m_nodes.emplace(std::make_pair(name, std::unique_ptr<Node>(new Node(*this, name))));
-            it = m_nodes.find(name);
-        } else {
-            throw std::runtime_error("Node not found");
+void Endpoint::node(std::string const &aname, std::function<void(Node &)> &&fn, bool create) {
+    Router::defer([this, fn = std::move(fn), name = aname, create]() {
+        auto it = m_nodes.find(name);
+        if (it == m_nodes.end()) {
+            if (create) {
+                m_nodes.emplace(std::make_pair(name, std::unique_ptr<Node>(new Node(*this, name))));
+                it = m_nodes.find(name);
+            } else {
+                throw std::runtime_error("Node not found");
+            }
         }
-    }
-    return *(it->second.get());
+        fn(*(it->second.get()));
+    });
 }
 
 #include "../src/endpoints/simple.cc"

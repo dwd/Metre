@@ -25,19 +25,19 @@ namespace Metre {
             return m_jid;
         }
 
-        virtual void process(Presence const &presence);
+        virtual void process(std::unique_ptr<Presence> &&presence);
 
-        virtual void process(Message const &message);
+        virtual void process(std::unique_ptr<Message> &&message);
 
-        virtual void process(Iq const &iq);
+        virtual void process(std::unique_ptr<Iq> &&iq);
 
-        void process(Stanza const &stanza);
+        void process(std::unique_ptr<Stanza> &&stanza);
 
         std::string random_identifier();
 
         void send(std::unique_ptr<Stanza> &&stanza);
 
-        void send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &);
+        void send(std::unique_ptr<Stanza> &&stanza, std::function<void(std::unique_ptr<Stanza> &&)> const &);
 
         // Config API:
         void add_capability(std::string const &name);
@@ -46,15 +46,18 @@ namespace Metre {
             return m_capabilities;
         }
 
-        void add_handler(std::string const &xmlns, std::string const &local, std::function<void(Iq const &)> const &fn);
+        void add_handler(std::string const &xmlns, std::string const &local,
+                         std::function<void(std::unique_ptr<Iq> &&)> &&fn);
 
         virtual ~Endpoint();
 
-        Node &node(std::string const &name, bool create = false);
+        void node(std::string const &name, std::function<void(Node &)> &&fn, bool create = false);
 
         std::map<std::string, std::unique_ptr<Node>> const &nodes() const {
             return m_nodes;
         };
+
+        void nodes(std::function<void(std::map<std::string, std::unique_ptr<Node>> const &)> &&fn) const;
 
 #ifdef METRE_TESTING
         sigslot::signal<sigslot::thread::st, Stanza &, Jid const &, Jid const &> sent_stanza;
@@ -70,8 +73,8 @@ namespace Metre {
 
     private:
         std::list<std::unique_ptr<Capability>> m_capabilities;
-        std::map<std::pair<std::string, std::string>, std::function<void(Iq const &)>> m_handlers;
-        std::map<std::string, std::function<void(Stanza const &)>> m_stanza_callbacks;
+        std::map<std::pair<std::string, std::string>, std::function<void(std::unique_ptr<Iq> &&)>> m_handlers;
+        std::map<std::string, std::function<void(std::unique_ptr<Stanza> &&)>> m_stanza_callbacks;
     };
 }
 

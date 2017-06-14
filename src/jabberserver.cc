@@ -105,7 +105,7 @@ namespace {
                         return;
                     }
                     if (Config::config().domain(to.domain()).transport_type() == INT) {
-                        Endpoint::endpoint(to).process(*s);
+                        Endpoint::endpoint(to).process(std::move(s));
                     } else {
                         std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
                         route->transmit(std::move(s));
