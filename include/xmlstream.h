@@ -61,7 +61,7 @@ namespace Metre {
         SESSION_DIRECTION m_dir;
         SESSION_TYPE m_type;
         std::string m_stream_buf; // Sort-of-temporary buffer //
-        std::map<std::string, Feature *> m_features;
+        std::map<std::string, std::unique_ptr<Feature>> m_features;
         std::optional<std::string> m_user;
         std::string m_stream_id;
         std::string m_stream_local;

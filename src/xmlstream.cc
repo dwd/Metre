@@ -475,16 +475,12 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                     return;
                 }
                 try_feature:
-                Feature *f = Feature::feature(feature_xmlns, *this);
-                assert(f);
-                try {
-                    bool escape = f->negotiate(feature_offer);
-                    m_features[feature_xmlns] = f;
-                    METRE_LOG(Metre::Log::DEBUG, "Feature negotiated, stream restart is " << escape);
-                    if (escape) return; // We've done a stream restart or something.
-                } catch (...) {
-                    delete f;
-                }
+                std::unique_ptr<Feature> f(Feature::feature(feature_xmlns, *this));
+                assert(f.get());
+                bool escape = f->negotiate(feature_offer);
+                m_features.emplace(feature_xmlns, std::move(f));
+                METRE_LOG(Metre::Log::DEBUG, "Feature negotiated, stream restart is " << escape);
+                if (escape) return; // We've done a stream restart or something.
             }
         } else if (elname == "error") {
             METRE_LOG(Metre::Log::DEBUG, "It's a stream error!");
@@ -498,16 +494,17 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
         Feature *f = nullptr;
         METRE_LOG(Metre::Log::DEBUG, "Hunting handling feature for {" << xmlns << "}");
         if (fit != m_features.end()) {
-            f = (*fit).second;
+            f = (*fit).second.get();
         } else {
-            f = Feature::feature(xmlns, *this);
-            if (f) m_features[xmlns] = f;
+            std::unique_ptr<Feature> feat(Feature::feature(xmlns, *this));
+            f = feat.get();
+            if (f) m_features.emplace(xmlns, std::move(feat));
             METRE_LOG(Metre::Log::DEBUG, "Created new feature << " << f);
         }
 
         bool handled = false;
         if (f) {
-            handled = f->handle(element);
+            handled = f->handle(std::move(stanza));
         }
         METRE_LOG(Metre::Log::DEBUG, "Handled: " << handled);
         if (!handled) {
@@ -537,9 +534,6 @@ void XMLStream::do_restart() {
         Router::unregister_stream_id(m_stream_id);
         m_stream_id.clear();
     }
-    for (auto f : m_features) {
-        delete f.second;
-    }
     m_features.clear();
     m_stream.clear();
     m_stanza.clear();
@@ -559,9 +553,6 @@ void XMLStream::do_restart() {
 }
 
 XMLStream::~XMLStream() {
-    for (auto f : m_features) {
-        delete f.second;
-    }
 }
 
 void XMLStream::generate_stream_id() {
