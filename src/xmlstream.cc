@@ -504,7 +504,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
 
         bool handled = false;
         if (f) {
-            handled = f->handle(std::move(stanza));
+            handled = f->handle(element);
         }
         METRE_LOG(Metre::Log::DEBUG, "Handled: " << handled);
         if (!handled) {
