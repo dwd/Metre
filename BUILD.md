@@ -52,11 +52,6 @@ Enter the directory:
 cd metre
 ```
 
-*Optionally* you can generate new DH parameter files using `openssl dhparam ${DHSIZE} -C`
-to replace those within the `./gen` directory. DH parameters are not private, but using
-the same ones as everyone else might mean that weaker ones, at least, could be cracked.
-
-Metre may, in the future, generate the shorter keys on boot to improve their security.
 
 A simple `make` will do the following for you - but if you're developing, you'll just need the final stage.
 
@@ -66,6 +61,20 @@ Now initialize and clone the submodules, and setup dependencies:
 make pre-build
 ```
 
+*Optionally* you can generate new DH parameter files,
+replacing those within the `./gen` directory. DH parameters are not private, but using
+the same ones as everyone else might mean that weaker ones, at least, could be cracked. Or maybe we've created weak ones. Either way, should you want to, this will take about 10 minutes on a fast machine:
+
+```sh
+rm gen/dh*
+make dhparams
+```
+
+Metre may, in the future, generate the shorter keys on boot to improve their security.
+to replace those within the `./gen` directory. DH parameters are not private, but using
+the same ones as everyone else might mean that weaker ones, at least, could be cracked.
+
+Metre may, in the future, generate the shorter keys on boot to improve their security.
 Create a build directory and change to it. I usually use something like "build" within the
 source directory, but you can do anything you like, really. The instructions will assume
 you do **EXACTLY AS I SAY** however:
