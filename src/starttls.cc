@@ -94,6 +94,8 @@ namespace {
 
             virtual void offer(xml_node<> *node, XMLStream &s) override {
                 if (s.secured()) return;
+                SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
+                if (!ctx) return;
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "starttls");
                 feature->append_attribute(d->allocate_attribute("xmlns", tls_ns.c_str()));
@@ -137,6 +139,8 @@ namespace {
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {
+            SSL_CTX *ctx = Config::config().domain(m_stream.local_domain()).ssl_ctx();
+            if (!ctx) return false;
             xml_document<> d;
             auto n = d.allocate_node(node_element, "starttls");
             n->append_attribute(d.allocate_attribute("xmlns", tls_ns.c_str()));
@@ -325,8 +329,7 @@ namespace Metre {
 
     bool start_tls(XMLStream &stream, bool send_proceed) {
         SSL_CTX *ctx = Config::config().domain(stream.local_domain()).ssl_ctx();
-        if (!ctx) ctx = Config::config().domain("").ssl_ctx();
-        if (!ctx) throw new std::runtime_error("Failed to load certificates");
+        if (!ctx) throw std::runtime_error("Failed to load certificates");
         SSL *ssl = SSL_new(ctx);
         setup_session(ssl, stream.remote_domain());
         if (!ssl) throw std::runtime_error("Failure to initiate TLS, sorry!");
