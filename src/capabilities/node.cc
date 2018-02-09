@@ -27,4 +27,22 @@ Node::Facet *Node::add_facet(std::unique_ptr<Facet> &&facet) {
     return r.first->second.get();
 }
 
-Node::Facet::~Facet() {}
+Node::Facet::~Facet() = default;
+
+const Node::Item &Node::Facet::add_item(const std::unique_ptr<Item> &&item, bool allow_override) {
+    auto old = m_item_ids.find(item->id());
+    if (old != m_item_ids.end()) {
+        if (!allow_override) {
+            throw std::runtime_error("Item exists");
+        }
+        m_items.erase((*old).second);
+        m_item_ids.erase(old);
+    }
+    m_items.push_front(std::move(item));
+    auto it = m_items.begin();
+    m_item_ids.emplace(std::make_pair((*it)->id(), it));
+    return *(*it);
+}
+
+Node::Subscription::Subscription(Jid &ajid) : jid(ajid) {
+}

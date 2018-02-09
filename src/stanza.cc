@@ -98,6 +98,21 @@ void Stanza::render(rapidxml::xml_document<> &d) {
     d.append_node(hdr);
 }
 
+rapidxml::xml_node<> const *Stanza::node() {
+    if (m_node) return m_node;
+    rapidxml::xml_document<> tmp_doc;
+    std::string tmp{m_payload, m_payload_l}; // Copy the buffer.
+    m_payload = tmp.data();
+    m_payload_l = tmp.length(); // Reset pointers to buffer.
+    render(tmp_doc);
+    m_payload_str.clear();
+    rapidxml::print(std::back_inserter(m_payload_str), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    m_doc.reset(new rapidxml::xml_document<>);
+    m_doc->parse<rapidxml::parse_full>(const_cast<char *>(m_payload_str.c_str()));
+    m_node = m_doc->first_node();
+    return m_node;
+}
+
 std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) const {
     std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
     stanza->m_from = m_to;
@@ -251,7 +266,7 @@ Iq::Type Iq::set_type() const {
 }
 
 rapidxml::xml_node<> const &Iq::query() const {
-    return *m_node->first_node();
+    return *node()->first_node();
 }
 
 const char *Iq::name = "iq";

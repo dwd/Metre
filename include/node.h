@@ -19,6 +19,10 @@ namespace Metre {
             std::string const m_item_id;
         public:
             Item(std::string const &item_id, std::string const &payload);
+
+            std::string const &id() const {
+                return m_item_id;
+            }
         };
 
         class Facet {
@@ -31,11 +35,18 @@ namespace Metre {
 
             virtual ~Facet();
 
-            void add_item(std::unique_ptr<Item> &&item, bool allow_override = false);
+            Item const &add_item(const std::unique_ptr<Item> &&item, bool allow_override = false);
 
         private:
             std::list<std::unique_ptr<Item>> m_items;
             std::map<std::string, std::list<std::unique_ptr<Item>>::const_iterator> m_item_ids;
+        };
+
+        class Subscription {
+        public:
+            Subscription(Jid &jid);
+
+            Jid const jid;
         };
 
         Node(Endpoint &endpoint, std::string const &name);
@@ -56,9 +67,14 @@ namespace Metre {
             return m_title;
         }
 
+        std::set<std::unique_ptr<Subscription>> const &subscriptions() const {
+            return m_subscriptions;
+        }
+
     private:
         Endpoint &m_endpoint;
         std::map<std::string, std::unique_ptr<Facet>> m_facets;
+        std::set<std::unique_ptr<Subscription>> m_subscriptions;
         std::string const m_name;
         std::string m_title;
     };

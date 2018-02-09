@@ -72,6 +72,7 @@ namespace Metre {
         const char *m_payload = nullptr;
         size_t m_payload_l = 0;
         rapidxml::xml_node<> const *m_node = nullptr;
+        std::unique_ptr<rapidxml::xml_document<>> m_doc;
     public:
         Stanza(const char *name, rapidxml::xml_node<> const *node);
 
@@ -118,8 +119,9 @@ namespace Metre {
             return m_lang;
         }
 
+        rapidxml::xml_node<> const *node();
         rapidxml::xml_node<> const *node() const {
-            return m_node;
+            return const_cast<Stanza *>(this)->node();
         }
 
         void payload(std::string const &p) {

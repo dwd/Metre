@@ -54,7 +54,7 @@ void Endpoint::process(std::unique_ptr<Iq> &&iq) {
         case Iq::GET:
         case Iq::SET: {
             auto payload = iq->node()->first_node();
-            if (payload) {
+            if (payload != nullptr) {
                 std::string xmlns{payload->xmlns(), payload->xmlns_size()};
                 std::string local{payload->name(), payload->name_size()};
                 auto i = m_handlers.find(std::make_pair(xmlns, local));
@@ -71,7 +71,7 @@ void Endpoint::process(std::unique_ptr<Iq> &&iq) {
     throw stanza_service_unavailable();
 }
 
-Endpoint::~Endpoint() {}
+Endpoint::~Endpoint() = default;
 
 void Endpoint::add_handler(std::string const &xmlns, std::string const &local,
                            std::function<void(std::unique_ptr<Iq> &&)> &&fn) {
@@ -103,7 +103,7 @@ void Endpoint::node(std::string const &aname, std::function<void(Node &)> &&fn, 
         auto it = m_nodes.find(name);
         if (it == m_nodes.end()) {
             if (create) {
-                m_nodes.emplace(std::make_pair(name, std::unique_ptr<Node>(new Node(*this, name))));
+                m_nodes.emplace(std::make_pair(name, std::make_unique<Node>(*this, name)));
                 it = m_nodes.find(name);
             } else {
                 throw std::runtime_error("Node not found");
@@ -119,7 +119,7 @@ Endpoint &Endpoint::endpoint(Jid const &jid) {
     static std::map<std::string, std::unique_ptr<Endpoint>> s_endpoints;
     auto i = s_endpoints.find(jid.domain());
     if (i == s_endpoints.end()) {
-        s_endpoints[jid.domain()].reset(new Simple(jid.domain()));
+        s_endpoints[jid.domain()] = std::make_unique<Simple>(jid.domain());
         return *s_endpoints[jid.domain()];
     }
     return *((*i).second);

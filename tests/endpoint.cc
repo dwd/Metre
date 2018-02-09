@@ -9,6 +9,37 @@
 
 using namespace Metre;
 
+namespace {
+    rapidxml::xml_document<> doc;
+
+    std::unique_ptr<Stanza> parse_stanza(std::string &s) {
+        doc.clear();
+        doc.parse<rapidxml::parse_fastest>(const_cast<char *>(s.c_str()));
+        doc.fixup<rapidxml::parse_full>(doc.first_node(), false);
+        std::unique_ptr<Stanza> stanza{new Iq(doc.first_node())};
+        return stanza;
+    }
+}
+
+namespace Metre {
+    namespace Router {
+        std::list<std::function<void()>> pending;
+
+        void defer(std::function<void()> &&fn) {
+            pending.emplace_back(fn);
+        }
+
+        void run_pending() {
+            while (!pending.empty()) {
+                std::list<std::function<void()>> tmp(std::move(pending));
+                for (auto &fn : tmp) {
+                    fn();
+                }
+            }
+        }
+    }
+}
+
 class EndpointTest : public Test, public sigslot::has_slots<> {
 public:
     EndpointTest() : Test("Endpoint") {}
@@ -101,11 +132,9 @@ public:
             {
                 // Send a ping. Should get one back.
                 std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='5678' type='get'><ping xmlns='urn:xmpp:ping'/></iq>";
-                rapidxml::xml_document<> doc;
-                doc.parse<rapidxml::parse_full>(const_cast<char *>(iq_xml.c_str()));
-                std::unique_ptr<Stanza> stanza{new Iq(doc.first_node())};
                 endpoint.sent_stanza.connect(this, &EndpointTest::check_ping_response);
-                endpoint.process(*stanza);
+                endpoint.process(parse_stanza(iq_xml));
+                Router::run_pending();
                 endpoint.sent_stanza.disconnect(this);
                 if (!stanza_seen) throw std::runtime_error("No stanza response!");
                 stanza_seen = false;
@@ -113,11 +142,9 @@ public:
             {
                 // Send a disco#info query. Should get response with features.
                 std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='1234' type='get'><query xmlns='http://jabber.org/protocol/disco#info'/></iq>";
-                rapidxml::xml_document<> doc;
-                doc.parse<rapidxml::parse_full>(const_cast<char *>(iq_xml.c_str()));
-                std::unique_ptr<Stanza> stanza{new Iq(doc.first_node())};
                 endpoint.sent_stanza.connect(this, &EndpointTest::check_discoinfo_response);
-                endpoint.process(*stanza);
+                endpoint.process(parse_stanza(iq_xml));
+                Router::run_pending();
                 endpoint.sent_stanza.disconnect(this);
                 if (!stanza_seen) throw std::runtime_error("No stanza response!");
                 stanza_seen = false;
@@ -125,13 +152,11 @@ public:
             {
                 // Send a disco#items query. Should get response with no items.
                 std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='12345' type='get'><query xmlns='http://jabber.org/protocol/disco#items'/></iq>";
-                rapidxml::xml_document<> doc;
-                doc.parse<rapidxml::parse_full>(const_cast<char *>(iq_xml.c_str()));
-                std::unique_ptr<Stanza> stanza{new Iq(doc.first_node())};
                 endpoint.sent_stanza.connect(this, [this](Stanza & stanza, Jid const & from, Jid const & to) {
                     check_discoitems_response(stanza, from, to, false);
                 });
-                endpoint.process(*stanza);
+                endpoint.process(parse_stanza(iq_xml));
+                Router::run_pending();
                 endpoint.sent_stanza.disconnect(this);
                 if (!stanza_seen) throw std::runtime_error("No stanza response!");
                 stanza_seen = false;
@@ -139,11 +164,9 @@ public:
             {
                 // Send a pubsub publish query. Should get empty response, maybe.
                 std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='5678' type='get'><pubsub xmlns='http://jabber.org/protocol/pubsub'><publish node='pubsub_node'><item id='item_id_here'><payload xmlns='https://surevine.com/protocol/test'/></item></publish></pubsub></iq>";
-                rapidxml::xml_document<> doc;
-                doc.parse<rapidxml::parse_full>(const_cast<char *>(iq_xml.c_str()));
-                std::unique_ptr<Stanza> stanza{new Iq(doc.first_node())};
                 endpoint.sent_stanza.connect(this, &EndpointTest::check_ping_response);
-                endpoint.process(*stanza);
+                endpoint.process(parse_stanza(iq_xml));
+                Router::run_pending();
                 endpoint.sent_stanza.disconnect(this);
                 if (!stanza_seen) throw std::runtime_error("No stanza response!");
                 stanza_seen = false;
@@ -151,13 +174,11 @@ public:
             {
                 // Send a disco#items query. Should get response with one items.
                 std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='12345' type='get'><query xmlns='http://jabber.org/protocol/disco#items'/></iq>";
-                rapidxml::xml_document<> doc;
-                doc.parse<rapidxml::parse_full>(const_cast<char *>(iq_xml.c_str()));
-                std::unique_ptr<Stanza> stanza{new Iq(doc.first_node())};
                 endpoint.sent_stanza.connect(this, [this](Stanza & stanza, Jid const & from, Jid const & to) {
                     check_discoitems_response(stanza, from, to, true);
                 });
-                endpoint.process(*stanza);
+                endpoint.process(parse_stanza(iq_xml));
+                Router::run_pending();
                 endpoint.sent_stanza.disconnect(this);
                 if (!stanza_seen) throw std::runtime_error("No stanza response!");
                 stanza_seen = false;

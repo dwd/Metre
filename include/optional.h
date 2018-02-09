@@ -28,19 +28,15 @@ SOFTWARE.
 
 #include <stdexcept>
 #include <optional>
+#include <optional.h>
 
 namespace std {
     template<typename T>
     class optional {
         char m_void_spc[sizeof(T)];
-        char * m_void;
+        void *m_void;
         bool m_engaged = false;
     private:
-        void doset(T const &t) {
-            new(reinterpret_cast<T *>(m_void)) T(t);
-            m_engaged = true;
-        }
-
         void dounset() {
             reinterpret_cast<T *>(m_void)->~T();
             m_engaged = false;
@@ -58,14 +54,26 @@ namespace std {
 
     public:
         optional(T const &t) : m_void(m_void_spc) {
-            doset(t);
+            emplace(t);
+        }
+
+        optional(T &&t) : m_void(m_void_spc) {
+            emplace(std::move(t));
         }
 
         optional() : m_void(m_void_spc) {
         }
 
         optional(optional<T> const &t) : m_void(m_void_spc) {
-            if (t.m_engaged) doset(t.value());
+            if (t.m_engaged) emplace(t.value());
+        }
+
+        optional(optional<T> &&t) : m_void(m_void_spc) {
+            if (t.m_engaged) emplace(std::move(*t));
+        }
+
+        ~optional() {
+            if (m_engaged) dounset();
         }
 
         template<class... Args>
@@ -107,13 +115,13 @@ namespace std {
 
         optional<T> &operator=(T const &t) {
             if (m_engaged) dounset();
-            doset(t);
+            emplace(t);
             return *this;
         }
 
         optional<T> &operator=(optional<T> const &t) {
             if (m_engaged) dounset();
-            doset(t.value());
+            emplace(t.value());
             return *this;
         }
 

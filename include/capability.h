@@ -60,7 +60,7 @@ namespace Metre {
         static std::unique_ptr<Capability> create(std::string const &name, Endpoint &jid);
 
         template<typename T>
-        static bool declare(std::string const &name) {
+        static bool declare(std::string const &name) throw() {
             Capability::all_capabilities()[name] = new typename T::Description(name);
             return true;
         }
