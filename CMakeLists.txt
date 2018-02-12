@@ -92,7 +92,7 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc
-        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h)
+        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/bidi.cc)
 
 #set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
 #set(BUILD_SHARED_LIBS  OFF)

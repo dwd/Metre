@@ -48,6 +48,7 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
+        m_bidi = true;
     }
 }
 
@@ -58,6 +59,7 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
+        m_bidi = true;
     }
 }
 
@@ -581,6 +583,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
             }
         }
     }
+    if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
     auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto it = m.find(std::make_pair(local, remote));
     AUTH_STATE auth_state = NONE;
@@ -610,6 +613,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     if (state == AUTHORIZED && !m_secured && Config::config().domain(remote).require_tls()) {
         throw Metre::not_authorized("Authorization attempt without TLS");
     }
+    if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
     auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto key = std::make_pair(local, remote);
     AUTH_STATE current = m[key];
@@ -620,6 +624,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
                                                            << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
                                                            << " session local:" << local << " remote:"
                                                            << remote);
+        RouteTable::routeTable(local).route(remote)->outbound(m_session);
         onAuthenticated.emit(*this);
     }
     return m[key];

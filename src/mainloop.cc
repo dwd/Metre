@@ -103,6 +103,14 @@ namespace Metre {
             return true;
         }
 
+        std::shared_ptr<NetSession> session_by_serial(long long int id) {
+            auto it = m_sessions.find(id);
+            if (it != m_sessions.end()) {
+                return (*it).second;
+            }
+            return nullptr;
+        }
+
         std::shared_ptr<NetSession> session_by_id(std::string const &id) {
             auto it = m_sessions_by_id.find(id);
             if (it != m_sessions_by_id.end()) {
@@ -379,6 +387,10 @@ namespace Metre {
 
         std::shared_ptr<NetSession> session_by_address(std::string const &id, unsigned short p) {
             return Mainloop::s_mainloop->session_by_address(id, p);
+        }
+
+        std::shared_ptr<NetSession> session_by_serial(long long int serial) {
+            return Mainloop::s_mainloop->session_by_serial(serial);
         }
 
         void defer(std::function<void()> &&fn) {
