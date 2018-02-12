@@ -624,7 +624,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
                                                            << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
                                                            << " session local:" << local << " remote:"
                                                            << remote);
-        RouteTable::routeTable(local).route(remote)->outbound(m_session);
+        if (m_bidi) RouteTable::routeTable(local).route(remote)->outbound(m_session);
         onAuthenticated.emit(*this);
     }
     return m[key];

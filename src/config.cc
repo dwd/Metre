@@ -1421,7 +1421,8 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
                 METRE_LOG(Log::DEBUG, "Synthetic SRV for " << m_current_srv.domain << " : " << m_current_srv.error);
                 DNS::SrvRR rr;
                 rr.port = 5269;
-                rr.hostname = m_current_srv.domain.c_str() + 11; // Trim "_xmpp._tcp."
+                rr.hostname =
+                        m_current_srv.domain.c_str() + sizeof("_xmpp-server._tcp.") - 1; // Trim "_xmpp-server._tcp."
                 METRE_LOG(Log::DEBUG, "Set to 0 0 5269 " << rr.hostname);
                 m_current_srv.rrs.push_back(rr);
                 m_current_srv.error.clear();
