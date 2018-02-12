@@ -38,9 +38,9 @@ namespace Metre {
         class SrvRR {
         public:
             std::string hostname;
-            unsigned short port;
-            unsigned short weight;
-            unsigned short priority;
+            unsigned short port = 0;
+            unsigned short weight = 0;
+            unsigned short priority = 0;
             bool tls = false;
         };
 
@@ -52,6 +52,7 @@ namespace Metre {
             std::string domain;
             bool dnssec = false;
             std::string error;
+            bool nxdomain = false;
         };
 
         class Address {

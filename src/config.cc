@@ -1400,6 +1400,14 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
     }
     METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
     m_current_srv.domain = result->qname;
+    if (err == 0 && !result->havedata) {
+        if (m_current_srv.xmpps || m_current_srv.xmpp) {
+            // We have done (precisely) one, so set this flag.
+            m_current_srv.nxdomain = true;
+        }
+    } else {
+        m_current_srv.nxdomain = false;
+    }
     if (m_current_srv.domain.find("_xmpps") == 0) {
         m_current_srv.xmpps = true;
         m_current_srv.domain = std::string("_xmpp") + (m_current_srv.domain.c_str() + 6);
@@ -1407,6 +1415,18 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
         m_current_srv.xmpp = true;
     }
     if (m_current_srv.xmpp && m_current_srv.xmpps) {
+        if (m_current_srv.rrs.empty()) {
+            if (m_current_srv.nxdomain) {
+                // Synthesize an SRV.
+                METRE_LOG(Log::DEBUG, "Synthetic SRV for " << m_current_srv.domain << " : " << m_current_srv.error);
+                DNS::SrvRR rr;
+                rr.port = 5269;
+                rr.hostname = m_current_srv.domain.c_str() + 11; // Trim "_xmpp._tcp."
+                METRE_LOG(Log::DEBUG, "Set to 0 0 5269 " << rr.hostname);
+                m_current_srv.rrs.push_back(rr);
+                m_current_srv.error.clear();
+            }
+        }
         if (m_current_srv.rrs.empty()) {
             DNS::Srv srv;
             srv.error = error;
