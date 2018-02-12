@@ -35,7 +35,7 @@ namespace Metre {
     class Feature {
     public:
         enum Type {
-            FEAT_NONE = 0, FEAT_POSTAUTH, FEAT_COMP, FEAT_AUTH_FALLBACK, FEAT_AUTH, FEAT_SECURE
+            FEAT_NONE = 0, FEAT_POSTAUTH, FEAT_COMP, FEAT_AUTH_FALLBACK, FEAT_AUTH, FEAT_PREAUTH, FEAT_SECURE
         };
 
         class BaseDescription {

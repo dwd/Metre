@@ -67,6 +67,8 @@ namespace Metre {
             return m_local.domain();
         }
 
+        void outbound(NetSession *ns);
+
         void transmit(std::unique_ptr<Stanza> &&);
 
         void transmit(std::unique_ptr<DB::Verify> &&);
@@ -137,6 +139,8 @@ namespace Metre {
                 unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode);
 
         std::shared_ptr<NetSession> session_by_stream_id(std::string const &stream_id);
+
+        std::shared_ptr<NetSession> session_by_serial(long long int);
 
         void register_stream_id(std::string const &, NetSession &);
 

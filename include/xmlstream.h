@@ -80,6 +80,7 @@ namespace Metre {
         std::map<std::string, struct X509_crl_st *> m_crls;
         bool m_crl_complete = false;
         bool m_x2x_mode = false;
+        bool m_bidi = false;
         std::map<std::string, sigslot::signal<sigslot::thread::st, Stanza const &>> m_response_callbacks;
 
     public:
@@ -114,6 +115,14 @@ namespace Metre {
 
         SESSION_DIRECTION direction() const {
             return m_dir;
+        }
+
+        bool bidi() const {
+            return m_bidi;
+        }
+
+        bool bidi(bool b) {
+            return m_bidi = b;
         }
 
         bool closed() const {

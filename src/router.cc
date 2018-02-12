@@ -85,6 +85,25 @@ namespace {
     }
 }
 
+/**
+ * We have a bidi-capable session that has authenticated INBOUND, so we can use it OUTBOUND now.
+ * We might have a session already, in which case we won't switch (it would make life complex for in-flight stanzas).
+ * But if not, we'll discard any half-ready session and use this one.
+ *
+ * @param ns - NetSession of inbound session.
+ */
+void Route::outbound(NetSession *ns) {
+    auto to = m_to.lock();
+    if (!check_to(*this, to)) {
+        if (to) {
+            to->close(); // Kill with fire.
+        }
+        m_to = Router::session_by_serial(ns->serial());
+        auto to = m_to.lock();
+        check_to(*this, to);
+    }
+}
+
 void Route::queue(std::unique_ptr<DB::Verify> &&s) {
     s->freeze();
     if (m_dialback.empty())
