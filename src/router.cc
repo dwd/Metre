@@ -196,20 +196,24 @@ void Route::doSrvLookup() {
     }
 }
 
-void Route::collateNames() {
+sigslot::signal<sigslot::thread::st, Route &> &Route::collateNames() {
     if (m_srv.domain.empty() || !m_srv.error.empty()) {
         // No SRV record yet, look it up.
         doSrvLookup();
     } else {
-        // Have a SRV. Was it DNSSEC signed?
         if (!m_srv.dnssec) {
-            onNamesCollated.emit(*this);
-        }
-        // Do we have TLSAs yet?
-        if (m_tlsa.size() == m_srv.rrs.size()) {
-            onNamesCollated.emit(*this);
+            // Have a SRV. Was it DNSSEC signed?
+            Router::defer([this]() {
+                onNamesCollated.emit(*this);
+            });
+        } else if (m_tlsa.size() == m_srv.rrs.size()) {
+            // Do we have TLSAs yet?
+            Router::defer([this]() {
+                onNamesCollated.emit(*this);
+            });
         }
     }
+    return onNamesCollated;
 }
 
 void Route::SrvResult(DNS::Srv const *srv) {

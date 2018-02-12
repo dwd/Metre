@@ -91,7 +91,7 @@ namespace Metre {
 
         void SessionClosed(NetSession &);
 
-        void collateNames();
+        sigslot::signal<sigslot::thread::st, Route &> &collateNames();
 
         sigslot::signal<sigslot::thread::st, Route &> onNamesCollated;
 
