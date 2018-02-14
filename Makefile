@@ -6,6 +6,7 @@ all: pre-build metre keys
 pre-build:
 	git submodule update --init
 	cd deps/openssl && ./config --prefix=/usr/local --openssldir=/etc/ssl no-shared
+	make -C deps/openssl -j6
 
 keys:
 	@echo [DNSSEC] . '=>' $@
