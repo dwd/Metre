@@ -4,7 +4,7 @@ all: pre-build metre keys
 	@echo Done.
 
 pre-build:
-	git submodule update --init
+	git submodule update --recursive --init
 	cd deps/openssl && ./config --prefix=/usr/local --openssldir=/etc/ssl no-shared
 	make -C deps/openssl -j6
 
