@@ -568,7 +568,13 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
         throw std::runtime_error("DNS context creation failure.");
     }
     int retval;
+    if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
+        throw std::runtime_error(ub_strerror(retval));
+    }
     if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
+        throw std::runtime_error(ub_strerror(retval));
+    }
+    if ((retval = ub_ctx_hosts(m_ub_ctx, NULL)) != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
     if (!m_dns_keys.empty()) {
@@ -1511,6 +1517,16 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
     }
 }
 
+namespace {
+    void resolve_async(Config::Domain const *domain, std::string const &record, int rrtype, ub_callback_type cb) {
+        int retval;
+        if ((retval = ub_resolve_async(Config::config().ub_ctx(), const_cast<char *>(record.c_str()), rrtype, 1,
+                                       const_cast<void *>(reinterpret_cast<const void *>(domain)), cb, NULL)) < 0) {
+            throw std::runtime_error(std::string("While resolving ") + record + ": " + ub_strerror(retval));
+        }
+    }
+}
+
 Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostname) const {
     std::string hostname = toASCII(ihostname);
     METRE_LOG(Metre::Log::DEBUG, "A/AAAA lookup for " << hostname << " context:" << m_domain);
@@ -1533,15 +1549,8 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
         m_current_arec.hostname = "";
         m_current_arec.addr.clear();
         m_current_arec.ipv6 = m_current_arec.ipv4 = false;
-        ub_resolve_async(Config::config().ub_ctx(), const_cast<char *>(hostname.c_str()), 28, 1,
-                         const_cast<void *>(reinterpret_cast<const void *>(this)), a_lookup_done_cb, NULL);
-        ub_resolve_async(Config::config().ub_ctx(),
-                         const_cast<char *>(hostname.c_str()),
-                         1, /* A */
-                         1,  /* IN */
-                         const_cast<void *>(reinterpret_cast<const void *>(this)),
-                         a_lookup_done_cb,
-                         NULL); /* int * async_id */
+        resolve_async(this, hostname, 28, a_lookup_done_cb);
+        resolve_async(this, hostname, 1, a_lookup_done_cb);
     }
     return m_a_pending[hostname];
 }
@@ -1582,20 +1591,8 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         m_current_srv.rrs.clear();
         m_current_srv.dnssec = true;
         m_current_srv.error.clear();
-        ub_resolve_async(Config::config().ub_ctx(),
-                         const_cast<char *>(domain.c_str()),
-                         33, /* SRV */
-                         1,  /* IN */
-                         const_cast<void *>(reinterpret_cast<const void *>(this)),
-                         srv_lookup_done_cb,
-                         NULL); /* int * async_id */
-        ub_resolve_async(Config::config().ub_ctx(),
-                         const_cast<char *>(domains.c_str()),
-                         33, /* SRV */
-                         1,  /* IN */
-                         const_cast<void *>(reinterpret_cast<const void *>(this)),
-                         srv_lookup_done_cb,
-                         NULL); /* int * async_id */
+        resolve_async(this, domain, 33, srv_lookup_done_cb);
+        resolve_async(this, domains, 33, srv_lookup_done_cb);
     }
     return m_srv_pending;
 }
@@ -1628,13 +1625,7 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
             cb.emit(&r);
         });
     } else {
-        ub_resolve_async(Config::config().ub_ctx(),
-                         const_cast<char *>(domain.c_str()),
-                         52, /* TLSA */
-                         1,  /* IN */
-                         const_cast<void *>(reinterpret_cast<const void *>(this)),
-                         tlsa_lookup_done_cb,
-                         NULL); /* int * async_id */
+        resolve_async(this, domain, 52, tlsa_lookup_done_cb);
     }
     return m_tlsa_pending[domain];
 }
