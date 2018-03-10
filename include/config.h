@@ -34,7 +34,7 @@ SOFTWARE.
 
 #include "defs.h"
 #include "dns.h"
-#include "log.h"
+#include "spdlog/spdlog.h"
 
 /**
  * OpenSSL forward declarations.
@@ -293,6 +293,10 @@ namespace Metre {
             return m_listeners;
         }
 
+        spdlog::logger &logger() const {
+            return *m_logger;
+        }
+
     private:
         static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
 
@@ -308,8 +312,8 @@ namespace Metre {
         std::string m_boot;
         std::map<std::string, std::unique_ptr<Domain>> m_domains;
         struct ub_ctx *m_ub_ctx = nullptr;
-        std::unique_ptr<Metre::Log> m_log;
         std::list<Listener> m_listeners;
+        std::shared_ptr<spdlog::logger> m_logger;
     };
 }
 

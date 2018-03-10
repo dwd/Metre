@@ -563,6 +563,7 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
     std::string tmp = asString();
     std::ofstream of(m_data_dir + "/" + "metre.running.xml", std::ios_base::trunc);
     of << tmp;
+    // Libunbound initialization.
     m_ub_ctx = ub_ctx_create();
     if (!m_ub_ctx) {
         throw std::runtime_error("DNS context creation failure.");
@@ -582,6 +583,13 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
             throw std::runtime_error(ub_strerror(retval));
         }
     }
+    // Initialize logging.
+    if (!m_logfile.empty()) {
+        m_logger = spdlog::daily_logger_st("global", m_logfile);
+    }
+    spdlog::set_level(spdlog::level::trace);
+    spdlog::set_sync_mode();
+    m_logger->flush_on(spdlog::level::trace);
 }
 
 Config::~Config() {
@@ -1085,7 +1093,6 @@ void Config::log_init(bool systemd) {
     if (!systemd && m_logfile.empty()) {
         m_logfile = "/var/log/metre/metre.log";
     }
-    m_log.reset(new Metre::Log(m_logfile));
 }
 
 Config::Domain const &Config::domain(std::string const &dom) const {

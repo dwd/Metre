@@ -27,23 +27,29 @@ SOFTWARE.
 #include <fstream>
 #include <iostream>
 
-using namespace Metre;
-
-Log *Log::s_log = nullptr;
-
-Log::Log(std::string const &filename)
-        : m_file(false), m_active(true) {
-    if (!filename.empty()) {
-        m_stream.reset(new std::ofstream(filename, std::ios_base::app));
-        m_file = true;
+void Metre::Log::log(Log::LEVEL lvlm, std::string const &filename, int line, std::string const &stuff) {
+    spdlog::level::level_enum lvl = spdlog::level::trace;
+    switch (lvlm) {
+        case EMERG:
+        case ALERT:
+        case CRIT:
+            lvl = spdlog::level::critical;
+            break;
+        case ERR:
+            lvl = spdlog::level::err;
+            break;
+        case WARNING:
+        case NOTICE:
+            lvl = spdlog::level::warn;
+            break;
+        case INFO:
+            lvl = spdlog::level::info;
+            break;
+        case DEBUG:
+            lvl = spdlog::level::debug;
+            break;
+        case TRACE:
+            lvl = spdlog::level::trace;
     }
-    s_log = this;
-}
-
-std::ostream &Log::stream() const {
-    if (m_file) {
-        return *m_stream;
-    } else {
-        return std::cerr;
-    }
+    Metre::Config::config().logger().log(lvl, "{}:{} : {}", filename, line, stuff);
 }

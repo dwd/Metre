@@ -29,6 +29,7 @@ SOFTWARE.
 #include "router.h"
 #include "config.h"
 #include <memory>
+#include <log.h>
 
 using namespace Metre;
 using namespace rapidxml;
