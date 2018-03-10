@@ -28,7 +28,9 @@ SOFTWARE.
 #include "stanza.h"
 #include <spiffing/spiffing.h>
 #include <spiffing/clearance.h>
+#include <spiffing/label.h>
 #include <fstream>
+#include <log.h>
 
 using namespace Metre;
 
@@ -64,9 +66,9 @@ namespace {
             for (auto policy = config->first_node("allowed-policy"); policy; policy->next_sibling("allowed-policy")) {
                 auto att = policy->first_attribute("id");
                 if (!att) {
-                    policy->first_attribute("name");
+                    att = policy->first_attribute("name");
                 }
-                if (!att) throw std::runtime_error("Allowed-policy requires an id or a name attribute");
+                if (!att) throw std::runtime_error("Allowed-policy requires an object-id or a name attribute");
                 std::string oid{att->value(), att->value_size()};
                 std::shared_ptr<::Spiffing::Spif> spif;
                 try {
@@ -87,14 +89,59 @@ namespace {
 
         virtual void do_dump_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) override {
             // Dump config.
+            for (auto const &fname : m_allowed_policies) {
+                auto policy = doc.allocate_node(rapidxml::node_element, "allowed-policy");
+                policy->append_attribute(doc.allocate_attribute("id", doc.allocate_string(fname.c_str())));
+                config->append_node(policy);
+            }
+            for (auto const &clearance : m_clearances) {
+                std::string clrs;
+                clearance.second->write(::Spiffing::Format::NATO, clrs);
+                auto clr = doc.allocate_node(rapidxml::node_element, "clearance");
+                clr->contents(doc.allocate_string(clrs.c_str()), clrs.size());
+                config->append_node(clr);
+            }
         }
 
         virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Metre::Stanza &s) override {
-            if (dir == OUTBOUND) {
-                return PASS;
+            std::shared_ptr<::Spiffing::Label> l;
+            auto label = s.node()->first_node("securitylabel", "urn:xmpp:sec-label:0");
+            if (label) {
+                auto slabel = label->first_node("label");
+                if (slabel) {
+                    auto label_node = slabel->first_node("originatorConfidentialityLabel",
+                                                         "urn:nato:stanag:4774:confidentialitymetadatalabel:1:0");
+                    if (label_node) {
+                        // Have a NATO style label. Parse away! (Note we use the parent).
+                        std::string labelstr{slabel->contents(), slabel->contents_size()};
+                        l.reset(new ::Spiffing::Label(labelstr, ::Spiffing::Format::NATO));
+                    }
+                }
             }
-            // Check inbound ACDF.
-            // Check outbound ACDF.
+
+            if (l) {
+                auto const &label_policy = l->policy();
+                auto clr_it = m_clearances.find(label_policy.policy_id());
+                if (clr_it != m_clearances.end()) {
+                    if (label_policy.acdf(*l, *(clr_it->second))) {
+                        return PASS;
+                    } else {
+                        return DROP;
+                    }
+                }
+                for (auto const &c : m_clearances) {
+                    try {
+                        auto equiv = l->encrypt(c.first);
+                        if (equiv->policy().acdf(*equiv, *(c.second))) {
+                            return PASS;
+                        } else {
+                            return DROP;
+                        }
+                    } catch (std::runtime_error &e) {
+                        METRE_LOG(Log::DEBUG, "Failed to equiv-policy: " << e.what());
+                    }
+                }
+            }
             return PASS;
         }
 
