@@ -87,7 +87,7 @@ namespace {
 
         bool handle(rapidxml::xml_node<> *node) override {
             m_stream.bidi(true);
-            return false;
+            return true;
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {
