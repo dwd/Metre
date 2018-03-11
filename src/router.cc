@@ -94,6 +94,8 @@ namespace {
  */
 void Route::outbound(NetSession *ns) {
     auto to = m_to.lock();
+    if (!ns) return;
+    if (to && (to->serial() == ns->serial())) return;
     if (!check_to(*this, to)) {
         if (to) {
             to->close(); // Kill with fire.

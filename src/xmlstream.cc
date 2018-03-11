@@ -619,13 +619,15 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     AUTH_STATE current = m[key];
     if (current < state) {
         m[key] = state;
-        if (state == XMLStream::AUTHORIZED) METRE_LOG(Metre::Log::INFO,
-                                                      "NS" << m_session->serial() << " - Authorized "
-                                                           << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
-                                                           << " session local:" << local << " remote:"
-                                                           << remote);
-        if (m_bidi) RouteTable::routeTable(local).route(remote)->outbound(m_session);
-        onAuthenticated.emit(*this);
+        if (state == XMLStream::AUTHORIZED) {
+            METRE_LOG(Metre::Log::INFO,
+                      "NS" << m_session->serial() << " - Authorized "
+                           << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
+                           << " session local:" << local << " remote:"
+                           << remote);
+            if (m_bidi) RouteTable::routeTable(local).route(remote)->outbound(m_session);
+            onAuthenticated.emit(*this);
+        }
     }
     return m[key];
 }
