@@ -21,7 +21,7 @@
           All internal domains do, currently, is respond to XEP-0199 pings...
           -->
     <domain name='cridland.im'>
-      <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
+      <!-- <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/> --><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
     </domain>
   </local>
   <remote>
@@ -39,14 +39,14 @@
       </transport>
       <!-- Defaults for what local domains will offer over TLS -->
       <dhparam size='4096'/><!-- DH Parameter sizes - some domains will not support higher than 2048, others no higher than 1024. -->
-      <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
+      <!-- x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/> --><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
     </any>
     <domain name='dave.cridland.net' forward='true'><!-- Domains set to forward will be responded to locally, and the stanzas passed through. -->
       <transport type='s2s' sec='tls'>
         <!-- If there's any auth options here this will override defaults. -->
         <auth type='pkix'/><!-- PKIX authentication is SASL EXTERNAL based, X.509 Strong Authentication. Certificates, basically. -->
       </transport>
-      <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/>
+      <!-- <x509 chain='./cridland.im.stuffs' pkey='./cridland.im.key'/> -->
       <dhparam size='1024'/>
       <dns><!-- Override DNS records. -->
         <srv host='peirce.dave.cridland.net' port='5269'/>
