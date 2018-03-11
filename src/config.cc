@@ -530,12 +530,21 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
     SSL_CTX_set_options(m_ssl_ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_ALL);
     SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_PEER, Config::verify_callback_cb);
     if (SSL_CTX_use_certificate_chain_file(m_ssl_ctx, chain.c_str()) != 1) {
+        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
+            Config::config().logger().error("OpenSSL Error: {}", ERR_reason_error_string(e));
+        }
         throw std::runtime_error("Couldn't load chain file");
     }
     if (SSL_CTX_use_PrivateKey_file(m_ssl_ctx, pkey.c_str(), SSL_FILETYPE_PEM) != 1) {
+        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
+            Config::config().logger().error("OpenSSL Error: {}", ERR_reason_error_string(e));
+        }
         throw std::runtime_error("Couldn't load keyfile");
     }
     if (SSL_CTX_check_private_key(m_ssl_ctx) != 1) {
+        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
+            Config::config().logger().error("OpenSSL Error: {}", ERR_reason_error_string(e));
+        }
         throw std::runtime_error("Private key mismatch");
     }
     SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
@@ -559,6 +568,10 @@ SSL_CTX *Config::Domain::ssl_ctx() const {
 
 Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(random_identifier()) {
     s_config = this;
+    // Spin up a temporary error logger.
+    m_logger = spdlog::stderr_color_st("console");
+    spdlog::set_level(spdlog::level::trace);
+    spdlog::set_sync_mode();
     load(filename);
     std::string tmp = asString();
     std::ofstream of(m_data_dir + "/" + "metre.running.xml", std::ios_base::trunc);
@@ -587,8 +600,6 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
     if (!m_logfile.empty()) {
         m_logger = spdlog::daily_logger_st("global", m_logfile);
     }
-    spdlog::set_level(spdlog::level::trace);
-    spdlog::set_sync_mode();
     m_logger->flush_on(spdlog::level::trace);
 }
 
