@@ -209,7 +209,7 @@ void XMLStream::in_context(std::function<void()> &&fn) {
         } catch (Metre::base::stanza_exception &e) {
             throw Metre::undefined_condition(std::string("Uncaught stanza error: ") + e.what());
         } catch (std::runtime_error &e) {
-            throw Metre::stanza_undefined_condition(e.what());
+            throw Metre::undefined_condition(e.what());
         }
     } catch (Metre::base::xmpp_exception &e) {
         handle_exception(e);
