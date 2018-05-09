@@ -625,11 +625,25 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
                            << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
                            << " session local:" << local << " remote:"
                            << remote);
-            if (m_bidi) RouteTable::routeTable(local).route(remote)->outbound(m_session);
+            if (m_bidi && dir == INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
             onAuthenticated.emit(*this);
         }
     }
     return m[key];
+}
+
+bool XMLStream::bidi(bool b) {
+    m_bidi = b;
+    if (m_bidi && m_dir == INBOUND) {
+        for (auto const &p : m_auth_pairs_rx) {
+            if (p.second == XMLStream::AUTHORIZED) {
+                auto &local = p.first.first;
+                auto &remote = p.first.second;
+                RouteTable::routeTable(local).route(remote)->outbound(m_session);
+            }
+        }
+    }
+    return m_bidi;
 }
 
 bool XMLStream::tls_auth_ok(Route &route) {

@@ -121,9 +121,7 @@ namespace Metre {
             return m_bidi;
         }
 
-        bool bidi(bool b) {
-            return m_bidi = b;
-        }
+        bool bidi(bool b);
 
         bool closed() const {
             return m_closed;

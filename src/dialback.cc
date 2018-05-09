@@ -171,9 +171,12 @@ namespace {
         void verify(DB::Verify const &v) {
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(v.id());
             DB::Type validity = DB::INVALID;
+            METRE_LOG(Log::DEBUG, "Handling db:verify");
             if (session) {
+                METRE_LOG(Log::DEBUG, "[NS" << session->serial() << "] session found.");
                 if (session->xml_stream().s2s_auth_pair(v.to().domain(), v.from().domain(), OUTBOUND) >=
                     XMLStream::REQUESTED) {
+                    METRE_LOG(Log::DEBUG, "[NS" << session->serial() << "] Auth State is correct.");
                     std::string expected = Config::config().dialback_key(v.id(), v.to().domain(), v.from().domain());
                     if (v.key() == expected) validity = DB::VALID;
                 }
