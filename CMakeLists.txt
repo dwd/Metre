@@ -117,6 +117,10 @@ include_directories(./deps/spdlog/include)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
 
 install(TARGETS metre DESTINATION bin)
+
+add_executable(metre-test tests/log.cc tests/main.cc src/stanza.cc tests/stanza.cc src/jid.cc tests/jid.cc)
+target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS})
+target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
 # These install into stupid places:
 #
 # install(FILES metre.conf.xml DESTINATION ./etc/metre)
