@@ -41,13 +41,13 @@ namespace {
      */
     class Bidi : public Feature, public sigslot::has_slots<> {
     public:
-        Bidi(XMLStream &s) : Feature(s) {}
+        explicit Bidi(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<Bidi> {
         public:
             Description() : Feature::Description<Bidi>(bidi_feat_ns, FEAT_PREAUTH) {};
 
-            virtual void offer(xml_node<> *node, XMLStream &s) override {
+            void offer(xml_node<> *node, XMLStream &s) override {
                 if (s.bidi()) return;
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "bidi");
@@ -79,7 +79,7 @@ namespace {
      */
     class BidiInbound : public Feature, public sigslot::has_slots<> {
     public:
-        BidiInbound(XMLStream &s) : Feature(s) {}
+        explicit BidiInbound(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<BidiInbound> {
         public:

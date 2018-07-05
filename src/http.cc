@@ -17,9 +17,6 @@ namespace Metre {
     Http * s_http = 0;
 }
 
-Http::Http() {
-}
-
 Http & Http::http() {
     if (!s_http) s_http = new Http();
     return *s_http;
@@ -30,7 +27,7 @@ Http::crl_callback_t &Http::crl(std::string const &uri) {
 }
 
 void Http::s_done_crl(struct evhttp_request *req, void *arg) {
-    std::uintptr_t key = reinterpret_cast<std::uintptr_t>(arg);
+    auto key = reinterpret_cast<std::uintptr_t>(arg);
     Http::http().done_crl(req, key);
 }
 
@@ -54,8 +51,8 @@ void Http::done_crl(struct evhttp_request *req, std::uintptr_t key) {
             m_crl_waiting[uri].disconnect_all();
         } else {
             while (unsigned long ssl_err = ERR_get_error()) {
-                char buf[1024];
-                METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, buf));
+                char error_buf[1024];
+                METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, error_buf));
             }
             m_crl_waiting[uri].emit(uri, 400, nullptr);
             m_crl_waiting[uri].disconnect_all();
@@ -69,7 +66,7 @@ void Http::done_crl(struct evhttp_request *req, std::uintptr_t key) {
 }
 
 Http::crl_callback_t &Http::do_crl(std::string const &urix) {
-    std::string uri{urix};
+    std::string uri{urix}; // Destructively parsed
     // Step one: Look in cache.
     auto iter = m_crl_cache.find(uri);
     if (iter != m_crl_cache.end() && iter->second) {

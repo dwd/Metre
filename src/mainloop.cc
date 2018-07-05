@@ -72,7 +72,7 @@ namespace Metre {
             s_mainloop = this;
         }
 
-        ~Mainloop() {
+        virtual ~Mainloop() {
             if (m_ub_event) {
                 event_del(m_ub_event);
                 event_free(m_ub_event);
@@ -217,19 +217,19 @@ namespace Metre {
                 unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
             void *inx_addr;
             if (addr->sa_family == AF_INET) {
-                struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(addr);
+                auto sin = reinterpret_cast<struct sockaddr_in *>(addr);
                 sin->sin_port = htons(port);
                 inx_addr = &sin->sin_addr;
             } else {
-                struct sockaddr_in6 *sin6 = reinterpret_cast<struct sockaddr_in6 *>(addr);
+                auto sin6 = reinterpret_cast<struct sockaddr_in6 *>(addr);
                 sin6->sin6_port = htons(port);
                 inx_addr = &sin6->sin6_addr;
             }
             char buf[INET6_ADDRSTRLEN + 1];
             METRE_LOG(Metre::Log::DEBUG,
                       "Connecting to " << inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN) << ":" << port);
-            std::shared_ptr<NetSession> sesh = connect(fromd, tod, hostname, addr,
-                                                       sizeof(struct sockaddr_storage), port, stype, tls_mode);
+            auto sesh = connect(fromd, tod, hostname, addr,
+                                sizeof(struct sockaddr_storage), port, stype, tls_mode);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
             auto it = m_sessions_by_domain.find(tod);
             if (it == m_sessions_by_domain.end() ||
@@ -247,7 +247,7 @@ namespace Metre {
                 METRE_LOG(Metre::Log::CRIT, "Error creating BEV");
                 throw std::runtime_error("Connection failed: cannot create BEV");
             }
-            if (0 > bufferevent_socket_connect(bev, sin, addrlen)) {
+            if (0 > bufferevent_socket_connect(bev, sin, static_cast<int>(addrlen))) {
                 METRE_LOG(Metre::Log::ERR, "Error connecting BEV");
                 // TODO Something bad happened.
                 bufferevent_free(bev);
@@ -257,8 +257,8 @@ namespace Metre {
             struct timeval tv = {0, 0};
             tv.tv_sec = Config::config().domain(tod).connect_timeout();
             bufferevent_set_timeouts(bev, nullptr, &tv);
-            std::shared_ptr<NetSession> session(
-                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, stype, tls_mode));
+            auto session = std::make_shared<NetSession>(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, stype,
+                                                        tls_mode);
             auto it = m_sessions.find(session->serial());
             if (it != m_sessions.end()) {
                 // We already have one for this socket. This seems unlikely to be safe.

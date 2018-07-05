@@ -50,6 +50,7 @@ SOFTWARE.
 #include <unicode/uidna.h>
 #include <filter.h>
 #include <cstring>
+#include <unbound-event.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -273,9 +274,8 @@ namespace {
                 throw std::runtime_error("Cannot authenticate domain, but not blocked.");
             }
         }
-        std::unique_ptr<Config::Domain> dom(
-                new Config::Domain(name, sess, forward, tls_required, block, auth_pkix, auth_dialback,
-                                   auth_host, std::move(auth_secret)));
+        auto dom = std::make_unique<Config::Domain>(name, sess, forward, tls_required, block, auth_pkix, auth_dialback,
+                                                    auth_host, std::move(auth_secret));
         dom->auth_pkix_status(auth_pkix_crls);
         dom->stanza_timeout(stanza_timeout);
         dom->connect_timeout(connect_timeout);
@@ -442,7 +442,7 @@ Config::Domain::~Domain() {
 }
 
 void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
-    std::unique_ptr<DNS::Address> address(new DNS::Address);
+    auto address = std::make_unique<DNS::Address>();
     std::string hostname = toASCII(ihostname + '.');
     address->dnssec = true;
     address->hostname = hostname;
@@ -582,9 +582,12 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
         throw std::runtime_error("DNS context creation failure.");
     }
     int retval;
-    if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
+    if ((retval = ub_ctx_set_event(m_ub_ctx, Router::event_base())) != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
+    /*if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
+        throw std::runtime_error(ub_strerror(retval));
+    }*/
     if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
@@ -686,8 +689,8 @@ void Config::load(std::string const &filename) {
             any_domain = &*dom; // Save this pointer.
             m_domains[dom->domain()] = std::move(dom);
         } else {
-            m_domains[""] = std::unique_ptr<Config::Domain>(
-                    new Config::Domain("", INT, false, true, true, true, true, false, std::optional<std::string>()));
+            m_domains[""] = std::make_unique<Config::Domain>("", INT, false, true, true, true, true, false,
+                                                             std::optional<std::string>());
         }
         for (auto domain = external->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
             std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, S2S));
@@ -1207,7 +1210,7 @@ void Config::Domain::tlsa(std::string const &hostname, unsigned short port, DNS:
     auto tlsait = m_tlsarecs.find(domain);
     DNS::Tlsa *tlsa;
     if (tlsait == m_tlsarecs.end()) {
-        std::unique_ptr<DNS::Tlsa> tlsan(new DNS::Tlsa);
+        auto tlsan = std::make_unique<DNS::Tlsa>();
         tlsan->dnssec = true;
         tlsan->domain = domain;
         tlsa = tlsan.get();

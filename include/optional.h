@@ -100,7 +100,7 @@ namespace std {
             return *real();
         }
 
-        operator bool() const {
+        explicit operator bool() const {
             return m_engaged;
         }
 

@@ -26,7 +26,7 @@ namespace Metre {
         std::uintptr_t m_req = 0;
 
     public:
-        Http();
+        Http() = default;
 
         static crl_callback_t &crl(std::string const &uri);
 

@@ -126,7 +126,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 m_stanza.clear();
                 if (m_frozen) return spaces + len - buf.length();
             }
-        } catch (Metre::base::xmpp_exception) {
+        } catch (Metre::base::xmpp_exception &) {
             throw;
         } catch (rapidxml::eof_error &e) {
             return spaces + len - buf.length();
@@ -184,9 +184,9 @@ void XMLStream::in_context(std::function<void()> &&fn, Stanza &s) {
     try {
         try {
             fn();
-        } catch (Metre::base::xmpp_exception) {
+        } catch (Metre::base::xmpp_exception &) {
             throw;
-        } catch (Metre::base::stanza_exception) {
+        } catch (Metre::base::stanza_exception &) {
             throw;
         } catch (std::runtime_error &e) {
             throw Metre::stanza_undefined_condition(e.what());
@@ -381,7 +381,7 @@ void XMLStream::send_stream_open(bool with_version) {
         open += content_namespace();
         if (m_type == S2S) {
             open += "' xmlns:db='jabber:server:dialback";
-            if (m_stream_remote != "") {
+            if (!m_stream_remote.empty()) {
                 open += "' to='";
                 open += m_stream_remote;
             }
@@ -495,7 +495,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
         }
     } else {
         auto fit = m_features.find(xmlns);
-        Feature *f = 0;
+        Feature *f = nullptr;
         METRE_LOG(Metre::Log::DEBUG, "Hunting handling feature for {" << xmlns << "}");
         if (fit != m_features.end()) {
             f = (*fit).second;

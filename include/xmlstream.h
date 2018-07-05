@@ -139,8 +139,6 @@ namespace Metre {
 
         void send(std::unique_ptr<Stanza> v);
 
-        sigslot::signal<sigslot::thread::st, Stanza const &> &query(rapidxml::xml_node<> const &payload);
-
         void restart();
 
         void set_auth_ready() {
@@ -187,7 +185,7 @@ namespace Metre {
             return m_stream_id;
         }
 
-        ~XMLStream();
+        ~XMLStream() final;
 
         void generate_stream_id();
 

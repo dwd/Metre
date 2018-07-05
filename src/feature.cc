@@ -54,7 +54,7 @@ Feature *Feature::feature(std::string const &xmlns, XMLStream &stream) {
             return f->instantiate(stream);
         }
     }
-    return 0;
+    return nullptr;
 }
 
 Feature::Type Feature::type(std::string const &xmlns, XMLStream &stream) {

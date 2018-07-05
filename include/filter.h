@@ -40,7 +40,7 @@ namespace Metre {
     public:
         class BaseDescription {
         protected:
-            BaseDescription(std::string &&aname) : name(std::move(aname)) {}
+            explicit BaseDescription(std::string &&aname) : name(std::move(aname)) {}
 
             virtual void do_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) {}
 
@@ -58,9 +58,9 @@ namespace Metre {
         template<typename T>
         class Description : public BaseDescription {
         public:
-            Description(std::string &&name) : BaseDescription(std::move(name)) {}
+            explicit Description(std::string &&name) : BaseDescription(std::move(name)) {}
 
-            virtual std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) override {
+            std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) override {
                 return std::unique_ptr<Filter>(new T(*this, domain, config));
             }
         };
@@ -69,7 +69,7 @@ namespace Metre {
         static std::map<std::string, BaseDescription *> &all_filters();
 
     public:
-        Filter(BaseDescription &b) : m_description(b) {}
+        explicit Filter(BaseDescription &b) : m_description(b) {}
 
         /* Interface */
         /* Actually do the filter. Tinkering with the stanza is fine. */
@@ -82,7 +82,7 @@ namespace Metre {
         BaseDescription const &m_description;
 
     public:
-        virtual ~Filter() {}
+        virtual ~Filter() = default;
 
         template<typename T>
         static bool declare(const char *name) {

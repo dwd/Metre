@@ -41,13 +41,13 @@ namespace {
     class SaslExternal : public Feature {
     private:
     public:
-        SaslExternal(XMLStream &s) : Feature(s) {}
+        explicit SaslExternal(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<SaslExternal> {
         public:
             Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
 
-            virtual void offer(xml_node<> *node, XMLStream &stream) override {
+            void offer(xml_node<> *node, XMLStream &stream) override {
                 if (stream.remote_domain().empty()) return;
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) ==
                     XMLStream::AUTHORIZED)
@@ -152,7 +152,6 @@ namespace {
             } else {
                 throw std::runtime_error("Unimplemented");
             }
-            return false;
         }
 
         bool negotiate(rapidxml::xml_node<> *feat) override {

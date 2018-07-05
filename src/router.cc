@@ -437,7 +437,7 @@ void Route::SessionAuthenticated(XMLStream &stream) {
 }
 
 std::vector<DNS::Tlsa> const &Route::tlsa() const {
-    if (m_tlsa.size()) return m_tlsa;
+    if (!m_tlsa.empty()) return m_tlsa;
     return Config::config().domain(m_domain.domain()).tlsa();
 }
 
@@ -457,7 +457,7 @@ std::shared_ptr<Route> &RouteTable::route(Jid const &to) {
     // TODO This needs to be more complex once we have clients.
     auto it = m_routes.find(to.domain());
     if (it != m_routes.end()) return (*it).second;
-    auto itp = m_routes.emplace(to.domain(), std::shared_ptr<Route>(new Route(m_local_domain, to.domain())));
+    auto itp = m_routes.emplace(to.domain(), std::make_shared<Route>(m_local_domain, to.domain()));
     return (*(itp.first)).second;
 }
 

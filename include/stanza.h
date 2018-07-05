@@ -75,11 +75,11 @@ namespace Metre {
     public:
         Stanza(const char *name, rapidxml::xml_node<> const *node);
 
-        Stanza(const char *name);
+        explicit Stanza(const char *name);
 
         Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type, std::string const &id);
 
-        virtual ~Stanza() {}
+        virtual ~Stanza() = default;
 
         const char *name() {
             return m_name;
@@ -141,7 +141,7 @@ namespace Metre {
     private:
         Type m_type;
     public:
-        Message(rapidxml::xml_node<> const *node);
+        explicit Message(rapidxml::xml_node<> const *node);
 
         Type type() const {
             return m_type;
@@ -161,7 +161,7 @@ namespace Metre {
     private:
         Type m_type;
     public:
-        Iq(rapidxml::xml_node<> const *node);
+        explicit Iq(rapidxml::xml_node<> const *node);
 
         Iq(Jid const &from, Jid const &to, Type t, std::string const &id);
 
@@ -180,7 +180,7 @@ namespace Metre {
     public:
         static const char *name;
 
-        Presence(rapidxml::xml_node<> const *node) : Stanza(name, node) {
+        explicit Presence(rapidxml::xml_node<> const *node) : Stanza(name, node) {
         }
     };
 
@@ -233,7 +233,7 @@ namespace Metre {
                                                                                                    stream_id,
                                                                                                    t) {}
 
-        Verify(rapidxml::xml_node<> const *node) : DB(name, node) {
+        explicit Verify(rapidxml::xml_node<> const *node) : DB(name, node) {
         }
     };
 
@@ -251,7 +251,7 @@ namespace Metre {
         Result(Jid const &to, Jid const &from, Stanza::Error t) : DB(name, to, from, "",
                                                                      t) {}
 
-        Result(rapidxml::xml_node<> const *node) : DB(name, node) {
+        explicit Result(rapidxml::xml_node<> const *node) : DB(name, node) {
         }
     };
 }

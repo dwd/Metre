@@ -87,8 +87,8 @@ namespace {
 int main(int argc, char *argv[]) {
     try {
         // Firstly, load up the configuration.
-        bc.reset(new BootConfig(argc, argv));
-        config.reset(new Metre::Config(bc->config_file));
+        bc = std::make_unique<BootConfig>(argc, argv);
+        config = std::make_unique<Metre::Config>(bc->config_file);
         if (bc->boot_method.empty()) {
             bc->boot_method = config->boot_method();
         }

@@ -39,28 +39,28 @@ namespace {
 
     class JabberServer : public Feature, public sigslot::has_slots<> {
     public:
-        JabberServer(XMLStream &s) : Feature(s) {}
+        explicit JabberServer(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<JabberServer> {
         public:
             Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
 
-            virtual void offer(xml_node<> *, XMLStream &) {
+            virtual void offer(xml_node<> *, XMLStream &) override {
                 // No feature advertised.
             }
         };
 
-        bool handle(rapidxml::xml_node<> *node) {
+        bool handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
             std::unique_ptr<Stanza> s;
             if (stanza == "message") {
-                s = std::move(std::unique_ptr<Stanza>(new Message(node)));
+                s = std::make_unique<Message>(node);
             } else if (stanza == "iq") {
-                s = std::move(std::unique_ptr<Stanza>(new Iq(node)));
+                s = std::make_unique<Iq>(node);
             } else if (stanza == "presence") {
-                s = std::move(std::unique_ptr<Stanza>(new Presence(node)));
+                s = std::make_unique<Presence>(node);
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
             }
@@ -116,7 +116,7 @@ namespace {
                             }
                         }
                         if (ping) {
-                            std::unique_ptr<Stanza> pong{new Iq(to, from, Iq::RESULT, s->id())};
+                            auto pong = std::make_unique<Iq>(to, from, Iq::RESULT, s->id());
                             std::shared_ptr<Route> route = RouteTable::routeTable(to).route(from);
                             route->transmit(std::move(pong));
                         } else {
@@ -127,9 +127,9 @@ namespace {
                         route->transmit(std::move(s));
                     }
                     // Lookup endpoint.
-                } catch (Metre::base::xmpp_exception) {
+                } catch (Metre::base::xmpp_exception &) {
                     throw;
-                } catch (Metre::base::stanza_exception) {
+                } catch (Metre::base::stanza_exception &) {
                     throw;
                 } catch (std::runtime_error &e) {
                     throw Metre::stanza_undefined_condition(e.what());

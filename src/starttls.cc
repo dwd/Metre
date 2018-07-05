@@ -86,13 +86,13 @@ namespace {
 
     class StartTls : public Feature, public sigslot::has_slots<> {
     public:
-        StartTls(XMLStream &s) : Feature(s) {}
+        explicit StartTls(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<StartTls> {
         public:
             Description() : Feature::Description<StartTls>(tls_ns, FEAT_SECURE) {};
 
-            virtual void offer(xml_node<> *node, XMLStream &s) override {
+            void offer(xml_node<> *node, XMLStream &s) override {
                 if (s.secured()) return;
                 SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
                 if (!ctx) return;

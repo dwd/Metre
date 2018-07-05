@@ -97,19 +97,19 @@ namespace Metre {
                 return m_auth_dialback;
             }
 
-            int stanza_timeout() const {
+            unsigned stanza_timeout() const {
                 return m_stanza_timeout;
             }
 
-            unsigned stanza_timeout(int stanza_timeout) {
+            unsigned stanza_timeout(unsigned stanza_timeout) {
                 return m_stanza_timeout = stanza_timeout;
             }
 
-            int connect_timeout() const {
+            unsigned connect_timeout() const {
                 return m_connect_timeout;
             }
 
-            unsigned connect_timeout(int connect_timeout) {
+            unsigned connect_timeout(unsigned connect_timeout) {
                 return m_connect_timeout = connect_timeout;
             }
 

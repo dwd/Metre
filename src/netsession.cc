@@ -39,7 +39,8 @@ SOFTWARE.
 using namespace Metre;
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Config::Listener const *listen)
-        : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, INBOUND, listen->session_type)) {
+        : m_serial(serial), m_bev(nullptr),
+          m_xml_stream(std::make_unique<XMLStream>(this, INBOUND, listen->session_type)) {
     bufferevent(bev);
     METRE_LOG(Log::INFO, "New INBOUND session NS" << serial);
     if (listen->session_type == X2X) {
@@ -64,7 +65,8 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::string const &stream_from,
                        std::string const &stream_to, SESSION_TYPE stype, TLS_MODE tls_mode)
-        : m_serial(serial), m_bev(nullptr), m_xml_stream(new XMLStream(this, OUTBOUND, stype, stream_from, stream_to)) {
+        : m_serial(serial), m_bev(nullptr),
+          m_xml_stream(std::make_unique<XMLStream>(this, OUTBOUND, stype, stream_from, stream_to)) {
     bufferevent(bev);
     METRE_LOG(Log::INFO, "New OUTBOUND session NS" << serial);
     if (tls_mode == IMMEDIATE) {
@@ -90,7 +92,7 @@ namespace {
     class Latch {
         bool &m_b;
     public:
-        Latch(bool &b) : m_b(b) {
+        explicit Latch(bool &b) : m_b(b) {
             m_b = true;
         }
 
@@ -102,7 +104,7 @@ namespace {
 
 bool NetSession::drain() {
     if (m_in_progress) return false;
-    std::unique_ptr<Latch> latch{new Latch(m_in_progress)};
+    auto latch = std::make_unique<Latch>(m_in_progress);
     // While there is data, see how much we can consume with the XMLStream.
     struct evbuffer *buf = nullptr; // This gets refreshed each time through the loops.
     size_t len;

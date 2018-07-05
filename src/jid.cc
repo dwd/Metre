@@ -57,12 +57,12 @@ namespace {
                            [](const char c) { return static_cast<char>(tolower(c)); });
             return ret;
         }
-        std::unique_ptr<UChar[]> output{new UChar[input.size() + 1]};
+        auto output = std::make_unique<UChar[]>(input.size() + 1);
         UChar *ptr = output.get();
         const char *data = input.data();
         UErrorCode error = U_ZERO_ERROR;
         ucnv_toUnicode(utf8(), &ptr, output.get() + input.size(), &data, data + input.size(), nullptr, TRUE, &error);
-        std::unique_ptr<UChar[]> prepped{new UChar[2 * (ptr - output.get())]};
+        auto prepped = std::make_unique<UChar[]>(2 * (ptr - output.get()));
         UParseError parse_error;
         int32_t sz = usprep_prepare(p, output.get(), ptr - output.get(), prepped.get(), ptr - output.get(),
                                     USPREP_DEFAULT, &parse_error, &error);

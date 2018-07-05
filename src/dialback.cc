@@ -50,7 +50,7 @@ namespace {
         public:
             Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH_FALLBACK) {};
 
-            virtual void offer(xml_node<> *node, XMLStream &s) {
+            void offer(xml_node<> *node, XMLStream &s) override {
                 if (!s.secured() && (Config::config().domain(s.local_domain()).require_tls() ||
                                      Config::config().domain(s.remote_domain()).require_tls())) {
                     return;
@@ -81,7 +81,7 @@ namespace {
 
     class Dialback : public Feature, public sigslot::has_slots<> {
     public:
-        Dialback(XMLStream &s) : Feature(s) {}
+        explicit Dialback(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<Dialback> {
         public:
@@ -100,21 +100,21 @@ namespace {
         void result_step(Route &route, std::string const &key) {
             // Shortcuts here.
             if (m_stream.tls_auth_ok(route)) {
-                std::unique_ptr<Stanza> d(new DB::Result(route.domain(), route.local(), DB::VALID));
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route.domain(), route.local(), DB::VALID);
                 m_stream.send(std::move(d));
                 m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::AUTHORIZED);
                 return;
             }
             Config::Domain const &from_domain = Config::config().domain(route.domain());
             if (!from_domain.auth_dialback()) {
-                std::unique_ptr<Stanza> d(new DB::Result(route.domain(), route.local(), Stanza::not_authorized));
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route.domain(), route.local(),
+                                                                         Stanza::not_authorized);
                 m_stream.send(std::move(d));
                 return;
             }
             m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::REQUESTED);
             // With syntax done, we should send the key:
-            route.transmit(std::unique_ptr<DB::Verify>(
-                    new DB::Verify(route.domain(), route.local(), m_stream.stream_id(), key)));
+            route.transmit(std::make_unique<DB::Verify>(route.domain(), route.local(), m_stream.stream_id(), key));
             m_keys.erase(key);
         }
 
@@ -124,13 +124,15 @@ namespace {
              */
             Config::Domain const &from_domain = Config::config().domain(result.from().domain());
             if (from_domain.transport_type() == INT || from_domain.transport_type() == COMP) {
-                std::unique_ptr<Stanza> d(new DB::Result(result.from(), result.to(), Stanza::not_acceptable));
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
+                                                                         Stanza::not_acceptable);
                 m_stream.send(std::move(d));
                 return;
             }
             m_stream.check_domain_pair(result.from().domain(), result.to().domain());
             if (!m_stream.secured() && Config::config().domain(result.to().domain()).require_tls()) {
-                std::unique_ptr<Stanza> d(new DB::Result(result.from(), result.to(), Stanza::policy_violation));
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
+                                                                         Stanza::policy_violation);
                 m_stream.send(std::move(d));
                 return;
             }
@@ -181,7 +183,7 @@ namespace {
                     if (v.key() == expected) validity = DB::VALID;
                 }
             }
-            std::unique_ptr<Stanza> d(new DB::Verify(v.from(), v.to(), v.id(), validity));
+            std::unique_ptr<Stanza> d = std::make_unique<DB::Verify>(v.from(), v.to(), v.id(), validity);
             m_stream.send(std::move(d));
         }
 
@@ -192,7 +194,7 @@ namespace {
             if (!session) return; // Silently ignore this.
             XMLStream &stream = session->xml_stream();
             if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::REQUESTED) {
-                std::unique_ptr<Stanza> d(new DB::Result(v.from(), v.to(), DB::VALID));
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), DB::VALID);
                 stream.send(std::move(d));
                 stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTHORIZED);
             }
@@ -205,33 +207,33 @@ namespace {
             if (!session) return; // Silently ignore this.
             XMLStream &stream = session->xml_stream();
             if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::REQUESTED) {
-                std::unique_ptr<Stanza> d(new DB::Result(v.from(), v.to(), Stanza::forbidden));
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), Stanza::forbidden);
                 stream.send(std::move(d));
                 stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::NONE);
             }
         }
 
-        bool handle(rapidxml::xml_node<> *node) {
+        bool handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string stanza = node->name();
             if (stanza == "result") {
-                std::unique_ptr<DB::Result> p(new DB::Result(node));
+                auto p = std::make_unique<DB::Result>(node);
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {
                         result_valid(*p);
                     } else if (*p->type_str() == "invalid") {
                         result_invalid(*p);
                     } else if (*p->type_str() == "error") {
-                        result_error(node);
+                        result_error(*p);
                     } else {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:result");
                     }
                 } else {
-                    result(node);
+                    result(*p);
                 }
             } else if (stanza == "verify") {
-                std::unique_ptr<DB::Verify> p(new DB::Verify(node));
+                auto p = std::make_unique<DB::Verify>(node);
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {
                         verify_valid(*p);
@@ -241,7 +243,7 @@ namespace {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:verify");
                     }
                 } else {
-                    verify(node);
+                    verify(*p);
                 }
             } else {
                 throw Metre::unsupported_stanza_type("Unknown dialback element");

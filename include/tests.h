@@ -43,7 +43,7 @@ namespace Metre {
     class Test {
         std::string m_name;
     public:
-        Test(std::string const &name);
+        explicit Test(std::string const &name);
 
         virtual ~Test();
 
