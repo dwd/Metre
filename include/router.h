@@ -117,8 +117,9 @@ namespace Metre {
     private:
         std::map<std::string, std::shared_ptr<Route>> m_routes;
         std::string m_local_domain;
+
     public:
-        explicit RouteTable(std::string const &);
+        RouteTable(std::string const &);
 
         std::shared_ptr<Route> &route(Jid const &to);
 

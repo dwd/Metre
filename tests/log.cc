@@ -28,7 +28,7 @@ SOFTWARE.
 #include <iostream>
 
 void Metre::Log::log(Log::LEVEL lvlm, std::string const &filename, int line, std::string const &stuff) {
-    char *lvl = "UNKNOWN";
+    const char *lvl = "UNKNOWN";
     switch (lvlm) {
         case EMERG:
             lvl = "EMERG";
