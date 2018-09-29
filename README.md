@@ -1,6 +1,10 @@
 Metre :: An XMPP Server (Sort Of)
 =================================
 
+<a href="http://217.155.137.59:8111/viewType.html?buildTypeId=Metre_Build&guest=1">
+<img src="https://217.155.137.59:8111/app/rest/builds/buildType:(id:Metre_Build)/statusIcon"/>
+</a>
+
 Metre (check that spelling) is an XMPP Server, of sorts. Unlike traditional XMPP servers
 which host services internally, Metre is specifically designed to connect between servers,
 mediating connections and traffic.
