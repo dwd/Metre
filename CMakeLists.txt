@@ -78,8 +78,7 @@ set(SOURCE_FILES
     include/optional.h
     include/router.h
         include/stanza.h
-    include/tests.h
-    include/xmlstream.h
+        include/xmlstream.h
     include/xmppexcept.h
         gen/dh1024.cc
         gen/dh2048.cc
@@ -105,6 +104,7 @@ add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
 add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
 add_subdirectory(deps/unbound EXCLUDE_FROM_ALL)
 add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
+add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
 target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound ${ICU_LIBS} spiffing spiffing-asn dl pthread rt)
 include_directories(include)
 include_directories(./deps/rapidxml)
@@ -118,8 +118,9 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
 
 install(TARGETS metre DESTINATION bin)
 
-add_executable(metre-test tests/log.cc tests/main.cc src/stanza.cc tests/stanza.cc src/jid.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc src/capabilities/pubsub.cc src/capabilities/node.cc tests/endpoint.cc)
-target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS})
+add_executable(metre-test tests/log.cc src/stanza.cc src/jid.cc tests/stanza.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc src/capabilities/pubsub.cc src/capabilities/node.cc tests/endpoint.cc)
+include_directories(./deps/googletest/googletest/include)
+target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS} gtest gtest_main)
 target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
 # These install into stupid places:
 #

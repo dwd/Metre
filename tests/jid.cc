@@ -1,28 +1,19 @@
 #include "jid.h"
-#include "tests.h"
+#include "gtest/gtest.h"
 #include <iostream>
 
 using namespace Metre;
 
-class JidTest : public Test {
-public:
-	JidTest() : Test("Jid") {}
-	bool run() {
+TEST(JidTest, Tests) {
 		Jid one("dwd", "dave.cridland.net");
-		assert::equal(one.full(), "dwd@dave.cridland.net", "bare/full");
-		assert::equal(one.bare(), "dwd@dave.cridland.net", "bare/bare");
+    ASSERT_EQ(one.full(), "dwd@dave.cridland.net");
+    ASSERT_EQ(one.bare(), "dwd@dave.cridland.net");
 		Jid two("dwd", "dave.cridland.net", "Resource");
-		assert::equal(two.bare(), "dwd@dave.cridland.net", "full/bare");
-		assert::equal(two.full(), "dwd@dave.cridland.net/Resource", "full/full");
+    ASSERT_EQ(two.bare(), "dwd@dave.cridland.net");
+    ASSERT_EQ(two.full(), "dwd@dave.cridland.net/Resource");
 		Jid three("dwd@DAVE.CRIDLAND.NET/Resource");
-		assert::equal(three.domain(), "dave.cridland.net", "parsed/domain");
-		assert::equal(three.bare(), "dwd@dave.cridland.net", "parsed/bare");
-		assert::equal(three.full().length(), std::string("dwd@dave.cridland.net/Resource").length(), "parsed/full");
-		assert::equal(three.full(), "dwd@dave.cridland.net/Resource", "parsed/full");
-		return true;
-	}
-};
-
-namespace {
-	JidTest jidtest;
+    ASSERT_EQ(three.domain(), "dave.cridland.net");
+    ASSERT_EQ(three.bare(), "dwd@dave.cridland.net");
+    ASSERT_EQ(three.full().length(), std::string("dwd@dave.cridland.net/Resource").length());
+    ASSERT_EQ(three.full(), "dwd@dave.cridland.net/Resource");
 }
