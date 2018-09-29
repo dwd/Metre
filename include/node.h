@@ -15,8 +15,8 @@ namespace Metre {
     class Node {
     public:
         class Item {
-            std::string const m_payload;
             std::string const m_item_id;
+            std::string const m_payload;
         public:
             Item(std::string const &item_id, std::string const &payload);
 
@@ -35,11 +35,11 @@ namespace Metre {
 
             virtual ~Facet();
 
-            Item const &add_item(const std::unique_ptr<Item> &&item, bool allow_override = false);
+            Item const &add_item(const std::shared_ptr<Item> &item, bool allow_override = false);
 
         private:
-            std::list<std::unique_ptr<Item>> m_items;
-            std::map<std::string, std::list<std::unique_ptr<Item>>::const_iterator> m_item_ids;
+            std::list<std::shared_ptr<Item>> m_items;
+            std::map<std::string, std::list<std::shared_ptr<Item>>::const_iterator> m_item_ids;
         };
 
         class Subscription {

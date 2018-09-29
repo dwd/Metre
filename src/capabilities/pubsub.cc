@@ -17,15 +17,14 @@ namespace {
             }
         };
 
-        void publish(const Iq &iq, Node &node, std::unique_ptr<Node::Item> &&item) {
+        void publish(const Iq &iq, Node &node, std::shared_ptr<Node::Item> const &item) {
             auto facet = node.facet("pubsub-items");
             if (!facet) {
                 facet = node.add_facet(
                         std::make_unique<Node::Facet>(*this, "pubsub-items", true));
             }
-            facet->add_item(std::move(item), true);
-            std::unique_ptr<Stanza> pong{
-                    new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id())};
+            facet->add_item(item, true);
+            std::unique_ptr<Stanza> pong = std::make_unique<Iq>(iq.to(), iq.from(), Iq::RESULT, iq.id());
             m_endpoint.send(std::move(pong));
         }
 
@@ -42,10 +41,11 @@ namespace {
             if (!itemxml) throw std::runtime_error("Missing item");
             auto item_idattr = itemxml->first_attribute("id");
             std::string item_id{item_idattr->value(), item_idattr->value_size()};
-            auto item = std::make_unique<Node::Item>(item_id, "");
+            auto item = std::make_shared<Node::Item>(item_id, "");
+            auto siq = std::shared_ptr<Iq>(std::move(iq));
             m_endpoint.node(node_name,
-                            [this, niq = std::move(iq), nitem = std::move(item)](Node &node) {
-                                publish(*niq, node, std::move(nitem));
+                            [this, item, siq](Node &node) {
+                                publish(*siq, node, item);
                             }
             );
         }
