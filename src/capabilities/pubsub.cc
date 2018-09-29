@@ -8,6 +8,9 @@
 using namespace Metre;
 
 namespace {
+    namespace {
+        std::string const pubsub_items = "pubsub=items";
+    }
     class Pubsub : public Capability {
     public:
         class Description : public Capability::Description<Pubsub> {
@@ -18,10 +21,10 @@ namespace {
         };
 
         void publish(const Iq &iq, Node &node, std::shared_ptr<Node::Item> const &item) {
-            auto facet = node.facet("pubsub-items");
+            auto facet = node.facet(pubsub_items);
             if (!facet) {
                 facet = node.add_facet(
-                        std::make_unique<Node::Facet>(*this, "pubsub-items", true));
+                        std::make_unique<Node::Facet>(*this, pubsub_items, true));
             }
             facet->add_item(item, true);
             std::unique_ptr<Stanza> pong = std::make_unique<Iq>(iq.to(), iq.from(), Iq::RESULT, iq.id());
@@ -46,7 +49,8 @@ namespace {
             m_endpoint.node(node_name,
                             [this, item, siq](Node &node) {
                                 publish(*siq, node, item);
-                            }
+                            },
+                            true // Auto-create.
             );
         }
 

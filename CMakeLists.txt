@@ -118,7 +118,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
 
 install(TARGETS metre DESTINATION bin)
 
-add_executable(metre-test src/log.cc tests/main.cc src/stanza.cc tests/stanza.cc src/jid.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc src/capabilities/pubsub.cc src/capabilities/node.cc tests/endpoint.cc)
+add_executable(metre-test tests/log.cc tests/main.cc src/stanza.cc tests/stanza.cc src/jid.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc src/capabilities/pubsub.cc src/capabilities/node.cc tests/endpoint.cc)
 target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS})
 target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
 # These install into stupid places:
