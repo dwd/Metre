@@ -66,22 +66,24 @@ namespace Metre {
         std::optional<Jid> m_from;
         std::optional<Jid> m_to;
         std::optional<std::string> m_type_str;
-        std::string m_id;
+        std::optional<std::string> m_id;
         std::string m_lang;
-        std::string m_payload_str;
+        mutable std::string m_payload_str;
         const char *m_payload = nullptr;
         size_t m_payload_l = 0;
         rapidxml::xml_node<> const *m_node = nullptr;
+        std::unique_ptr<rapidxml::xml_document<>> m_doc;
     public:
         Stanza(const char *name, rapidxml::xml_node<> const *node);
 
         explicit Stanza(const char *name);
 
-        Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type, std::string const &id);
+        Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type,
+               std::optional<std::string> const &id);
 
         virtual ~Stanza() = default;
 
-        const char *name() {
+        const char *name() const {
             return m_name;
         }
 
@@ -89,24 +91,37 @@ namespace Metre {
             return *m_to;
         }
 
+        void to(Jid const &jid) {
+            m_to.emplace(jid);
+        }
+
         Jid const &from() const {
             return *m_from;
+        }
+
+        void from(Jid const &jid) {
+            m_from.emplace(jid);
         }
 
         std::optional<std::string> const &type_str() const {
             return m_type_str;
         }
 
-        std::string const &id() const {
+        std::optional<std::string> const &id() const {
             return m_id;
+        }
+
+        void id(std::string const &s) {
+            m_id = s;
         }
 
         std::string const &lang() const {
             return m_lang;
         }
 
+        rapidxml::xml_node<> const *node();
         rapidxml::xml_node<> const *node() const {
-            return m_node;
+            return const_cast<Stanza *>(this)->node();
         }
 
         void payload(std::string const &p) {
@@ -115,13 +130,15 @@ namespace Metre {
             m_payload_l = m_payload_str.size();
         }
 
+        void payload(rapidxml::xml_node<> *node);
+
         void render(rapidxml::xml_document<> &d);
 
-        std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e);
+        std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e) const;
 
-        std::unique_ptr<Stanza> create_bounce(Stanza::Error e);
+        std::unique_ptr<Stanza> create_bounce(Stanza::Error e) const;
 
-        std::unique_ptr<Stanza> create_forward();
+        std::unique_ptr<Stanza> create_forward() const;
 
         void freeze(); // Make sure nothing is in volatile storage anymore.
 
@@ -163,11 +180,13 @@ namespace Metre {
     public:
         explicit Iq(rapidxml::xml_node<> const *node);
 
-        Iq(Jid const &from, Jid const &to, Type t, std::string const &id);
+        Iq(Jid const &from, Jid const &to, Type t, std::optional<std::string> const &id);
 
         Type type() const {
             return m_type;
         }
+
+        rapidxml::xml_node<> const &query() const;
 
     protected:
         static const char *type_toString(Type t);

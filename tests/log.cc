@@ -55,6 +55,7 @@ void Metre::Log::log(Log::LEVEL lvlm, std::string const &filename, int line, std
             lvl = "DEBUG";
             break;
         case TRACE:
+        default:
             lvl = "TRACE";
     }
     std::cerr << lvl << " : " << filename << ":" << line << " :: " << stuff << std::endl;

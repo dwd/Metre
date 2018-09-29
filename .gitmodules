@@ -19,3 +19,6 @@
 [submodule "deps/unbound"]
 	path = deps/unbound
 	url = https://github.com/dwd/unbound
+[submodule "deps/googletest"]
+	path = deps/googletest
+	url = https://github.com/google/googletest

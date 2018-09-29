@@ -297,6 +297,10 @@ namespace Metre {
             return *m_logger;
         }
 
+        std::string const &database() const {
+            return m_database;
+        }
+
     private:
         static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
 
@@ -310,6 +314,7 @@ namespace Metre {
         std::string m_dialback_secret;
         std::string m_logfile;
         std::string m_boot;
+        std::string m_database;
         std::map<std::string, std::unique_ptr<Domain>> m_domains;
         struct ub_ctx *m_ub_ctx = nullptr;
         std::list<Listener> m_listeners;

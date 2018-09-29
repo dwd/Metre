@@ -46,7 +46,8 @@ Stanza::Stanza(const char *name, rapidxml::xml_node<> const *node) : m_name(name
 Stanza::Stanza(const char *name) : m_name(name) {
 }
 
-Stanza::Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type_str, std::string const &id)
+Stanza::Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type_str,
+               std::optional<std::string> const &id)
         : m_name(name), m_from(from), m_to(to), m_type_str(type_str),
           m_id(id) {
 }
@@ -60,6 +61,14 @@ void Stanza::freeze() {
     m_payload_str.assign(m_payload, m_payload_l);
     METRE_LOG(Metre::Log::DEBUG, "Frozen stanza: " + m_payload_str);
     m_payload = m_payload_str.data();
+    m_node = nullptr;
+}
+
+void Stanza::payload(rapidxml::xml_node<> *node) {
+    m_payload_str.clear();
+    rapidxml::print(std::back_inserter(m_payload_str), *node, rapidxml::print_no_indenting);
+    m_payload = m_payload_str.data();
+    m_payload_l = m_payload_str.length();
     m_node = nullptr;
 }
 
@@ -77,8 +86,8 @@ void Stanza::render(rapidxml::xml_document<> &d) {
         auto att = d.allocate_attribute("type", m_type_str->c_str());
         hdr->append_attribute(att);
     }
-    if (!m_id.empty()) {
-        auto att = d.allocate_attribute("id", m_id.c_str());
+    if (m_id) {
+        auto att = d.allocate_attribute("id", m_id->c_str());
         hdr->append_attribute(att);
     }
     if (m_payload && m_payload_l) {
@@ -89,7 +98,22 @@ void Stanza::render(rapidxml::xml_document<> &d) {
     d.append_node(hdr);
 }
 
-std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) {
+rapidxml::xml_node<> const *Stanza::node() {
+    if (m_node) return m_node;
+    rapidxml::xml_document<> tmp_doc;
+    std::string tmp{m_payload, m_payload_l}; // Copy the buffer.
+    m_payload = tmp.data();
+    m_payload_l = tmp.length(); // Reset pointers to buffer.
+    render(tmp_doc);
+    m_payload_str.clear();
+    rapidxml::print(std::back_inserter(m_payload_str), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    m_doc.reset(new rapidxml::xml_document<>);
+    m_doc->parse<rapidxml::parse_full>(const_cast<char *>(m_payload_str.c_str()));
+    m_node = m_doc->first_node();
+    return m_node;
+}
+
+std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) const {
     std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
     stanza->m_from = m_to;
     stanza->m_to = m_from;
@@ -143,7 +167,7 @@ void Stanza::render_error(Stanza::Error e) {
     }
 }
 
-std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) {
+std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) const {
     switch (e) {
         case remote_server_timeout:
             return create_bounce(stanza_remote_server_timeout());
@@ -159,7 +183,7 @@ std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) {
     }
 }
 
-std::unique_ptr<Stanza> Stanza::create_forward() {
+std::unique_ptr<Stanza> Stanza::create_forward() const {
     std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
     stanza->m_from = m_from;
     stanza->m_to = m_to;
@@ -173,7 +197,7 @@ std::unique_ptr<Stanza> Stanza::create_forward() {
     return stanza;
 }
 
-Message::Message(rapidxml::xml_node<> const *node) : Stanza(name, node) {
+Message::Message(rapidxml::xml_node<> const *node) : Stanza(Message::name, node) {
     m_type = set_type();
 }
 
@@ -200,8 +224,8 @@ Message::Type Message::set_type() const {
     throw std::runtime_error("Unknown Message type");
 }
 
-Iq::Iq(Jid const &from, Jid const &to, Type t, std::string const &id) : Stanza("iq", from, to,
-                                                                               Iq::type_toString(t), id), m_type(t) {}
+Iq::Iq(Jid const &from, Jid const &to, Type t, std::optional<std::string> const &id) : Stanza(Iq::name, from, to,
+                                                                                              Iq::type_toString(t), id), m_type(t) {}
 
 Iq::Iq(rapidxml::xml_node<> const *node) : Stanza(name, node) {
     m_type = set_type();
@@ -239,6 +263,10 @@ Iq::Type Iq::set_type() const {
             break;
     }
     throw std::runtime_error("Unknown IQ type");
+}
+
+rapidxml::xml_node<> const &Iq::query() const {
+    return *node()->first_node();
 }
 
 const char *Iq::name = "iq";

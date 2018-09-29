@@ -443,7 +443,8 @@ Config::Domain::~Domain() {
 
 void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
     auto address = std::make_unique<DNS::Address>();
-    std::string hostname = toASCII(ihostname + '.');
+    std::string hostname = toASCII(ihostname);
+    if (hostname[hostname.length() - 1] != '.') hostname += '.';
     address->dnssec = true;
     address->hostname = hostname;
     address->addr.emplace_back();
@@ -958,7 +959,8 @@ std::string Config::asString() {
                             os << std::hex << std::setfill('0') << std::setw(2);
                             bool colon = false;
                             for (char c : rr.matchData) {
-                                unsigned char byte = static_cast<unsigned char>(c);
+                                auto byte = static_cast<unsigned short>(c);
+                                // Use numeric type to avoid treating as character.
                                 if (!colon) {
                                     colon = true;
                                 } else {
@@ -1202,9 +1204,12 @@ namespace {
     }
 }
 
-void Config::Domain::tlsa(std::string const &hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
+void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
                           DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value) {
     std::ostringstream out;
+    if (ahostname.empty()) throw std::runtime_error("Empty hostname in TLSA override");
+    std::string hostname = ahostname;
+    if (hostname[hostname.length() - 1] != '.') hostname += '.';
     out << "_" << port << "._tcp." << hostname;
     std::string domain = toASCII(out.str());
     auto tlsait = m_tlsarecs.find(domain);
@@ -1375,7 +1380,8 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     rr.priority = priority;
     rr.weight = weight;
     rr.port = port;
-    rr.hostname = toASCII(hostname) + ".";
+    rr.hostname = toASCII(hostname);
+    if (rr.hostname[rr.hostname.length() - 1] != '.') rr.hostname += '.';
     rr.tls = tls;
     m_srvrec->rrs.push_back(rr);
 }

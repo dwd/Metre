@@ -29,6 +29,7 @@ SOFTWARE.
 #include "router.h"
 #include "config.h"
 #include <memory>
+#include <endpoint.h>
 #include <log.h>
 
 using namespace Metre;
@@ -104,24 +105,7 @@ namespace {
                         return;
                     }
                     if (Config::config().domain(to.domain()).transport_type() == INT) {
-                        // For now, bounce everything.
-                        bool ping = false;
-                        if (std::string(s->name()) == "iq" && to.full() == to.domain()) {
-                            auto query = s->node()->first_node();
-                            if (query) {
-                                std::string xmlns{query->xmlns(), query->xmlns_size()};
-                                if (xmlns == "urn:xmpp:ping") {
-                                    ping = true;
-                                }
-                            }
-                        }
-                        if (ping) {
-                            auto pong = std::make_unique<Iq>(to, from, Iq::RESULT, s->id());
-                            std::shared_ptr<Route> route = RouteTable::routeTable(to).route(from);
-                            route->transmit(std::move(pong));
-                        } else {
-                            throw stanza_service_unavailable();
-                        }
+                        Endpoint::endpoint(to).process(std::move(s));
                     } else {
                         std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
                         route->transmit(std::move(s));
