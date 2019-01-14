@@ -51,6 +51,7 @@ SOFTWARE.
 #include <filter.h>
 #include <cstring>
 #include <unbound-event.h>
+#include <netinet/in.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -1513,7 +1514,7 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
                 a.addr.emplace(a.addr.begin());
                 struct sockaddr_in6 *sin = reinterpret_cast<struct sockaddr_in6 *>(&*a.addr.begin());
                 sin->sin6_family = AF_INET6;
-                memcpy(sin->sin6_addr.__in6_u.__u6_addr8, result->data[i], 16);
+                memcpy(sin->sin6_addr.s6_addr, result->data[i], 16);
             }
         }
         if (m_current_arec.ipv4 && m_current_arec.ipv6) {

@@ -32,8 +32,8 @@ set(OPENSSL_USE_STATIC_LIBS true)
 set(OPENSSL_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/deps/openssl)
 
 find_package(OpenSSL REQUIRED)
-find_path(ICU2_INCLUDE_DIR NAMES unicode/unorm2.h)
-find_path(ICU_INCLUDE_DIR NAMES unicode/unorm.h)
+find_path(ICU2_INCLUDE_DIR PATHS /usr/local/opt/icu4c/include NAMES unicode/unorm2.h)
+find_path(ICU_INCLUDE_DIR PATHS /usr/local/opt/icu4c/include NAMES unicode/unorm.h)
 message("ICU2 dir is ${ICU2_INCLUDE_DIR}")
 message("ICU dir is ${ICU_INCLUDE_DIR}")
 
@@ -44,10 +44,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O0 -g -DSIGSLOT_PURE_IS
 set(ICU_LIBS)
 if (ICU2_INCLUDE_DIR)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAVE_ICU2")
+    include_directories(${ICU2_INCLUDE_DIR})
+    link_directories(${ICU2_INCLUDE_DIR}/../lib)
     message("Found ICU2")
     set(ICU_LIBS icudata icuuc)
 elseif (ICU_INCLUDE_DIR)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAVE_ICU")
+    include_directories(${ICU_INCLUDE_DIR})
+    link_directories(${ICU_INCLUDE_DIR}/../lib)
     message("Found ICU")
     set(ICU_LIBS icudata icuuc)
 else ()
@@ -78,7 +82,8 @@ set(SOURCE_FILES
     include/optional.h
     include/router.h
         include/stanza.h
-        include/xmlstream.h
+    include/tests.h
+    include/xmlstream.h
     include/xmppexcept.h
         gen/dh1024.cc
         gen/dh2048.cc
@@ -96,8 +101,8 @@ set(SOURCE_FILES
     src/netsession.cc
     src/router.cc
     src/stanza.cc
-    src/starttls.cc src/bidi.cc
-        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
+    src/starttls.cc
+        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/bidi.cc)
 
 add_executable(metre ${SOURCE_FILES})
 add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
@@ -105,7 +110,11 @@ add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
 add_subdirectory(deps/unbound EXCLUDE_FROM_ALL)
 add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
 add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
-target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound ${ICU_LIBS} spiffing spiffing-asn dl pthread rt)
+SET(METRE_EXTRA_LIBS )
+if (${CMAKE_C_PLATFORM_ID} MATCHES "Linux")
+    SET(METRE_EXTRA_LIBS ${METRE_EXTRA_LIBS} rt)
+endif()
+target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound ${ICU_LIBS} spiffing spiffing-asn dl pthread)
 include_directories(include)
 include_directories(./deps/rapidxml)
 include_directories(./deps/sigslot)
