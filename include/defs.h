@@ -65,4 +65,7 @@ namespace Metre {
 #ifndef SIGSLOT_PURE_ISO
 #define SIGSLOT_PURE_ISO
 #endif
+#if defined(_WIN32) || defined(_WIN64)
+#define __attribute(x) /* Nothing */
+#endif
 #endif
