@@ -67,5 +67,6 @@ namespace Metre {
 #endif
 #if defined(_WIN32) || defined(_WIN64)
 #define __attribute(x) /* Nothing */
+#pragma warning(disable : 4514)
 #endif
 #endif
