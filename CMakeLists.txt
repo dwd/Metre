@@ -60,9 +60,11 @@ endif ()
 
 set(FILTER_SOURCES
         src/filters/disco-filter.cc
-        src/filters/spiffing.cc
         src/filters/disco-cache.cc
         src/filters/domain-translation.cc)
+if (UNIX)
+    set(FILTER_SOURCES ${FILTER_SOURCES} src/filters/spiffing.cc)
+endif()
 if (ICU2_INCLUDE_DIR)
     set(FILTER_SOURCES ${FILTER_SOURCES} src/filters/unicode.cc)
 endif ()
@@ -104,16 +106,21 @@ set(SOURCE_FILES
         src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
 
 add_executable(metre ${SOURCE_FILES})
-add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
+if (UNIX)
+    add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
+endif(UNIX)
 add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
 add_subdirectory(deps/unbound EXCLUDE_FROM_ALL)
 add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
 add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
 SET(METRE_EXTRA_LIBS )
+if (UNIX)
+    set(METRE_EXTRA_LIBS ${METRE_EXTRA_LIBS} spiffing spiffing-asn dl pthread)
+endif()
 if (${CMAKE_C_PLATFORM_ID} MATCHES "Linux")
     SET(METRE_EXTRA_LIBS ${METRE_EXTRA_LIBS} rt)
 endif()
-target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound ${ICU_LIBS} spiffing spiffing-asn dl pthread)
+target_link_libraries(metre event_core_static OpenSSL::SSL OpenSSL::Crypto event_openssl_static event_extra_static unbound ${ICU_LIBS} ${METRE_EXTRA_LIBS})
 include_directories(include)
 include_directories(./deps/rapidxml)
 include_directories(./deps/sigslot)
