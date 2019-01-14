@@ -82,7 +82,6 @@ set(SOURCE_FILES
     include/optional.h
     include/router.h
         include/stanza.h
-    include/tests.h
     include/xmlstream.h
     include/xmppexcept.h
         gen/dh1024.cc
