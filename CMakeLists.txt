@@ -100,8 +100,8 @@ set(SOURCE_FILES
     src/netsession.cc
     src/router.cc
     src/stanza.cc
-    src/starttls.cc
-        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/bidi.cc)
+    src/starttls.cc src/bidi.cc
+        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
 
 add_executable(metre ${SOURCE_FILES})
 add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
