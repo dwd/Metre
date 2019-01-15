@@ -112,7 +112,7 @@ set(SOURCE_FILES
         src/xmlstream.cc src/saslexternal.cc include/dhparams.h include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
 
 if (UNIX)
-    set(SOURCE_FILES ${SOUREC_FILES} src/linuxmain.cc)
+    set(SOURCE_FILES ${SOURCE_FILES} src/linuxmain.cc)
 else ()
     set(SOURCE_FILES ${SOURCE_FILES} src/winmain.cc)
 endif()
