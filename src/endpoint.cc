@@ -65,7 +65,7 @@ void Endpoint::process(std::unique_ptr<Iq> &&iq) {
             }
         }
         case Iq::RESULT:
-        case Iq::ERROR:
+        case Iq::STANZA_ERROR:
             return;
     }
     throw stanza_service_unavailable();

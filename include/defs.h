@@ -32,7 +32,7 @@ namespace Metre {
         S2S,
         X2X,
         COMP,
-        INT
+        INTERNAL
     } SESSION_TYPE;
 
 
@@ -68,5 +68,6 @@ namespace Metre {
 #if defined(_WIN32) || defined(_WIN64)
 #define __attribute(x) /* Nothing */
 #pragma warning(disable : 4514)
+typedef signed long long ssize_t;
 #endif
 #endif

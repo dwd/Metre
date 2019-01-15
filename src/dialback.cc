@@ -123,7 +123,7 @@ namespace {
              * This is a request to authenticate, using the current key.
              */
             Config::Domain const &from_domain = Config::config().domain(result.from().domain());
-            if (from_domain.transport_type() == INT || from_domain.transport_type() == COMP) {
+            if (from_domain.transport_type() == INTERNAL || from_domain.transport_type() == COMP) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
                                                                          Stanza::not_acceptable);
                 m_stream.send(std::move(d));

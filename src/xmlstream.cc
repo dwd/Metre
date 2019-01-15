@@ -247,8 +247,8 @@ void XMLStream::check_domain_pair(std::string const &from, std::string const &do
             throw Metre::host_unknown("Requesting domain is blocked");
         }
         if ((domain.transport_type() != COMP) &&
-            ((from_domain.forward() == domain.forward()) && domain.transport_type() != INT &&
-             from_domain.transport_type() != INT)) {
+            ((from_domain.forward() == domain.forward()) && domain.transport_type() != INTERNAL &&
+             from_domain.transport_type() != INTERNAL)) {
             throw Metre::host_unknown("Will not forward between those domains");
         }
         if (from_domain.transport_type() == COMP) {

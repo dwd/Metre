@@ -152,7 +152,7 @@ namespace Metre {
     class Message : public Stanza {
     public:
         typedef enum {
-            NORMAL, CHAT, HEADLINE, GROUPCHAT, ERROR
+            NORMAL, CHAT, HEADLINE, GROUPCHAT, STANZA_ERROR
         } Type;
         static const char *name;
     private:
@@ -172,7 +172,7 @@ namespace Metre {
     class Iq : public Stanza {
     public:
         typedef enum {
-            GET, SET, RESULT, ERROR
+            GET, SET, RESULT, STANZA_ERROR
         } Type;
         static const char *name;
     private:
@@ -210,7 +210,7 @@ namespace Metre {
     class DB : public Stanza {
     public:
         typedef enum {
-            VALID, INVALID, ERROR
+            VALID, INVALID, STANZA_ERROR
         } Type;
 
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,

@@ -69,5 +69,9 @@ namespace Metre {
     };
 }
 
+#ifdef METRE_UNIX
 #define DECLARE_CAPABILITY(cls, name) bool declare_cap_##cls __attribute__((unused)) { Metre::Capability::declare<cls>(name) }
+#else
+#define DECLARE_CAPABILITY(cls, name) bool declare_cap_##cls { Metre::Capability::declare<cls>(name) }
+#endif
 #endif //METRE_CAPABILITY_H

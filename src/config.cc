@@ -34,8 +34,13 @@ SOFTWARE.
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/x509v3.h>
+#ifdef METRE_UNIX
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#else
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#endif
 #include <dns.h>
 #include <dhparams.h>
 #include <router.h>
@@ -47,11 +52,12 @@ SOFTWARE.
 #include <rapidxml_print.hpp>
 #include <http.h>
 #include <iomanip>
+#if defined(HAVE_ICU) || defined(HAVE_ICU2)
 #include <unicode/uidna.h>
+#endif
 #include <filter.h>
 #include <cstring>
 #include <unbound-event.h>
-#include <netinet/in.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -175,7 +181,7 @@ namespace {
 
     std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, xml_node<> *domain, SESSION_TYPE def) {
         std::string name;
-        bool forward = (def == INT || def == COMP);
+        bool forward = (def == INTERNAL || def == COMP);
         SESSION_TYPE sess = def;
         bool tls_required = true;
         bool block = false;
@@ -227,7 +233,7 @@ namespace {
                     tls_required = false;
                     forward = true;
                 } else if (type == "internal") {
-                    sess = INT;
+                    sess = INTERNAL;
                     tls_required = true;
                     forward = true;
                 } else {
@@ -320,7 +326,7 @@ namespace {
                 auto aa = hostt->first_attribute("a");
                 if (!aa || !aa->value()) throw std::runtime_error("Missing a in host DNS override");
                 struct in_addr ina;
-                if (inet_aton(aa->value(), &ina)) {
+                if (inet_pton(AF_INET, aa->value(), &ina)) {
                     dom->host(host, ina.s_addr);
                 }
             }
@@ -691,7 +697,7 @@ void Config::load(std::string const &filename) {
             any_domain = &*dom; // Save this pointer.
             m_domains[dom->domain()] = std::move(dom);
         } else {
-            m_domains[""] = std::make_unique<Config::Domain>("", INT, false, true, true, true, true, false,
+            m_domains[""] = std::make_unique<Config::Domain>("", INTERNAL, false, true, true, true, true, false,
                                                              std::optional<std::string>());
         }
         for (auto domain = external->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
@@ -702,7 +708,7 @@ void Config::load(std::string const &filename) {
     auto internal = root_node->first_node("local");
     if (internal) {
         for (auto domain = internal->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
-            std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, INT));
+            std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, INTERNAL));
             m_domains[dom->domain()] = std::move(dom);
         }
     }
@@ -843,7 +849,7 @@ std::string Config::asString() {
                 auto transport = doc.allocate_node(node_element, "transport");
                 const char *tt;
                 switch (dom.transport_type()) {
-                    case INT:
+                    case INTERNAL:
                         tt = "internal";
                         break;
                     case S2S:
@@ -1506,7 +1512,11 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
                 a.addr.emplace_back();
                 struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&*a.addr.rbegin());
                 sin->sin_family = AF_INET;
+#ifdef METRE_WINDOWS
+                sin->sin_addr = *reinterpret_cast<struct in_addr *>(result->data[i]);
+#else
                 sin->sin_addr.s_addr = *reinterpret_cast<in_addr_t *>(result->data[i]);
+#endif
             }
         } else if (result->qtype == 28) {
             m_current_arec.ipv6 = true;

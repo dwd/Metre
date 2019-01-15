@@ -43,6 +43,9 @@ add_definitions(-DSIGSLOT_PURE_ISO)
 
 if(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O0 -g")
+    add_definitions(-DMETRE_UNIX)
+else()
+    add_definitions(-DMETRE_WINDOWS)
 endif()
 set(ICU_LIBS)
 if (ICU2_INCLUDE_DIR)
@@ -106,7 +109,13 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc src/bidi.cc
-        src/xmlstream.cc src/saslexternal.cc include/dhparams.h src/linuxmain.cc include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
+        src/xmlstream.cc src/saslexternal.cc include/dhparams.h include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
+
+if (UNIX)
+    set(SOURCE_FILES ${SOUREC_FILES} src/linuxmain.cc)
+else ()
+    set(SOURCE_FILES ${SOURCE_FILES} src/winmain.cc)
+endif()
 
 add_executable(metre ${SOURCE_FILES})
 if (UNIX)
@@ -119,6 +128,8 @@ add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
 SET(METRE_EXTRA_LIBS )
 if (UNIX)
     set(METRE_EXTRA_LIBS ${METRE_EXTRA_LIBS} spiffing spiffing-asn dl pthread)
+else ()
+    set(METRE_EXTRA_LIBS ${METRE_EXTRA_LIBS} ws2_32 crypt32 Iphlpapi)
 endif()
 if (${CMAKE_C_PLATFORM_ID} MATCHES "Linux")
     SET(METRE_EXTRA_LIBS ${METRE_EXTRA_LIBS} rt)

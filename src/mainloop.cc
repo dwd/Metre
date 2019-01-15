@@ -23,11 +23,13 @@ SOFTWARE.
 
 ***/
 
+#ifdef METRE_UNIX
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <vector>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include <fcntl.h>
+#endif
 #include <map>
 #include <sstream>
 #include "rapidxml.hpp"
@@ -45,10 +47,10 @@ SOFTWARE.
 #include <atomic>
 #include "sigslot/sigslot.h"
 #include "dns.h"
-#include <arpa/inet.h>
 #include "config.h"
 #include "log.h"
 #include <functional>
+#include <vector>
 
 namespace Metre {
     class Mainloop : public sigslot::has_slots<> {

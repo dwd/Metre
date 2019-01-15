@@ -104,7 +104,7 @@ namespace {
                         METRE_LOG(Log::INFO, "Stanza discarded by filters");
                         return;
                     }
-                    if (Config::config().domain(to.domain()).transport_type() == INT) {
+                    if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
                         Endpoint::endpoint(to).process(std::move(s));
                     } else {
                         std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);

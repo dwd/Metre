@@ -30,7 +30,12 @@ SOFTWARE.
 #include <sigslot/sigslot.h>
 #include <string>
 #include <vector>
+// For struct sockaddr_storage :
+#ifdef METRE_UNIX
 #include <netinet/in.h>
+#else
+#include <winsock2.h>
+#endif
 
 namespace Metre {
 

@@ -24,8 +24,10 @@ SOFTWARE.
 ***/
 
 #include "jid.h"
+#if defined(HAVE_ICU2) || defined(HAVE_ICU)
 #include <unicode/usprep.h>
 #include <unicode/ucnv.h>
+#endif
 #include <memory>
 #include <log.h>
 #include <algorithm>
