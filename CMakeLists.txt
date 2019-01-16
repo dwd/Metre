@@ -153,6 +153,9 @@ add_executable(metre-test tests/log.cc src/stanza.cc src/jid.cc tests/stanza.cc 
 include_directories(./deps/googletest/googletest/include)
 target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS} gtest gtest_main)
 target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
+if (WINDOWS)
+target_link_options(metre-test /NODEFAULTLIB:library)
+endif ()
 # These install into stupid places:
 #
 # install(FILES metre.conf.xml DESTINATION ./etc/metre)
