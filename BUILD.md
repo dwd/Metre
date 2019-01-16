@@ -43,7 +43,7 @@ Method
 First, clone the source. You can access this anonymously via HTTPS:
 
 ```sh
-git clone https://github.com/dwd/metre
+git clone --recursive https://github.com/dwd/metre
 ```
 
 Enter the directory:
@@ -52,6 +52,7 @@ Enter the directory:
 cd metre
 ```
 
+### UNIX
 
 A simple `make` will do the following for you - but if you're developing, you'll just need the final stage.
 
@@ -100,6 +101,37 @@ make -j12
 You'll now have the executable built as `./build/metre`, relative to the source tree. You'll
 want to look at the bad example config file at `./metre.conf.xml` and you'll need a DNSSEC
 keys file, which you could make *insecurely* by `dig . DNSSEC > ./keys`. 
+
+### Windows
+
+First, build OpenSSL. You'll need Perl for this (and optionally nasm; the instructions here are without):
+
+```sh
+cd deps\openssl
+call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64"
+perl Configure no-asm no-shared VC-WIN64A
+nmake clean
+nmake
+cd ..\..
+```
+
+Next, create a build dir:
+
+```sh
+mkdir build
+cd build
+```
+
+Do the CMake thing - note the odd incantations:
+
+```sh
+cmake .. -G "Visual Studio 15 2017 Win64" -Dgtest_force_shared_crt:BOOL=true
+cmake --build .
+```
+
+You should now have Metre in build\Debug\metre.exe and the test suite in build\Debug\metre-test.exe
+
+Fun, eh?
 
 Serves
 ----
