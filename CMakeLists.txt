@@ -28,6 +28,8 @@ if (UNIX)
     endif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 endif (UNIX)
 
+set(BUILD_SHARED_LIBS OFF)
+set(gtest_force_shared_crt ON)
 set(OPENSSL_USE_STATIC_LIBS true)
 set(OPENSSL_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/deps/openssl)
 
