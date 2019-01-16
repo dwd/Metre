@@ -154,7 +154,7 @@ include_directories(./deps/googletest/googletest/include)
 target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS} gtest gtest_main)
 target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
 if (WIN32)
-target_link_options(metre-test PRIVATE /NODEFAULTLIB:library)
+target_link_options(metre-test PRIVATE /NODEFAULTLIB:LIBCPMTD /NODEFAULTLIB:LIBCMTD)
 endif ()
 # These install into stupid places:
 #
