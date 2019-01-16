@@ -218,7 +218,7 @@ Message::Type Message::set_type() const {
             if (t == "groupchat") return GROUPCHAT;
             break;
         case 'e':
-            if (t == "error") return ERROR;
+            if (t == "error") return STANZA_ERROR;
             break;
     }
     throw std::runtime_error("Unknown Message type");
@@ -239,7 +239,7 @@ const char *Iq::type_toString(Type t) {
             return "set";
         case RESULT:
             return "result";
-        case ERROR:
+        case STANZA_ERROR:
             return "error";
     }
     return "error";
@@ -259,7 +259,7 @@ Iq::Type Iq::set_type() const {
             if (t == "result") return RESULT;
             break;
         case 'e':
-            if (t == "error") return ERROR;
+            if (t == "error") return STANZA_ERROR;
             break;
     }
     throw std::runtime_error("Unknown IQ type");
@@ -301,7 +301,7 @@ DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stre
         case INVALID:
             m_type_str = "invalid";
             break;
-        case ERROR:
+        case STANZA_ERROR:
             m_type_str = "error";
             break;
     }

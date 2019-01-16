@@ -98,6 +98,10 @@ namespace Metre {
     };
 }
 
+#ifdef METRE_UNIX
 #define DECLARE_FEATURE(cls, typ) bool declare_##cls##_##typ __attribute__((unused)) { Metre::Feature::declare<cls>(typ) }
+#else
+#define DECLARE_FEATURE(cls, typ) bool declare_##cls##_##typ { Metre::Feature::declare<cls>(typ) }
+#endif
 
 #endif
