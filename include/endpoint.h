@@ -60,7 +60,7 @@ namespace Metre {
         void nodes(std::function<void(std::map<std::string, std::unique_ptr<Node>> const &)> &&fn) const;
 
 #ifdef METRE_TESTING
-        sigslot::signal<sigslot::thread::st, Stanza &, Jid const &, Jid const &> sent_stanza;
+        sigslot::signal<Stanza &, Jid const &, Jid const &> sent_stanza;
 #endif
     protected:
         Jid m_jid;

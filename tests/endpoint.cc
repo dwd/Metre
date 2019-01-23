@@ -33,7 +33,7 @@ namespace Metre {
     }
 }
 
-class EndpointTest : public ::testing::Test, public sigslot::has_slots<> {
+class EndpointTest : public ::testing::Test, public sigslot::has_slots {
 public:
     bool stanza_seen = false;
     rapidxml::xml_document<> doc;
