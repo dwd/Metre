@@ -36,7 +36,7 @@ using namespace Metre;
 namespace {
     const std::string sasl_ns = "jabber:component:accept";
 
-    class Component : public Feature, public sigslot::has_slots<> {
+    class Component : public Feature, public sigslot::has_slots {
     public:
         explicit Component(XMLStream &s) : Feature(s) {}
 

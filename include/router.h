@@ -41,7 +41,7 @@ struct event_base;
 namespace Metre {
     class NetSession;
 
-    class Route : public sigslot::has_slots<> {
+    class Route : public sigslot::has_slots {
     private:
         std::weak_ptr<NetSession> m_to;
         std::weak_ptr<NetSession> m_vrfy;
@@ -93,9 +93,9 @@ namespace Metre {
 
         void SessionClosed(NetSession &);
 
-        sigslot::signal<sigslot::thread::st, Route &> &collateNames();
+        sigslot::signal<Route &> &collateNames();
 
-        sigslot::signal<sigslot::thread::st, Route &> onNamesCollated;
+        sigslot::signal<Route &> onNamesCollated;
 
         std::vector<DNS::Tlsa> const &tlsa() const;
 

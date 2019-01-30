@@ -54,9 +54,9 @@ namespace Metre {
     class Config {
     public:
         /* DNS */
-        typedef sigslot::signal<sigslot::thread::st, DNS::Srv const *> srv_callback_t;
-        typedef sigslot::signal<sigslot::thread::st, DNS::Address const *> addr_callback_t;
-        typedef sigslot::signal<sigslot::thread::st, DNS::Tlsa const *> tlsa_callback_t;
+        typedef sigslot::signal<DNS::Srv const *> srv_callback_t;
+        typedef sigslot::signal<DNS::Address const *> addr_callback_t;
+        typedef sigslot::signal<DNS::Tlsa const *> tlsa_callback_t;
 
         class Domain {
             friend class ::Metre::Config;

@@ -39,7 +39,7 @@ namespace {
      * Here, we advertise the feature, and if seen, we just (blindly) send a bidi request.
      * We don't need to do anything special aside from marking the stream bidirectional.
      */
-    class Bidi : public Feature, public sigslot::has_slots<> {
+    class Bidi : public Feature, public sigslot::has_slots {
     public:
         explicit Bidi(XMLStream &s) : Feature(s) {}
 
@@ -77,7 +77,7 @@ namespace {
      * In this namespace, we handle inbound bidi requests.
      * Again, we don't actually need to do anything yet because we're not - yet - authenticated.
      */
-    class BidiInbound : public Feature, public sigslot::has_slots<> {
+    class BidiInbound : public Feature, public sigslot::has_slots {
     public:
         explicit BidiInbound(XMLStream &s) : Feature(s) {}
 

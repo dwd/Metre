@@ -84,7 +84,7 @@ namespace {
 namespace {
     const std::string tls_ns = "urn:ietf:params:xml:ns:xmpp-tls";
 
-    class StartTls : public Feature, public sigslot::has_slots<> {
+    class StartTls : public Feature, public sigslot::has_slots {
     public:
         explicit StartTls(XMLStream &s) : Feature(s) {}
 

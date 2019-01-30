@@ -53,7 +53,7 @@ SOFTWARE.
 #include <vector>
 
 namespace Metre {
-    class Mainloop : public sigslot::has_slots<> {
+    class Mainloop : public sigslot::has_slots {
     private:
         struct event_base *m_event_base = nullptr;
         std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;

@@ -79,7 +79,7 @@ namespace {
         }
     };
 
-    class Dialback : public Feature, public sigslot::has_slots<> {
+    class Dialback : public Feature, public sigslot::has_slots {
     public:
         explicit Dialback(XMLStream &s) : Feature(s) {}
 

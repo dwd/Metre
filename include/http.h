@@ -14,8 +14,8 @@ struct X509_crl_st;
 namespace Metre {
     class Http {
     public:
-        typedef sigslot::signal<sigslot::thread::st, std::string const &, int, struct X509_crl_st *> crl_callback_t;
-        typedef sigslot::signal<sigslot::thread::st, std::string const &, int, std::string const &> ocsp_callback_t;
+        typedef sigslot::signal<std::string const &, int, struct X509_crl_st *> crl_callback_t;
+        typedef sigslot::signal<std::string const &, int, std::string const &> ocsp_callback_t;
 
     private:
         std::map<std::string, crl_callback_t> m_crl_waiting;

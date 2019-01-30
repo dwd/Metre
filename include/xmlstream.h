@@ -48,7 +48,7 @@ namespace Metre {
 
     class Stanza;
 
-    class XMLStream : public sigslot::has_slots<sigslot::thread::st> {
+    class XMLStream : public sigslot::has_slots {
     public:
         typedef enum {
             NONE, REQUESTED, AUTHORIZED
@@ -81,7 +81,7 @@ namespace Metre {
         bool m_crl_complete = false;
         bool m_x2x_mode = false;
         bool m_bidi = false;
-        std::map<std::string, sigslot::signal<sigslot::thread::st, Stanza const &>> m_response_callbacks;
+        std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -198,8 +198,8 @@ namespace Metre {
         Feature &feature(std::string const &);
 
         // Signals:
-        sigslot::signal<sigslot::thread::st, XMLStream &> onAuthReady;
-        sigslot::signal<sigslot::thread::st, XMLStream &> onAuthenticated;
+        sigslot::signal<XMLStream &> onAuthReady;
+        sigslot::signal<XMLStream &> onAuthenticated;
 
     private:
         void handle(rapidxml::xml_node<> *);

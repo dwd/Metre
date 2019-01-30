@@ -38,7 +38,7 @@ using namespace rapidxml;
 namespace {
     const std::string sasl_ns = "jabber:server";
 
-    class JabberServer : public Feature, public sigslot::has_slots<> {
+    class JabberServer : public Feature, public sigslot::has_slots {
     public:
         explicit JabberServer(XMLStream &s) : Feature(s) {}
 

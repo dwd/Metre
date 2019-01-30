@@ -217,7 +217,7 @@ void Route::doSrvLookup() {
     }
 }
 
-sigslot::signal<sigslot::thread::st, Route &> &Route::collateNames() {
+sigslot::signal<Route &> &Route::collateNames() {
     if (m_srv.domain.empty() || !m_srv.error.empty()) {
         // No SRV record yet, look it up.
         doSrvLookup();
