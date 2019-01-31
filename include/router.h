@@ -30,6 +30,7 @@ SOFTWARE.
 #include "jid.h"
 #include "stanza.h"
 #include "dns.h"
+#include "tasklet.h"
 
 #include <string>
 #include <memory>
@@ -44,7 +45,9 @@ namespace Metre {
     class Route : public sigslot::has_slots {
     private:
         std::weak_ptr<NetSession> m_to;
+        tasklet<bool> m_to_task;
         std::weak_ptr<NetSession> m_vrfy;
+        tasklet<bool> m_verify_task;
         std::list<std::unique_ptr<Stanza>> m_stanzas;
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
@@ -67,6 +70,10 @@ namespace Metre {
             return m_local.domain();
         }
 
+        tasklet<bool> init_session_vrfy();
+
+        tasklet<bool> init_session_to();
+
         void outbound(NetSession *ns);
 
         void transmit(std::unique_ptr<Stanza> &&);
@@ -75,22 +82,12 @@ namespace Metre {
 
         void doSrvLookup();
 
-        void try_srv(bool init = false);
-
-        void try_addr(bool init = false);
-
         // Callbacks:
         void SrvResult(DNS::Srv const *);
-
-        void AddressResult(DNS::Address const *);
 
         void TlsaResult(DNS::Tlsa const *);
 
         // Slots
-        void SessionDialback(XMLStream &);
-
-        void SessionAuthenticated(XMLStream &);
-
         void SessionClosed(NetSession &);
 
         sigslot::signal<Route &> &collateNames();
@@ -111,6 +108,10 @@ namespace Metre {
         void queue(std::unique_ptr<Stanza> &&);
 
         void queue(std::unique_ptr<DB::Verify> &&);
+
+        void set_to(std::shared_ptr<NetSession> & to);
+
+        void set_vrfy(std::shared_ptr<NetSession> & vrfy);
     };
 
     class RouteTable {

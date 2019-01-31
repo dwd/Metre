@@ -16,7 +16,7 @@ Endpoint::Endpoint(Jid const &jid) : m_jid(jid), m_random(std::random_device{}()
 std::string Endpoint::random_identifier() {
     std::string id(id_len, char{});
     std::generate_n(id.begin(), id_len, [this]() { return characters[m_dist(m_random)]; });
-    return std::move(id);
+    return id;
 }
 
 void Endpoint::process(std::unique_ptr<Stanza> &&stanza) {
@@ -94,7 +94,7 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(std::un
     if (!stanza->id()) {
         stanza->id(random_identifier());
     }
-    m_stanza_callbacks[stanza->id().value()] = fn;
+    m_stanza_callbacks[*(stanza->id())] = fn;
     send(std::move(stanza));
 }
 

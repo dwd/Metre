@@ -116,12 +116,11 @@ namespace {
                 if (!m_stream.remote_domain().empty()) {
                     std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                             m_stream.remote_domain());
-                    route->onNamesCollated.connect(this, [this](Route &r) {
+                    m_stream.freeze();
+                    route->collateNames().connect(this, [this](Route &r) {
                         METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
                         m_stream.in_context([this]() { start_tls(m_stream, true); });
                     }, true);
-                    m_stream.freeze();
-                    route->collateNames();
                     return true;
                 } else if (m_stream.type() == COMP) {
                     start_tls(m_stream, true);

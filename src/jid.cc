@@ -160,7 +160,7 @@ std::string const &Jid::bare() const {
             *m_bare += *m_local;
             *m_bare += "@";
         }
-        m_bare.value() += m_domain;
+        *m_bare += m_domain;
     }
     return *m_bare;
 }

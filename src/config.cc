@@ -693,7 +693,7 @@ void Config::load(std::string const &filename) {
     if (external) {
         auto any = external->first_node("any");
         if (any) {
-            std::unique_ptr<Config::Domain> dom = std::move(parse_domain(nullptr, any, S2S));
+            std::unique_ptr<Config::Domain> dom = parse_domain(nullptr, any, S2S);
             any_domain = &*dom; // Save this pointer.
             m_domains[dom->domain()] = std::move(dom);
         } else {
@@ -701,14 +701,14 @@ void Config::load(std::string const &filename) {
                                                              std::optional<std::string>());
         }
         for (auto domain = external->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
-            std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, S2S));
+            std::unique_ptr<Config::Domain> dom = parse_domain(any_domain, domain, S2S);
             m_domains[dom->domain()] = std::move(dom);
         }
     }
     auto internal = root_node->first_node("local");
     if (internal) {
         for (auto domain = internal->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
-            std::unique_ptr<Config::Domain> dom = std::move(parse_domain(any_domain, domain, INTERNAL));
+            std::unique_ptr<Config::Domain> dom = parse_domain(any_domain, domain, INTERNAL);
             m_domains[dom->domain()] = std::move(dom);
         }
     }
@@ -878,7 +878,7 @@ std::string Config::asString() {
                     transport->append_node(auth);
                 }
                 if (dom.auth_secret()) {
-                    auto auth = doc.allocate_node(node_element, "auth", dom.auth_secret().value().c_str());
+                    auto auth = doc.allocate_node(node_element, "auth", dom.auth_secret()->c_str());
                     auth->append_attribute(doc.allocate_attribute("type", "secret"));
                     transport->append_node(auth);
                 }
@@ -1657,7 +1657,7 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else if (m_type == X2X) {
         auto &cb = m_tlsa_pending[domain];
-        Router::defer([this, &cb]() {
+        Router::defer([&cb]() {
             DNS::Tlsa r;
             r.error = "X2X - DNS aborted";
             cb.emit(&r);

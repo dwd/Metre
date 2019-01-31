@@ -40,49 +40,110 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to), onNa
     if (m_domain.domain().empty() || m_local.domain().empty()) throw std::runtime_error("Cannot have route to/from empty domain");
 }
 
-namespace {
-    bool check_verify(Route &r, std::shared_ptr<NetSession> const &vrfy) {
-        if (vrfy) {
-            if (vrfy->xml_stream().auth_ready()) {
-                r.SessionDialback(vrfy->xml_stream());
-                return true;
-            } else {
-                vrfy->xml_stream().onAuthReady.connect(&r, &Route::SessionDialback);
+tasklet<bool> Route::init_session_vrfy() {
+    auto srv = co_await Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain());
+    if (!srv->error.empty()) {
+        METRE_LOG(Log::WARNING, "SRV Lookup for " << m_domain.domain() << " failed: " << srv->error);
+        co_return false;
+    }
+    for (auto & rr : srv->rrs) {
+        METRE_LOG(Metre::Log::DEBUG, "Should look for " << rr.hostname << ":" << rr.port);
+        auto session = Router::session_by_address(rr.hostname, rr.port);
+        if (!session->xml_stream().auth_ready()) {
+            (void) co_await session->xml_stream().onAuthReady;
+            if (!session->xml_stream().auth_ready()) {
+                continue;
+            }
+            set_vrfy(session);
+            co_return true;
+        }
+    }
+    for (auto & rr : srv->rrs) {
+        auto addr = co_await Config::config().domain(m_domain.domain()).AddressLookup(rr.hostname);
+        if (!addr->error.empty()) {
+            METRE_LOG(Log::WARNING, "A/AAAA Lookup for " << m_domain.domain() << " failed: " << srv->error);
+            continue;
+        }
+        for (auto & arr : addr->addr) {
+            try {
+                auto session = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
+                                       const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&arr)),
+                                       rr.port, Config::config().domain(m_domain.domain()).transport_type(),
+                                       rr.tls ? IMMEDIATE : STARTTLS);
+                METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*session);
+                (void) co_await session->xml_stream().onAuthReady;
+                if (!session->xml_stream().auth_ready()) {
+                    continue;
+                }
+                set_vrfy(session);
+                co_return true;
+            } catch (std::runtime_error &e) {
+                METRE_LOG(Log::DEBUG, "Connection failed, reloop: " << e.what());
             }
         }
-        return false;
     }
+    co_return false;
+}
 
-
-    bool check_to(Route &r, std::shared_ptr<NetSession> const &to) {
-        if (to) {
-            switch (to->xml_stream().s2s_auth_pair(r.local(), r.domain(), OUTBOUND)) {
-                case XMLStream::AUTHORIZED:
-                    r.SessionAuthenticated(to->xml_stream());
-                    return true;
-                default:
-                    if (!to->xml_stream().auth_ready()) {
-                        to->xml_stream().onAuthReady.connect(&r, &Route::SessionDialback);
-                    } else {
-                        /// Send a dialback request or something.
-                        std::string key = Config::config().dialback_key(to->xml_stream().stream_id(), r.local(),
-                                                                        r.domain());
-                        rapidxml::xml_document<> d;
-                        auto dbr = d.allocate_node(rapidxml::node_element, "db:result");
-                        dbr->append_attribute(d.allocate_attribute("to", r.domain().c_str()));
-                        dbr->append_attribute(d.allocate_attribute("from", r.local().c_str()));
-                        dbr->value(key.c_str(), key.length());
-                        d.append_node(dbr);
-                        to->xml_stream().send(d);
-                        to->xml_stream().s2s_auth_pair(r.local(), r.domain(), OUTBOUND, XMLStream::REQUESTED);
-                    }
-                    // Fallthrough
-                case XMLStream::REQUESTED:
-                    to->xml_stream().onAuthenticated.connect(&r, &Route::SessionAuthenticated);
-            }
+tasklet<bool> Route::init_session_to() {
+    auto session = m_vrfy.lock();
+    if (!session) {
+        if (!m_verify_task.running()) {
+            m_verify_task = init_session_vrfy();
         }
-        return false;
+        if (!co_await m_verify_task.complete()) {
+            co_return false;
+        }
     }
+    switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
+        default:
+            if (!session->xml_stream().auth_ready()) {
+                (void) co_await session->xml_stream().onAuthReady;
+            }
+            /// Send a dialback request.
+            {
+                std::string key = Config::config().dialback_key(session->xml_stream().stream_id(),
+                                                                m_local.domain(),
+                                                                m_domain.domain());
+                rapidxml::xml_document<> d;
+                auto dbr = d.allocate_node(rapidxml::node_element, "db:result");
+                dbr->append_attribute(d.allocate_attribute("to", m_domain.domain().c_str()));
+                dbr->append_attribute(d.allocate_attribute("from", m_local.domain().c_str()));
+                dbr->value(key.c_str(), key.length());
+                d.append_node(dbr);
+                session->xml_stream().send(d);
+                session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND,
+                                                    XMLStream::REQUESTED);
+            }
+            // Fallthrough
+        case XMLStream::REQUESTED:
+            (void) co_await session->xml_stream().onAuthenticated;
+        case XMLStream::AUTHORIZED:
+            break;
+    }
+    while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) != XMLStream::AUTHORIZED) {
+        (void) co_await session->xml_stream().onAuthenticated;
+    }
+    set_to(session);
+    co_return true;
+}
+
+void Route::set_to(std::shared_ptr<Metre::NetSession> &to) {
+    m_to = to;
+    to->onClosed.connect(this, &Route::SessionClosed);
+    for (auto &s : m_stanzas) {
+        to->xml_stream().send(std::move(s));
+    }
+    m_stanzas.clear();
+}
+
+void Route::set_vrfy(std::shared_ptr<Metre::NetSession> &vrfy) {
+    m_vrfy = vrfy;
+    vrfy->onClosed.connect(this, &Route::SessionClosed);
+    for (auto &v : m_dialback) {
+        vrfy->xml_stream().send(std::move(v));
+    }
+    m_dialback.clear();
 }
 
 /**
@@ -96,14 +157,11 @@ void Route::outbound(NetSession *ns) {
     auto to = m_to.lock();
     if (!ns) return;
     if (to && (to->serial() == ns->serial())) return;
-    if (!check_to(*this, to)) {
-        if (to) {
-            to->close(); // Kill with fire.
-        }
-        m_to = Router::session_by_serial(ns->serial());
-        auto to = m_to.lock();
-        check_to(*this, to);
+    if (to) {
+        to->close(); // Kill with fire.
     }
+    auto p = Router::session_by_serial(ns->serial());
+    set_to(p);
 }
 
 void Route::queue(std::unique_ptr<DB::Verify> &&s) {
@@ -118,20 +176,14 @@ void Route::queue(std::unique_ptr<DB::Verify> &&s) {
 
 void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
     auto vrfy = m_vrfy.lock();
-    if (check_verify(*this, vrfy)) {
-        if (!m_dialback.empty()) {
-            queue(std::move(v));
-            return;
-        } else {
-            vrfy->xml_stream().send(std::move(v));
-        }
+    if (vrfy) {
+        vrfy->xml_stream().send(std::move(v));
     } else {
-        // TODO Look for an existing session and use that.
-        // Otherwise, start SRV lookups.
         queue(std::move(v));
-        Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult, true);
+        if (!m_verify_task.running()) {
+            m_verify_task = init_session_vrfy();
+        }
     }
-
 }
 
 void Route::bounce_dialback(bool timeout) {
@@ -174,40 +226,13 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
 
 void Route::transmit(std::unique_ptr<Stanza> &&s) {
     auto to = m_to.lock();
-    if (check_to(*this, to)) {
-        if (!m_stanzas.empty()) {
-            METRE_LOG(Metre::Log::DEBUG,
-                      "Queuing stanza (backlog) for " << m_local.domain() << "=>" << m_domain.domain());
-            queue(std::move(s));
-            return;
-        } else {
-            to->xml_stream().send(std::move(s));
-        }
-    } else if (!to) {
-        if (!m_vrfy.expired()) {
-            std::shared_ptr<NetSession> vrfy(m_vrfy);
-            m_to = vrfy;
-            transmit(std::move(s)); // Retry
-            return;
-        }
-        std::shared_ptr<NetSession> dom = Router::session_by_domain(m_domain.domain());
-        if (dom) {
-            m_to = dom;
-            transmit(std::move(s)); // Retry;
-            return;
-        }
-        METRE_LOG(Metre::Log::DEBUG, "Queuing stanza (spinup) for " << m_local.domain() << "=>" << m_domain.domain());
+    if (to) {
+        to->xml_stream().send(move(s));
+    } else {
         queue(std::move(s));
-        Config::Domain const &conf = Config::config().domain(m_domain.domain());
-        if (conf.transport_type() == S2S) {
-            doSrvLookup();
-        } else if (conf.transport_type() == X2X) {
-            doSrvLookup();
+        if (!m_to_task.running()) {
+            m_to_task = init_session_to();
         }
-        // Otherwise wait.
-    } else { // Got a to but it's not ready yet.
-        METRE_LOG(Metre::Log::DEBUG, "Queuing stanza (waiting) for " << m_local.domain() << "=>" << m_domain.domain());
-        queue(std::move(s));
     }
 }
 
@@ -256,120 +281,19 @@ void Route::SrvResult(DNS::Srv const *srv) {
     } else {
         onNamesCollated.emit(*this);
     }
-    auto vrfy = m_vrfy.lock();
-    if (vrfy) {
-        if (m_to.expired()) m_to = vrfy;
-        check_to(*this, m_to.lock());
-        return;
-    }
-    try_srv(true);
-}
-
-void Route::try_srv(bool init) {
-    if (init) {
-        m_rr = m_srv.rrs.begin();
-        m_srv_valid = true;
-    } else {
-        ++m_rr;
-    }
-    if (!m_srv_valid || m_rr == m_srv.rrs.end()) {
-        // Give up and go home.
-        m_srv_valid = false;
-        bounce_stanzas(Stanza::remote_server_not_found);
-        bounce_dialback(false);
-        return;
-    }
-    METRE_LOG(Metre::Log::DEBUG, "Should look for " << (*m_rr).hostname << ":" << (*m_rr).port);
-    std::shared_ptr<NetSession> sesh = Router::session_by_address((*m_rr).hostname, (*m_rr).port);
-    if (sesh) {
-        if (m_vrfy.expired()) m_vrfy = sesh;
-        check_verify(*this, sesh);
-        if (m_to.expired()) m_to = sesh;
-        check_to(*this, sesh);
-        return;
-    }
-    Config::config().domain(m_domain.domain()).AddressLookup((*m_rr).hostname).connect(this, &Route::AddressResult,
-                                                                                       true);
-}
-
-void Route::AddressResult(DNS::Address const *addr) {
-    METRE_LOG(Log::DEBUG, "AddressResult for " << addr->hostname << " (" << m_domain.domain() << ")");
-    if (m_a_valid) return;
-    auto vrfy = m_vrfy.lock();
-    if (vrfy) {
-        return;
-    }
-    if (!addr->error.empty()) {
-        METRE_LOG(Metre::Log::DEBUG, "Got an error during DNS: ");
-        try_srv();
-        return;
-    }
-    m_addr = *addr;
-    try_addr(true);
-}
-
-void Route::try_addr(bool init) {
-    if (init) {
-        m_arr = m_addr.addr.begin();
-        m_a_valid = true;
-    }
-    for (;;) {
-        auto vrfy = m_vrfy.lock();
-        if (vrfy) {
-            return;
-        }
-        if (init) {
-            init = false;
-        } else {
-            ++m_arr;
-        }
-        if (!m_srv_valid || m_rr == m_srv.rrs.end()) {
-            // Give up and go home.
-            m_srv_valid = false;
-            bounce_stanzas(Stanza::remote_server_not_found);
-            bounce_dialback(false);
-            return;
-        }
-        if (!m_a_valid || m_arr == m_addr.addr.end()) {
-            // RUn out of A/AAAA records to try.
-            m_a_valid = false;
-            try_srv();
-            return;
-        }
-        try {
-            vrfy = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
-                                   const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&(*m_arr))),
-                                   (*m_rr).port, Config::config().domain(m_domain.domain()).transport_type(),
-                                   m_rr->tls ? IMMEDIATE : STARTTLS);
-            METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*vrfy);
-            vrfy->xml_stream().onAuthReady.connect(this, &Route::SessionDialback);
-            vrfy->onClosed.connect(this, &Route::SessionClosed);
-            m_vrfy = vrfy;
-            if (m_to.expired()) {
-                m_to = vrfy;
-                check_to(*this, vrfy);
-            }
-            // m_vrfy->connected.connect(...);
-            return;
-        } catch (std::runtime_error &e) {
-            METRE_LOG(Log::DEBUG, "Connection failed, reloop: " << e.what());
-        }
-    }
 }
 
 void Route::SessionClosed(NetSession &n) {
     // One of my sessions has been closed. See what needs progressing.
     if (!m_dialback.empty() || !m_stanzas.empty()) {
         auto vrfy = m_vrfy.lock();
-        if (vrfy.get() == &n) {
+        if (vrfy && (vrfy.get() == &n)) {
             m_vrfy.reset();
-            try_addr();
             return;
         } else {
             auto to = m_to.lock();
             if (to.get() == &n) {
                 m_to.reset();
-                try_addr();
             }
         }
     } else {
@@ -385,55 +309,6 @@ void Route::TlsaResult(const DNS::Tlsa *tlsa) {
     m_tlsa.push_back(*tlsa);
     METRE_LOG(Metre::Log::DEBUG, "TLSA for " << tlsa->domain << ", now " << m_tlsa.size());
     collateNames();
-}
-
-void Route::SessionDialback(XMLStream &stream) {
-    auto vrfy = m_vrfy.lock();
-    METRE_LOG(Metre::Log::DEBUG, "Stream is ready for dialback.");
-    if (vrfy && &stream.session() == &*vrfy) {
-        METRE_LOG(Metre::Log::DEBUG, "Stream is verify.");
-        for (auto &v : m_dialback) {
-            vrfy->xml_stream().send(std::move(v));
-        }
-        m_dialback.clear();
-        if (m_to.expired()) {
-            m_to = vrfy;
-            check_to(*this, vrfy);
-        }
-    }
-    auto to = m_to.lock();
-    if (to) {
-        if (&stream.session() ==
-            &*to) { //] && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
-            METRE_LOG(Metre::Log::DEBUG, "Stream is to; needs dialback.");
-            check_to(*this, to);
-        }
-    }
-}
-
-void Route::SessionAuthenticated(XMLStream &stream) {
-    auto to = m_to.lock();
-    if (stream.auth_ready()
-        && &stream.session() == &*to
-        && stream.s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::AUTHORIZED) {
-        m_a_valid = m_srv_valid = false; // Any new lookups will restart, now.
-        if (!m_stanzas.empty()) {
-            METRE_LOG(Metre::Log::DEBUG, "Stream now ready for stanzas.");
-            for (auto &s : m_stanzas) {
-                to->xml_stream().send(std::move(s));
-            }
-            m_stanzas.clear();
-        }
-    } else {
-        METRE_LOG(Metre::Log::DEBUG, m_local.domain() << "=>" << m_domain.domain() << " NS" << stream.session().serial()
-                                                      << " Auth, but not ready: " << stream.auth_ready() << " "
-                                                      << !m_stanzas.empty() << " "
-                                                      << (&stream.session() == to.get()) << " "
-                                                      << (stream.s2s_auth_pair(m_local.domain(),
-                                                                                      m_domain.domain(),
-                                                                                      OUTBOUND) ==
-                                                                 XMLStream::AUTHORIZED));
-    }
 }
 
 std::vector<DNS::Tlsa> const &Route::tlsa() const {

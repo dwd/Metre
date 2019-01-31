@@ -81,7 +81,8 @@ namespace {
                                 Stanza *holding = s.release();
                                 holding->freeze();
                                 auto r = RouteTable::routeTable(to.domain()).route(from.domain());
-                                r->onNamesCollated.connect(this, [this, holding](Route &r) {
+                                m_stream.freeze();
+                                r->collateNames().connect(this, [this, holding](Route &r) {
                                     std::unique_ptr<Stanza> s(holding);
                                     if (m_stream.tls_auth_ok(r)) {
                                         m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
@@ -92,8 +93,6 @@ namespace {
                                     m_stream.in_context([this, &s]() { handle(s); }, *s);
                                     m_stream.thaw();
                                 }, true);
-                                m_stream.freeze();
-                                r->collateNames();
                                 return;
                             }
                         } else {

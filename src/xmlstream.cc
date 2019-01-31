@@ -332,12 +332,11 @@ void XMLStream::stream_open() {
                 throw std::runtime_error("That's me, you fool");
             }
             auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            r->onNamesCollated.connect(this, [this, with_ver](Route &) {
+            freeze();
+            r->collateNames().connect(this, [this, with_ver](Route &) {
                 send_stream_open(with_ver);
                 thaw();
             }, true);
-            freeze();
-            r->collateNames();
         }
     } else if (m_dir == OUTBOUND) {
         if (m_type == S2S) {
@@ -541,10 +540,9 @@ void XMLStream::do_restart() {
     if (m_dir == OUTBOUND) {
         if (m_secured) {
             auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            r->onNamesCollated.connect(this, [this](Route &) {
+            r->collateNames().connect(this, [this](Route &) {
                 send_stream_open(true);
             }, true);
-            r->collateNames();
         } else {
             send_stream_open(true);
         }
