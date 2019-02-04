@@ -29,6 +29,7 @@ SOFTWARE.
 #include "defs.h"
 #include "rapidxml.hpp"
 #include "xmlstream.h"
+#include "tasklet.h"
 #include <list>
 
 namespace Metre {
@@ -78,7 +79,7 @@ namespace Metre {
         };
 
 
-        virtual bool handle(rapidxml::xml_node<> *) = 0;
+        virtual tasklet<bool> handle(rapidxml::xml_node<> *) = 0;
 
         virtual bool negotiate(rapidxml::xml_node<> *) { return false; }
 

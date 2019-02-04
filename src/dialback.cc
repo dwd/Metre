@@ -74,7 +74,7 @@ namespace {
             return false;
         }
 
-        bool handle(rapidxml::xml_node<> *) override {
+        tasklet<bool> handle(rapidxml::xml_node<> *) override {
             throw Metre::unsupported_stanza_type("Wrong namespace for dialback.");
         }
     };
@@ -213,7 +213,7 @@ namespace {
             }
         }
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string stanza = node->name();
@@ -248,7 +248,7 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type("Unknown dialback element");
             }
-            return true;
+            co_return true;
         }
     };
 

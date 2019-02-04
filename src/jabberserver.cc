@@ -51,7 +51,7 @@ namespace {
             }
         };
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
@@ -66,7 +66,7 @@ namespace {
                 throw Metre::unsupported_stanza_type(stanza);
             }
             handle(s);
-            return true;
+            co_return true;
         }
 
         void handle(std::unique_ptr<Stanza> &s) {

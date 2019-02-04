@@ -36,6 +36,7 @@ SOFTWARE.
 #include "feature.h"
 #include "xmppexcept.h"
 #include "filter.h"
+#include "tasklet.h"
 
 struct X509_crl_st;
 
@@ -68,7 +69,6 @@ namespace Metre {
         std::string m_stream_remote;
         bool m_opened = false;
         bool m_closed = false;
-        bool m_seen_open = false;
         bool m_secured = false; // Crypto in place via TLS. //
         bool m_authready = false; // Channel is ready for dialback/SASL //
         bool m_compressed = false; // Channel has compression enabled, by TLS or XEP-0138 //
@@ -82,6 +82,7 @@ namespace Metre {
         bool m_x2x_mode = false;
         bool m_bidi = false;
         std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
+        std::list<tasklet<bool>> m_tasks;
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -96,6 +97,8 @@ namespace Metre {
         void in_context(std::function<void()> &&, Stanza &s);
 
         void in_context(std::function<void()> &&);
+
+        void task_completed(bool);
 
         void freeze() {
             m_frozen = true;

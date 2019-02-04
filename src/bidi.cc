@@ -56,10 +56,10 @@ namespace {
             }
         };
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             // We don't really handle it here, since we picked a different Namespace.
             // That was silly of us.
-            return false;
+            co_return false;
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {
@@ -86,9 +86,9 @@ namespace {
             Description() : Feature::Description<BidiInbound>(bidi_ns, FEAT_PREAUTH) {};
         };
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             m_stream.bidi(true);
-            return true;
+            co_return true;
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {

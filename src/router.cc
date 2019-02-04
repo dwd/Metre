@@ -182,6 +182,7 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
         queue(std::move(v));
         if (!m_verify_task.running()) {
             m_verify_task = init_session_vrfy();
+            m_verify_task.start();
         }
     }
 }
@@ -232,6 +233,7 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
         queue(std::move(s));
         if (!m_to_task.running()) {
             m_to_task = init_session_to();
+            m_to_task.start();
         }
     }
 }

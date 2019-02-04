@@ -24,6 +24,8 @@ SOFTWARE.
 ***/
 
 #include <http.h>
+#include <xmlstream.h>
+
 #include "rapidxml.hpp"
 #include "xmlstream.h"
 #include "xmppexcept.h"
@@ -78,6 +80,10 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
         METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Data arrived when frozen");
         return 0;
     }
+    if (!m_tasks.empty()) {
+        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Data arrived when tasks underway");
+        return 0;
+    }
     (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
     size_t spaces = 0;
     for (unsigned char *sp{p}; len != 0; ++sp, --len, ++spaces) {
@@ -124,7 +130,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 handle(element);
                 buf.erase(0, end - buf.data());
                 m_stanza.clear();
-                if (m_frozen) return spaces + len - buf.length();
+                if (m_frozen || !m_tasks.empty()) return spaces + len - buf.length();
             }
         } catch (Metre::base::xmpp_exception &) {
             throw;
@@ -503,7 +509,15 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
 
         bool handled = false;
         if (f) {
-            handled = f->handle(element);
+            auto task = f->handle(element);
+            task.complete().connect(this, &XMLStream::task_completed);
+            task.start();
+            if (task.running()) {
+                m_tasks.emplace_back(std::move(task));
+                return;
+            } else {
+                handled = task.get();
+            }
         }
         METRE_LOG(Metre::Log::DEBUG, "Handled: " << handled);
         if (!handled) {
@@ -661,5 +675,23 @@ void XMLStream::add_crl(std::string const &uri, int code, struct X509_crl_st *da
 void XMLStream::crl(std::function<void(struct X509_crl_st *)> const &fn) {
     for (auto pair : m_crls) {
         fn(pair.second);
+    }
+}
+
+void XMLStream::task_completed(bool success) {
+    if (!success) {
+        in_context([]() {
+            throw Metre::unsupported_stanza_type();
+        });
+    }
+    std::remove_if(m_tasks.begin(), m_tasks.end(), [](tasklet<bool> & task) {
+        return !task.running();
+    });
+    if (m_tasks.empty() and not m_frozen) {
+        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - all tasks complete, thawing");
+        m_session->read();
+        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw done.");
+    } else {
+        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - " << m_tasks.size() << " tasks remaining.");
     }
 }

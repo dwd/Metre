@@ -40,18 +40,29 @@ namespace Metre {
             return coro.promise().value;
         }
 
+        void start() {
+            if (!coro) throw std::logic_error("No coroutine to start");
+            if (coro.done()) throw std::logic_error("Already run");
+            coro.resume();
+        }
+
         bool running() {
             if (!coro) return false;
             return !coro.done();
         }
 
-        sigslot::signal<T &> & complete() {
+        sigslot::signal<T> & complete() {
             return coro.promise().complete;
+        }
+
+        sigslot::signal<std::exception_ptr const &> & exception() {
+            return coro.promise().exception;
         }
 
         struct promise_type {
             T value;
-            sigslot::signal<T &> complete;
+            sigslot::signal<T> complete;
+            sigslot::signal<std::exception_ptr const &> exception;
             promise_type() : value() {
             }
             auto get_return_object() {
@@ -66,10 +77,10 @@ namespace Metre {
                 return std::experimental::suspend_always{};
             }
             auto initial_suspend() {
-                return std::experimental::suspend_never{};
+                return std::experimental::suspend_always{};
             }
             void unhandled_exception() {
-                std::exit(1);
+                exception(std::current_exception());
             }
         };
     };

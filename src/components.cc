@@ -86,7 +86,7 @@ namespace {
             return false;
         }
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
@@ -112,7 +112,7 @@ namespace {
                 auto handshake = d.allocate_node(node_element, "handshake");
                 d.append_node(handshake);
                 m_stream.send(d);
-                return true;
+                co_return true;
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
             }
@@ -139,7 +139,7 @@ namespace {
                 std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
                 route->transmit(std::move(st));
             }
-            return true;
+            co_return true;
         }
     };
 

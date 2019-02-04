@@ -133,25 +133,24 @@ namespace {
             m_stream.restart();
         }
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string name = node->name();
             if ((name == "auth" && m_stream.direction() == INBOUND)) {
                 auth(node);
-                return true;
+                co_return true;
             } else if (name == "response" && m_stream.direction() == INBOUND) {
                 response(node);
-                return true;
+                co_return true;
             } else if (name == "challenge" && m_stream.direction() == OUTBOUND) {
                 challenge(node);
-                return true;
+                co_return true;
             } else if (name == "success" && m_stream.direction() == OUTBOUND) {
                 success(node);
-                return true;
-            } else {
-                throw std::runtime_error("Unimplemented");
+                co_return true;
             }
+            co_return false;
         }
 
         bool negotiate(rapidxml::xml_node<> *feat) override {
