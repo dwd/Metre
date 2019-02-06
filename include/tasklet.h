@@ -59,6 +59,34 @@ namespace Metre {
             return coro.promise().exception;
         }
 
+        auto operator co_await() {
+            struct awaitable {
+                std::experimental::coroutine_handle<promise_type> m_coro;
+                awaitable(std::experimental::coroutine_handle<promise_type> h) : m_coro(h) {}
+                awaitable(awaitable const &) = delete;
+                awaitable(awaitable && other) = delete;
+
+                bool await_ready() {
+                    return true;
+                }
+
+                void await_suspend(std::experimental::coroutine_handle<> h) {
+                }
+
+                auto await_resume() {
+                    return m_coro.promise().value;
+                }
+
+                void resolve(T a) {
+                }
+            };
+            if (coro.done()) {
+                return awaitable(coro);
+            } else {
+                return coro.promise().complete.operator co_await();
+            }
+        }
+
         struct promise_type {
             T value;
             sigslot::signal<T> complete;

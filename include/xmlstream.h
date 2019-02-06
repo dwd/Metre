@@ -100,6 +100,8 @@ namespace Metre {
 
         void task_completed(bool);
 
+        tasklet<bool> start_task(tasklet<bool> &&);
+
         void freeze() {
             m_frozen = true;
         }
@@ -167,7 +169,7 @@ namespace Metre {
 
         bool x2x_mode() const { return m_x2x_mode; }
 
-        bool tls_auth_ok(Route &domain);
+        tasklet<bool> tls_auth_ok(Route &domain);
 
         AUTH_STATE s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION) const;
 

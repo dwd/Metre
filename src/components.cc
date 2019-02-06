@@ -43,10 +43,6 @@ namespace {
         class Description : public Feature::Description<Component> {
         public:
             Description() : Feature::Description<Component>(sasl_ns, FEAT_POSTAUTH) {};
-
-            void offer(xml_node<> *, XMLStream &) override {
-                // No feature advertised.
-            }
         };
 
         std::string handshake_content() const {

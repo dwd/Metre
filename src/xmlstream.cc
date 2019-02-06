@@ -509,11 +509,8 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
 
         bool handled = false;
         if (f) {
-            auto task = f->handle(element);
-            task.complete().connect(this, &XMLStream::task_completed);
-            task.start();
+            auto task = start_task(f->handle(element));
             if (task.running()) {
-                m_tasks.emplace_back(std::move(task));
                 return;
             } else {
                 handled = task.get();
@@ -649,9 +646,18 @@ bool XMLStream::bidi(bool b) {
     return m_bidi;
 }
 
-bool XMLStream::tls_auth_ok(Route &route) {
-    if (!m_secured) return false;
-    return verify_tls(*this, route);
+tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
+    if (!m_secured) co_return false;
+    auto task = verify_tls(*this, route);
+    task.exception().connect(this, [this](auto &e) {
+        in_context([e](){ std::rethrow_exception(e);});
+    });
+    task.start();
+    if (task.running()) {
+        co_return co_await task.complete();
+    } else {
+        co_return task.get();
+    }
 }
 
 void XMLStream::fetch_crl(std::string const &uri) {
@@ -679,11 +685,6 @@ void XMLStream::crl(std::function<void(struct X509_crl_st *)> const &fn) {
 }
 
 void XMLStream::task_completed(bool success) {
-    if (!success) {
-        in_context([]() {
-            throw Metre::unsupported_stanza_type();
-        });
-    }
     std::remove_if(m_tasks.begin(), m_tasks.end(), [](tasklet<bool> & task) {
         return !task.running();
     });
@@ -693,5 +694,20 @@ void XMLStream::task_completed(bool success) {
         METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw done.");
     } else {
         METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - " << m_tasks.size() << " tasks remaining.");
+    }
+}
+
+tasklet<bool> XMLStream::start_task(tasklet<bool> && task) {
+    task.exception().connect(this, [this](auto eptr) {
+        this->in_context([eptr](){
+            std::rethrow_exception(eptr);
+        });
+    });
+    task.start();
+    if (task.running()) {
+        m_tasks.emplace_back(task);
+        task.complete().connect(this, &XMLStream::task_completed);
+    } else {
+        return std::move(task);
     }
 }

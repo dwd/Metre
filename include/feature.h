@@ -46,7 +46,9 @@ namespace Metre {
         public:
             BaseDescription(std::string const &, Feature::Type);
 
-            virtual void offer(rapidxml::xml_node<> *node, XMLStream &s) {}
+            virtual tasklet<bool> offer(rapidxml::xml_node<> *node, XMLStream &s) {
+                co_return false;
+            }
 
             std::string const &xmlns() const;
 
