@@ -584,34 +584,10 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
     std::string tmp = asString();
     std::ofstream of(m_data_dir + "/" + "metre.running.xml", std::ios_base::trunc);
     of << tmp;
-    // Libunbound initialization.
     m_ub_ctx = ub_ctx_create();
     if (!m_ub_ctx) {
         throw std::runtime_error("DNS context creation failure.");
     }
-    int retval;
-    if ((retval = ub_ctx_set_event(m_ub_ctx, Router::event_base())) != 0) {
-        throw std::runtime_error(ub_strerror(retval));
-    }
-    /*if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
-        throw std::runtime_error(ub_strerror(retval));
-    }*/
-    if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
-        throw std::runtime_error(ub_strerror(retval));
-    }
-    if ((retval = ub_ctx_hosts(m_ub_ctx, NULL)) != 0) {
-        throw std::runtime_error(ub_strerror(retval));
-    }
-    if (!m_dns_keys.empty()) {
-        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, const_cast<char *>(m_dns_keys.c_str()))) != 0) {
-            throw std::runtime_error(ub_strerror(retval));
-        }
-    }
-    // Initialize logging.
-    if (!m_logfile.empty()) {
-        m_logger = spdlog::daily_logger_st("global", m_logfile);
-    }
-    m_logger->flush_on(spdlog::level::trace);
 }
 
 Config::~Config() {
@@ -1116,6 +1092,13 @@ void Config::log_init(bool systemd) {
     if (!systemd && m_logfile.empty()) {
         m_logfile = "/var/log/metre/metre.log";
     }
+    // Initialize logging.
+    if (!m_logfile.empty()) {
+        m_logger = spdlog::daily_logger_st("global", m_logfile);
+    } else {
+        m_logger = spdlog::stderr_logger_st("global");
+    }
+    m_logger->flush_on(spdlog::level::trace);
 }
 
 Config::Domain const &Config::domain(std::string const &dom) const {
@@ -1152,7 +1135,7 @@ std::string Config::random_identifier() const {
     std::uniform_int_distribution<> dist(0, sizeof(characters) - 2);
     std::string id(id_len, char{});
     std::generate_n(id.begin(), id_len, [&characters, &random, &dist]() { return characters[dist(random)]; });
-    return std::move(id);
+    return id;
 }
 
 std::string Config::dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const {
@@ -1177,6 +1160,29 @@ std::string Config::dialback_key(std::string const &id, std::string const &local
 
 Config const &Config::config() {
     return *s_config;
+}
+
+void Config::dns_init() const {
+    // Libunbound initialization.
+    const_cast<Config *>(this)->m_ub_ctx = ub_ctx_create_event(Router::event_base());
+    if (!m_ub_ctx) {
+        throw std::runtime_error("Couldn't start resolver");
+    }
+    /*if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
+        throw std::runtime_error(ub_strerror(retval));
+    }*/
+    int retval;
+    if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
+        throw std::runtime_error(ub_strerror(retval));
+    }
+    if ((retval = ub_ctx_hosts(m_ub_ctx, NULL)) != 0) {
+        throw std::runtime_error(ub_strerror(retval));
+    }
+    if (!m_dns_keys.empty()) {
+        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, const_cast<char *>(m_dns_keys.c_str()))) != 0) {
+            throw std::runtime_error(ub_strerror(retval));
+        }
+    }
 }
 
 
@@ -1612,14 +1618,14 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
     } else if (base_domain.empty()) {
         srv_callback_t &cb = m_srv_pending;
-        Router::defer([this, &cb]() {
+        Router::defer([&cb]() {
             DNS::Srv r;
             r.error = "Empty Domain - DNS aborted";
             cb.emit(&r);
         });
     } else if (m_type == X2X) {
         srv_callback_t &cb = m_srv_pending;
-        Router::defer([this, &cb]() {
+        Router::defer([&cb]() {
             DNS::Srv r;
             r.error = "X2X - DNS aborted";
             cb.emit(&r);

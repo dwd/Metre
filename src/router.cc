@@ -40,7 +40,7 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to), onNa
     if (m_domain.domain().empty() || m_local.domain().empty()) throw std::runtime_error("Cannot have route to/from empty domain");
 }
 
-tasklet<bool> Route::init_session_vrfy() {
+sigslot::tasklet<bool> Route::init_session_vrfy() {
     auto srv = co_await Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain());
     if (!srv->error.empty()) {
         METRE_LOG(Log::WARNING, "SRV Lookup for " << m_domain.domain() << " failed: " << srv->error);
@@ -85,13 +85,13 @@ tasklet<bool> Route::init_session_vrfy() {
     co_return false;
 }
 
-tasklet<bool> Route::init_session_to() {
+sigslot::tasklet<bool> Route::init_session_to() {
     auto session = m_vrfy.lock();
     if (!session) {
         if (!m_verify_task.running()) {
             m_verify_task = init_session_vrfy();
         }
-        if (!co_await m_verify_task.complete()) {
+        if (!co_await m_verify_task) {
             co_return false;
         }
     }

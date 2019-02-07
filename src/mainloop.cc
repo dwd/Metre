@@ -330,6 +330,7 @@ namespace Metre {
         }
 
         void dns_setup() {
+            return;
             if (!m_ub_event) {
                 m_ub_event = event_new(m_event_base, ub_fd(Config::config().ub_ctx()), EV_READ | EV_PERSIST, unbound_cb,
                                        Config::config().ub_ctx());
@@ -409,6 +410,7 @@ namespace Metre {
                 METRE_LOG(Metre::Log::CRIT, "Loop initialization failure");
                 return;
             }
+            Config::config().dns_init();
             loop.run();
             METRE_LOG(Metre::Log::INFO, "Shutdown complete");
         }

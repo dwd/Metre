@@ -35,7 +35,7 @@ SOFTWARE.
 namespace Metre {
     bool tlsa_matches(DNS::TlsaRR const &rr, X509 *cert);
 
-    tasklet<bool> verify_tls(XMLStream &stream, Route &route);
+    sigslot::tasklet<bool> verify_tls(XMLStream &stream, Route &route);
 
     bool prep_crl(XMLStream &stream);
 

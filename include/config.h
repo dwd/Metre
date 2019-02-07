@@ -248,6 +248,8 @@ namespace Metre {
 
         void log_init(bool systemd = false);
 
+        void dns_init() const;
+
         Domain const &domain(std::string const &domain) const;
 
         void load(std::string const &filename);

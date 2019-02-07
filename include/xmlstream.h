@@ -36,7 +36,7 @@ SOFTWARE.
 #include "feature.h"
 #include "xmppexcept.h"
 #include "filter.h"
-#include "tasklet.h"
+#include "sigslot/tasklet.h"
 
 struct X509_crl_st;
 
@@ -82,7 +82,7 @@ namespace Metre {
         bool m_x2x_mode = false;
         bool m_bidi = false;
         std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
-        std::list<tasklet<bool>> m_tasks;
+        std::list<sigslot::tasklet<bool>> m_tasks;
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -100,7 +100,7 @@ namespace Metre {
 
         void task_completed(bool);
 
-        tasklet<bool> start_task(tasklet<bool> &&);
+        sigslot::tasklet<bool> start_task(sigslot::tasklet<bool> &&);
 
         void freeze() {
             m_frozen = true;
@@ -169,7 +169,7 @@ namespace Metre {
 
         bool x2x_mode() const { return m_x2x_mode; }
 
-        tasklet<bool> tls_auth_ok(Route &domain);
+        sigslot::tasklet<bool> tls_auth_ok(Route &domain);
 
         AUTH_STATE s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION) const;
 
@@ -213,7 +213,7 @@ namespace Metre {
 
         void stream_open();
 
-        void send_stream_open(bool);
+        sigslot::tasklet<bool> send_stream_open(bool);
     };
 }
 

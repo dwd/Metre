@@ -30,7 +30,7 @@ SOFTWARE.
 #include "jid.h"
 #include "stanza.h"
 #include "dns.h"
-#include "tasklet.h"
+#include "sigslot/tasklet.h"
 
 #include <string>
 #include <memory>
@@ -45,9 +45,9 @@ namespace Metre {
     class Route : public sigslot::has_slots {
     private:
         std::weak_ptr<NetSession> m_to;
-        tasklet<bool> m_to_task;
+        sigslot::tasklet<bool> m_to_task;
         std::weak_ptr<NetSession> m_vrfy;
-        tasklet<bool> m_verify_task;
+        sigslot::tasklet<bool> m_verify_task;
         std::list<std::unique_ptr<Stanza>> m_stanzas;
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
@@ -70,9 +70,9 @@ namespace Metre {
             return m_local.domain();
         }
 
-        tasklet<bool> init_session_vrfy();
+        sigslot::tasklet<bool> init_session_vrfy();
 
-        tasklet<bool> init_session_to();
+        sigslot::tasklet<bool> init_session_to();
 
         void outbound(NetSession *ns);
 

@@ -359,11 +359,11 @@ void XMLStream::stream_open() {
     }
 }
 
-void XMLStream::send_stream_open(bool with_version) {
+sigslot::tasklet<bool> XMLStream::send_stream_open(bool with_version) {
     if (m_x2x_mode) {
         if (m_secured) {
             auto route = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            if (!tls_auth_ok(*route)) {
+            if (!co_await tls_auth_ok(*route)) {
                 throw host_unknown("Cannot authenticate host");
             }
         }
@@ -415,6 +415,8 @@ void XMLStream::send_stream_open(bool with_version) {
         }
     }
     m_opened = true;
+    co_return
+    true;
 }
 
 void XMLStream::send(rapidxml::xml_document<> &d) {
@@ -646,18 +648,10 @@ bool XMLStream::bidi(bool b) {
     return m_bidi;
 }
 
-tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
+sigslot::tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
     if (!m_secured) co_return false;
-    auto task = verify_tls(*this, route);
-    task.exception().connect(this, [this](auto &e) {
-        in_context([e](){ std::rethrow_exception(e);});
-    });
-    task.start();
-    if (task.running()) {
-        co_return co_await task.complete();
-    } else {
-        co_return task.get();
-    }
+    co_return
+    co_await start_task(verify_tls(*this, route));
 }
 
 void XMLStream::fetch_crl(std::string const &uri) {
@@ -685,7 +679,7 @@ void XMLStream::crl(std::function<void(struct X509_crl_st *)> const &fn) {
 }
 
 void XMLStream::task_completed(bool success) {
-    std::remove_if(m_tasks.begin(), m_tasks.end(), [](tasklet<bool> & task) {
+    std::remove_if(m_tasks.begin(), m_tasks.end(), [](auto &task) {
         return !task.running();
     });
     if (m_tasks.empty() and not m_frozen) {
@@ -697,7 +691,7 @@ void XMLStream::task_completed(bool success) {
     }
 }
 
-tasklet<bool> XMLStream::start_task(tasklet<bool> && task) {
+sigslot::tasklet<bool> XMLStream::start_task(sigslot::tasklet<bool> &&task) {
     task.exception().connect(this, [this](auto eptr) {
         this->in_context([eptr](){
             std::rethrow_exception(eptr);
@@ -707,7 +701,6 @@ tasklet<bool> XMLStream::start_task(tasklet<bool> && task) {
     if (task.running()) {
         m_tasks.emplace_back(task);
         task.complete().connect(this, &XMLStream::task_completed);
-    } else {
-        return std::move(task);
     }
+    return std::move(task);
 }

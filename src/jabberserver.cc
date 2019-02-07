@@ -47,7 +47,7 @@ namespace {
             Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
         };
 
-        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
@@ -65,7 +65,7 @@ namespace {
             co_return true;
         }
 
-        tasklet<bool> handle(std::unique_ptr<Stanza> &s) {
+        sigslot::tasklet<bool> handle(std::unique_ptr<Stanza> &s) {
             try {
                 try {
                     Jid const &to = s->to();

@@ -92,10 +92,10 @@ namespace {
         public:
             Description() : Feature::Description<StartTls>(tls_ns, FEAT_SECURE) {};
 
-            void offer(xml_node<> *node, XMLStream &s) override {
-                if (s.secured()) return;
+            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
+                if (s.secured()) co_returnfalse;
                 SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
-                if (!ctx) return;
+                if (!ctx) co_returnfalse;
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "starttls");
                 feature->append_attribute(d->allocate_attribute("xmlns", tls_ns.c_str()));
@@ -104,10 +104,12 @@ namespace {
                     feature->append_node(required);
                 }
                 node->append_node(feature);
+                co_return
+                true;
             }
         };
 
-        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string name = node->name();
@@ -188,7 +190,7 @@ namespace Metre {
         return retval;
     }
 
-    tasklet<bool> verify_tls(XMLStream &stream, Route &route) {
+    sigslot::tasklet<bool> verify_tls(XMLStream &stream, Route &route) {
         SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
         if (!ssl) co_return false; // No TLS.
         if (X509_V_OK != SSL_get_verify_result(ssl)) {

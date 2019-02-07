@@ -47,16 +47,18 @@ namespace {
         public:
             Description() : Feature::Description<Bidi>(bidi_feat_ns, FEAT_PREAUTH) {};
 
-            void offer(xml_node<> *node, XMLStream &s) override {
-                if (s.bidi()) return;
+            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
+                if (s.bidi()) co_returnfalse;
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "bidi");
                 feature->append_attribute(d->allocate_attribute("xmlns", bidi_feat_ns.c_str()));
                 node->append_node(feature);
+                co_return
+                true;
             }
         };
 
-        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             // We don't really handle it here, since we picked a different Namespace.
             // That was silly of us.
             co_return false;
@@ -86,7 +88,7 @@ namespace {
             Description() : Feature::Description<BidiInbound>(bidi_ns, FEAT_PREAUTH) {};
         };
 
-        tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             m_stream.bidi(true);
             co_return true;
         }
