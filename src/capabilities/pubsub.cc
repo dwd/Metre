@@ -33,7 +33,7 @@ namespace {
 
         // Operations.
 
-        void publish(std::unique_ptr<Iq> &&iq, rapidxml::xml_node<> *operation) {
+        void publish(Iq const &iq, rapidxml::xml_node<> *operation) {
             auto node_attr = operation->first_attribute("node");
             if (!node_attr) {
                 throw Metre::stanza_bad_format("Missing node attribute");
@@ -55,16 +55,16 @@ namespace {
         }
 
         Pubsub(BaseDescription const &descr, Endpoint &endpoint) : Capability(descr, endpoint) {
-            endpoint.add_handler("http://jabber.org/protocol/pubsub", "pubsub", [this](std::unique_ptr<Iq> &&iq) {
-                iq->freeze();
-                auto operation = iq->query().first_node();
+            endpoint.add_handler("http://jabber.org/protocol/pubsub", "pubsub", [this](Iq const & iq) {
+                iq.freeze();
+                auto operation = iq.query().first_node();
                 std::string op_name{operation->name(), operation->name_size()};
                 if (op_name == "publish") {
-                    publish(std::move(iq), operation);
+                    publish(iq, operation);
                     return true;
                 } else {
                     // Not known.
-                    auto error = iq->create_bounce(Stanza::Error::feature_not_implemented);
+                    auto error = iq.create_bounce(Stanza::Error::feature_not_implemented);
                     m_endpoint.send(std::move(error));
                 }
                 return true;

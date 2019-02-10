@@ -48,7 +48,7 @@ namespace {
             Description() : Feature::Description<Bidi>(bidi_feat_ns, FEAT_PREAUTH) {};
 
             sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
-                if (s.bidi()) co_returnfalse;
+                if (s.bidi()) co_return false;
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "bidi");
                 feature->append_attribute(d->allocate_attribute("xmlns", bidi_feat_ns.c_str()));

@@ -19,47 +19,44 @@ std::string Endpoint::random_identifier() {
     return id;
 }
 
-void Endpoint::process(std::unique_ptr<Stanza> &&stanza) {
-    if (stanza->id()) {
-        auto it = m_stanza_callbacks.find(*stanza->id());
+void Endpoint::process(Stanza const & stanza) {
+    if (stanza.id()) {
+        auto it = m_stanza_callbacks.find(*stanza.id());
         if (it != m_stanza_callbacks.end()) {
-            (*it).second(std::move(stanza));
+            (*it).second(stanza);
             return;
         }
     }
-    if (stanza->name() == Message::name) {
-        std::unique_ptr<Message> msg(dynamic_cast<Message *>(stanza.release()));
-        process(std::move(msg));
-    } else if (stanza->name() == Presence::name) {
-        std::unique_ptr<Presence> pres(dynamic_cast<Presence *>(stanza.release()));
-        process(std::move(pres));
-    } else if (stanza->name() == Iq::name) {
-        std::unique_ptr<Iq> iq(dynamic_cast<Iq *>(stanza.release()));
-        process(std::move(iq));
+    if (stanza.name() == Message::name) {
+        process(dynamic_cast<Message const &>(stanza));
+    } else if (stanza.name() == Presence::name) {
+        process(dynamic_cast<Presence const &>(stanza));
+    } else if (stanza.name() == Iq::name) {
+        process(dynamic_cast<Iq const &>(stanza));
     } else {
-        throw stanza_service_unavailable();
+        throw unsupported_stanza_type();
     }
 }
 
-void Endpoint::process(std::unique_ptr<Presence> &&presence) {
+void Endpoint::process(Presence const & presence) {
     throw stanza_service_unavailable();
 }
 
-void Endpoint::process(std::unique_ptr<Message> &&message) {
+void Endpoint::process(Message const & message) {
     throw stanza_service_unavailable();
 }
 
-void Endpoint::process(std::unique_ptr<Iq> &&iq) {
-    switch (iq->type()) {
+void Endpoint::process(Iq const & iq) {
+    switch (iq.type()) {
         case Iq::GET:
         case Iq::SET: {
-            auto payload = iq->node()->first_node();
+            auto payload = iq.node()->first_node();
             if (payload != nullptr) {
                 std::string xmlns{payload->xmlns(), payload->xmlns_size()};
                 std::string local{payload->name(), payload->name_size()};
                 auto i = m_handlers.find(std::make_pair(xmlns, local));
                 if (i != m_handlers.end()) {
-                    (*i).second(std::move(iq));
+                    (*i).second(iq);
                     return;
                 }
             }
@@ -74,7 +71,7 @@ void Endpoint::process(std::unique_ptr<Iq> &&iq) {
 Endpoint::~Endpoint() = default;
 
 void Endpoint::add_handler(std::string const &xmlns, std::string const &local,
-                           std::function<void(std::unique_ptr<Iq> &&)> &&fn) {
+                           std::function<void(Iq const &)> &&fn) {
     m_handlers.emplace(std::make_pair(xmlns, local), std::move(fn));
 }
 
@@ -90,7 +87,7 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
 #endif
 }
 
-void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(std::unique_ptr<Stanza> &&)> const &fn) {
+void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &fn) {
     if (!stanza->id()) {
         stanza->id(random_identifier());
     }

@@ -72,7 +72,6 @@ namespace Metre {
         bool m_secured = false; // Crypto in place via TLS. //
         bool m_authready = false; // Channel is ready for dialback/SASL //
         bool m_compressed = false; // Channel has compression enabled, by TLS or XEP-0138 //
-        bool m_frozen = false;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_rx;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
         std::list<std::unique_ptr<Filter>> m_filters;
@@ -82,7 +81,8 @@ namespace Metre {
         bool m_x2x_mode = false;
         bool m_bidi = false;
         std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
-        std::list<sigslot::tasklet<bool>> m_tasks;
+        std::list<std::shared_ptr<sigslot::tasklet<bool>>> m_tasks;
+        int m_in_flight = 0; // Tasks in flight.
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -100,14 +100,14 @@ namespace Metre {
 
         void task_completed(bool);
 
-        sigslot::tasklet<bool> start_task(sigslot::tasklet<bool> &&);
+        std::shared_ptr<sigslot::tasklet<bool>> start_task(std::string const & s, sigslot::tasklet<bool> &&);
 
         void freeze() {
-            m_frozen = true;
+            ++m_in_flight;
         }
 
         bool frozen() const {
-            return m_frozen;
+            return m_in_flight > 0;
         }
 
         void thaw();

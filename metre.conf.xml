@@ -44,21 +44,22 @@
               pkey='./privkey.pem'/><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
     </any>
     <domain name='dave.cridland.net' forward='true'><!-- Domains set to forward will be responded to locally, and the stanzas passed through. -->
-      <transport type='s2s' sec='tls'>
+      <transport type='s2s' sec='false'>
         <!-- If there's any auth options here this will override defaults. -->
         <auth type='pkix'/><!-- PKIX authentication is SASL EXTERNAL based, X.509 Strong Authentication. Certificates, basically. -->
+        <auth type='dialback'/>
       </transport>
         <x509 chain='./chain.pem'
               pkey='./privkey.pem'/><!-- X.509 information, specifically a chain file and a private key file, in PEM format. -->
       <dhparam size='1024'/>
       <dns><!-- Override DNS records. -->
-        <srv host='peirce.dave.cridland.net' port='5269'/>
+        <!-- <srv host='peirce.dave.cridland.net' port='5269'/>
         <host name='peirce.dave.cridland.net' a='217.155.137.61'/>
-        <tlsa hostname='peirce.dave.cridland.net' port='5269' certusage='DomainCert' selector='FullCert' matchtype='Full'>./cridland.der</tlsa>
+        <tlsa hostname='peirce.dave.cridland.net' port='5269' certusage='DomainCert' selector='FullCert' matchtype='Full'>./cridland.der</tlsa> -->
       </dns>
     </domain>
     <domain name="surevine.com">
-      <!-- <dns dnssec="true"/><!-- Setting DNSSEC to true means Metre rejects any unsigned records. -->
+      <!-- <dns dnssec="true"/> - Setting DNSSEC to true means Metre rejects any unsigned records. -->
     </domain>
     <domain name='channels.cridland.im' forward='true'> <!-- Components are also domains - but use a different transport. -->
       <transport type='114' sec='none'>
@@ -71,4 +72,7 @@
       </transport>
     </domain>
   </remote>
+  <listeners>
+    <listener name="S2S" address="::" port="5269" type="s2s" tls="false"/>
+  </listeners>
 </config>

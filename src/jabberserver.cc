@@ -61,7 +61,8 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
             }
-            co_await m_stream.start_task(handle(s));
+            auto task = m_stream.start_task("jabber::server handle(Stanza)", handle(s));
+            co_await *task;
             co_return true;
         }
 
@@ -76,8 +77,8 @@ namespace {
                             if (m_stream.secured()) {
                                 s->freeze();
                                 auto r = RouteTable::routeTable(to.domain()).route(from.domain());
-                                auto task = m_stream.start_task(m_stream.tls_auth_ok(*r));
-                                bool result = co_await task;
+                                auto task = m_stream.start_task("jabber::server tls_auth_ok", m_stream.tls_auth_ok(*r));
+                                bool result = co_await *task;
                                 if (result) {
                                     m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
                                                            XMLStream::AUTHORIZED);
@@ -94,7 +95,7 @@ namespace {
                         co_return true;
                     }
                     if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
-                        Endpoint::endpoint(to).process(std::move(s));
+                        Endpoint::endpoint(to).process(*s);
                     } else {
                         std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
                         route->transmit(std::move(s));

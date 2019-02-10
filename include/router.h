@@ -36,6 +36,7 @@ SOFTWARE.
 #include <memory>
 #include <queue>
 #include <map>
+#include <spdlog/logger.h>
 
 struct event_base;
 
@@ -52,13 +53,7 @@ namespace Metre {
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
         Jid const m_domain;
-        bool m_srv_valid = false;
-        DNS::Srv m_srv;
-        std::vector<DNS::SrvRR>::const_iterator m_rr;
-        bool m_a_valid = false;
-        DNS::Address m_addr;
-        std::vector<struct sockaddr_storage>::const_iterator m_arr;
-        std::vector<DNS::Tlsa> m_tlsa;
+        std::shared_ptr<spdlog::logger> m_logger;
     public:
         Route(Jid const &from, Jid const &to);
 
@@ -80,25 +75,8 @@ namespace Metre {
 
         void transmit(std::unique_ptr<DB::Verify> &&);
 
-        void doSrvLookup();
-
-        // Callbacks:
-        void SrvResult(DNS::Srv const *);
-
-        void TlsaResult(DNS::Tlsa const *);
-
         // Slots
         void SessionClosed(NetSession &);
-
-        sigslot::signal<Route &> &collateNames();
-
-        sigslot::signal<Route &> onNamesCollated;
-
-        std::vector<DNS::Tlsa> const &tlsa() const;
-
-        DNS::Srv const &srv() const {
-            return m_srv;
-        }
 
     protected:
         void bounce_stanzas(Stanza::Error);

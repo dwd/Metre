@@ -48,14 +48,14 @@ namespace {
             Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
 
             sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &stream) override {
-                if (stream.remote_domain().empty()) co_returnfalse;
+                if (stream.remote_domain().empty()) co_return false;
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) ==
                     XMLStream::AUTHORIZED)
                     co_return
                     false;
                 std::shared_ptr<Route> &route = RouteTable::routeTable(stream.local_domain()).route(
                         stream.remote_domain());
-                if (co_await stream.start_task(stream.tls_auth_ok(*route))) {
+                if (co_await *stream.start_task("SASL EXTERNAL offer tls_auth_ok", stream.tls_auth_ok(*route))) {
                     xml_document<> *d = node->document();
                     auto feature = d->allocate_node(node_element, "mechanisms");
                     feature->append_attribute(d->allocate_attribute("xmlns", sasl_ns.c_str()));
@@ -69,15 +69,17 @@ namespace {
             }
         };
 
-        void auth(rapidxml::xml_node<> *node) {
-            if (m_stream.remote_domain().empty()) return;
+        sigslot::tasklet<bool> auth(rapidxml::xml_node<> *node) {
+            if (m_stream.remote_domain().empty()) co_return true;
             auto mechattr = node->first_attribute("mechanism");
             if (!mechattr || !mechattr->value()) throw std::runtime_error("No mechanism attribute");
             std::string mechname = mechattr->value();
             if (mechname != "EXTERNAL") {
                 throw std::runtime_error("No such mechanism");
             }
-            response(node);
+            auto task = m_stream.start_task("SASL auth->response", response(node));
+            co_await *task;
+            co_return true;
         }
 
         sigslot::tasklet<bool> response(rapidxml::xml_node<> *node) {
@@ -104,7 +106,7 @@ namespace {
             }
             std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                     m_stream.remote_domain());
-            if (co_await m_stream.start_task(m_stream.tls_auth_ok(*route))) {
+            if (co_await *m_stream.start_task("SASL EXTERNAL response tls_auth_ok", m_stream.tls_auth_ok(*route))) {
                 xml_document<> d;
                 auto n = d.allocate_node(node_element, "success");
                 n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
@@ -143,10 +145,12 @@ namespace {
             d->fixup<parse_default>(node, true);
             std::string name = node->name();
             if ((name == "auth" && m_stream.direction() == INBOUND)) {
-                auth(node);
+                auto task = m_stream.start_task("SASL auth", auth(node));
+                co_await *task;
                 co_return true;
             } else if (name == "response" && m_stream.direction() == INBOUND) {
-                response(node);
+                auto task = m_stream.start_task("SASL response", response(node));
+                co_await *task;
                 co_return true;
             } else if (name == "challenge" && m_stream.direction() == OUTBOUND) {
                 challenge(node);

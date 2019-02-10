@@ -120,7 +120,7 @@ namespace {
             auto &route = RouteTable::routeTable(result.to()).route(result.from());
             result.freeze();
             // Shortcuts here.
-            if (co_await m_stream.start_task(m_stream.tls_auth_ok(*route))) {
+            if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(*route))) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain(), route->local(), DB::VALID);
                 m_stream.send(std::move(d));
                 m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::AUTHORIZED);
@@ -222,9 +222,8 @@ namespace {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:result");
                     }
                 } else {
-                    co_return
-                            co_await
-                    m_stream.start_task(result(*p));
+                    auto task = m_stream.start_task("Dialback calling result", result(*p));
+                    co_return co_await *task;
                 }
             } else if (stanza == "verify") {
                 auto p = std::make_unique<DB::Verify>(node);

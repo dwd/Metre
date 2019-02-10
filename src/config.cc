@@ -183,7 +183,7 @@ namespace {
         std::string name;
         bool forward = (def == INTERNAL || def == COMP);
         SESSION_TYPE sess = def;
-        bool tls_required = true;
+        bool tls_required = !(def == INTERNAL || def == COMP);
         bool block = false;
         bool auth_pkix = (def == S2S) || (def == X2X);
         bool auth_dialback = false;
@@ -198,7 +198,7 @@ namespace {
         if (any) {
             auth_pkix = any->auth_pkix();
             auth_dialback = any->auth_dialback();
-            tls_required = any->require_tls();
+            tls_required = tls_required && any->require_tls();
             dnssec_required = any->dnssec_required();
             dhparam = any->dhparam();
             cipherlist = any->cipherlist();
@@ -469,9 +469,8 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
         X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
                           const_cast<char *>(cert_name.data()), name_sz);
         cert_name.resize(cert_name.find('\0'));
-        METRE_LOG(Metre::Log::INFO, "Cert failed basic verification: " + cert_name);
-        METRE_LOG(Metre::Log::INFO,
-                  std::string("Error is ") + X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
+        Config::config().m_logger->info("Cert failed basic verification: {}", cert_name);
+        Config::config().m_logger->info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
     } else {
         const int name_sz = 256;
         std::string cert_name;
@@ -479,7 +478,7 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
         X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
                           const_cast<char *>(cert_name.data()), name_sz);
         cert_name.resize(cert_name.find('\0'));
-        METRE_LOG(Metre::Log::DEBUG, "Cert passed basic verification: " + cert_name);
+        Config::config().m_logger->debug("Cert passed basic verification: {}", cert_name);
         if (Config::config().m_fetch_crls) {
             auto cert = X509_STORE_CTX_get_current_cert(st);
             std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
@@ -495,7 +494,7 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
                                 ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
                                 std::string uristr{reinterpret_cast<char *>(uri->data),
                                                    static_cast<std::size_t>(uri->length)};
-                                METRE_LOG(Metre::Log::INFO, "Fetching CRL for " << cert_name << " - " << uristr);
+                                Config::config().m_logger->info("Prefetching CRL for {} - {}", cert_name, uristr);
                                 Http::crl(uristr);
                             }
                         }
@@ -577,7 +576,7 @@ SSL_CTX *Config::Domain::ssl_ctx() const {
 Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(random_identifier()) {
     s_config = this;
     // Spin up a temporary error logger.
-    m_logger = spdlog::stderr_color_st("console");
+    m_root_logger = spdlog::stderr_color_st("console");
     spdlog::set_level(spdlog::level::trace);
     spdlog::set_sync_mode();
     load(filename);
@@ -1094,11 +1093,13 @@ void Config::log_init(bool systemd) {
     }
     // Initialize logging.
     if (!m_logfile.empty()) {
-        m_logger = spdlog::daily_logger_st("global", m_logfile);
+        m_root_logger = spdlog::daily_logger_st("global", m_logfile);
     } else {
-        m_logger = spdlog::stderr_logger_st("global");
+        m_root_logger = spdlog::stderr_logger_st("global");
     }
-    m_logger->flush_on(spdlog::level::trace);
+    m_root_logger->flush_on(spdlog::level::trace);
+    m_root_logger->set_level(spdlog::level::trace);
+    m_logger = logger("config");
 }
 
 Config::Domain const &Config::domain(std::string const &dom) const {
@@ -1119,7 +1120,7 @@ Config::Domain const &Config::domain(std::string const &dom) const {
             assert(search != "");
             continue;
         }
-        METRE_LOG(Metre::Log::INFO, "Creating new domain config " << dom << " from parent {" << (*it).second->domain() <<"}");
+        m_logger->info("Creating new domain config {}from parent ({})", dom, (*it).second->domain());
         std::unique_ptr<Config::Domain> newdom{new Config::Domain(*(*it).second, dom)};
         std::tie(it, std::ignore) = const_cast<Config *>(this)->m_domains.insert(
                 std::make_pair(dom, std::move(newdom)));
@@ -1154,7 +1155,7 @@ std::string Config::dialback_key(std::string const &id, std::string const &local
         hexoutput += ((low < 0x0A) ? '0' : ('a' - 10)) + low;
     }
     assert(hexoutput.length() == 40);
-    METRE_LOG(Metre::Log::DEBUG, "Dialback key id " << id << " ::  " << local_domain << " | " << remote_domain);
+    m_logger->debug("Dialback key id {} :: {} | {}", id, local_domain, remote_domain);
     return hexoutput;
 }
 
@@ -1164,14 +1165,14 @@ Config const &Config::config() {
 
 void Config::dns_init() const {
     // Libunbound initialization.
-    const_cast<Config *>(this)->m_ub_ctx = ub_ctx_create_event(Router::event_base());
+    const_cast<Config *>(this)->m_ub_ctx = ub_ctx_create();
     if (!m_ub_ctx) {
         throw std::runtime_error("Couldn't start resolver");
     }
-    /*if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
-        throw std::runtime_error(ub_strerror(retval));
-    }*/
     int retval;
+    if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
+        throw std::runtime_error(ub_strerror(retval));
+    }
     if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
@@ -1185,6 +1186,13 @@ void Config::dns_init() const {
     }
 }
 
+std::shared_ptr<spdlog::logger> Config::logger(std::string const & logger_name) const {
+    auto sinks = m_root_logger->sinks();
+    auto logger = std::make_shared<spdlog::logger>(logger_name, begin(sinks), end(sinks));
+    logger->flush_on(spdlog::level::trace);
+    logger->set_level(spdlog::level::trace);
+    return logger;
+}
 
 /*
  * DNS resolver functions.
@@ -1303,7 +1311,7 @@ std::vector<DNS::Tlsa> const &Config::Domain::tlsa() const {
 
 void Config::Domain::tlsa_lookup_done(int err, struct ub_result *result) {
     std::string error;
-    METRE_LOG(Log::DEBUG, "TLSA Response for " << result->qname);
+    logger().debug("TLSA Response for {}", result->qname);
     if (err != 0) {
         error = ub_strerror(err);
     } else if (!result->havedata) {
@@ -1323,16 +1331,12 @@ void Config::Domain::tlsa_lookup_done(int err, struct ub_result *result) {
             rr.matchType = static_cast<DNS::TlsaRR::MatchType>(result->data[i][2]);
             rr.matchData.assign(result->data[i] + 3, result->len[i] - 3);
             tlsa.rrs.push_back(rr);
-            METRE_LOG(Metre::Log::DEBUG, "Data[" << i << "]: (" << result->len[i] << " bytes) "
-                                                 << rr.certUsage << ":"
-                                                 << rr.selector << ":"
-                                                 << rr.matchType << "::"
-                                                 << rr.matchData);
+            logger().debug("Data[{}]: ({} bytes) {}:{}:{}::{}", i, result->len[i], rr.certUsage, rr.selector, rr.matchType, rr.matchData);
         }
         m_tlsa_pending[tlsa.domain].emit(&tlsa);
         return;
     }
-    METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
+    logger().info("DNS Error: {}", error);
     DNS::Tlsa tlsa;
     tlsa.error = error;
     tlsa.domain = result->qname;
@@ -1432,11 +1436,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
                 rr.hostname += ".";
             }
             srv.rrs.push_back(rr);
-            METRE_LOG(Metre::Log::DEBUG, "Data[" << i << "]: (" << result->len[i] << " bytes) "
-                                                 << rr.priority << ":"
-                                                 << rr.weight << ":"
-                                                 << rr.port << "::"
-                                                 << rr.hostname);
+            logger().debug("Data[{}]: ({} bytes) {}:{}:{}::{}", i, result->len[i], rr.priority, rr.weight, rr.port, rr.hostname);
         }
         if (srv.xmpp && srv.xmpps) {
             srv_sort(srv);
@@ -1444,7 +1444,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
         }
         return;
     }
-    METRE_LOG(Metre::Log::DEBUG, "DNS Error: " << error);
+    logger().info("DNS Error: {}");
     m_current_srv.domain = result->qname;
     if (err == 0 && !result->havedata) {
         if (m_current_srv.xmpps || m_current_srv.xmpp) {
@@ -1464,7 +1464,7 @@ void Config::Domain::srv_lookup_done(int err, struct ub_result *result) {
         if (m_current_srv.rrs.empty()) {
             if (m_current_srv.nxdomain) {
                 // Synthesize an SRV.
-                METRE_LOG(Log::DEBUG, "Synthetic SRV for " << m_current_srv.domain << " : " << m_current_srv.error);
+                logger().debug("Synthetic SRV for {} : {}", m_current_srv.domain, m_current_srv.error);
                 DNS::SrvRR rr;
                 rr.port = 5269;
                 rr.hostname =

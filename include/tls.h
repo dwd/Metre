@@ -37,8 +37,6 @@ namespace Metre {
 
     sigslot::tasklet<bool> verify_tls(XMLStream &stream, Route &route);
 
-    bool prep_crl(XMLStream &stream);
-
     bool start_tls(XMLStream &stream, bool send_proceed);
 }
 

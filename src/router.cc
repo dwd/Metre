@@ -35,38 +35,45 @@ SOFTWARE.
 
 using namespace Metre;
 
-Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to), onNamesCollated() {
-    METRE_LOG(Metre::Log::DEBUG, "Route created, local is " << m_local.domain() << " remote is " << m_domain.domain());
+Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to) {
     if (m_domain.domain().empty() || m_local.domain().empty()) throw std::runtime_error("Cannot have route to/from empty domain");
+    auto sinks = Config::config().logger().sinks();
+    m_logger = std::make_shared<spdlog::logger>("route " + m_local.domain() + "->" + m_domain.domain(), begin(sinks), end(sinks));
+    m_logger->flush_on(spdlog::level::trace);
+    m_logger->set_level(spdlog::level::trace);
+    m_logger->log(spdlog::level::info, "Route created");
 }
 
 sigslot::tasklet<bool> Route::init_session_vrfy() {
+    m_logger->log(spdlog::level::info, "Verify session spin-up");
     auto srv = co_await Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain());
     if (!srv->error.empty()) {
-        METRE_LOG(Log::WARNING, "SRV Lookup for " << m_domain.domain() << " failed: " << srv->error);
+        m_logger->log(spdlog::level::warn, "SRV Lookup for {} failed: {}", m_domain.domain(), srv->error);
         co_return false;
     }
     for (auto & rr : srv->rrs) {
-        METRE_LOG(Metre::Log::DEBUG, "Should look for " << rr.hostname << ":" << rr.port);
+        m_logger->log(spdlog::level::debug, "Should look for {}:{}", rr.hostname, rr.port);
         auto session = Router::session_by_address(rr.hostname, rr.port);
-        if (!session->xml_stream().auth_ready()) {
+        if (session && !session->xml_stream().auth_ready()) {
             (void) co_await session->xml_stream().onAuthReady;
             if (!session->xml_stream().auth_ready()) {
                 continue;
             }
             set_vrfy(session);
+            m_logger->log(spdlog::level::info, "Reused existing outgoing session (verify stage) to {}:{}", rr.hostname, rr.port);
             co_return true;
         }
     }
     for (auto & rr : srv->rrs) {
         auto addr = co_await Config::config().domain(m_domain.domain()).AddressLookup(rr.hostname);
         if (!addr->error.empty()) {
-            METRE_LOG(Log::WARNING, "A/AAAA Lookup for " << m_domain.domain() << " failed: " << srv->error);
+            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for {} failed: {}", rr.hostname, srv->error);
             continue;
         }
         for (auto & arr : addr->addr) {
             try {
-                auto session = Router::connect(m_local.domain(), m_domain.domain(), (*m_rr).hostname,
+                m_logger->log(spdlog::level::debug, "Trying {}:{}", rr.hostname, rr.port);
+                auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                        const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&arr)),
                                        rr.port, Config::config().domain(m_domain.domain()).transport_type(),
                                        rr.tls ? IMMEDIATE : STARTTLS);
@@ -76,6 +83,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
                     continue;
                 }
                 set_vrfy(session);
+                m_logger->log(spdlog::level::info, "New outgoing session (verify stage) to {}:{}", rr.hostname, rr.port);
                 co_return true;
             } catch (std::runtime_error &e) {
                 METRE_LOG(Log::DEBUG, "Connection failed, reloop: " << e.what());
@@ -86,15 +94,24 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
 }
 
 sigslot::tasklet<bool> Route::init_session_to() {
+    m_logger->log(spdlog::level::debug, "Stanza session spin-up");
     auto session = m_vrfy.lock();
-    if (!session) {
-        if (!m_verify_task.running()) {
-            m_verify_task = init_session_vrfy();
+    do {
+        if (!session) {
+            m_logger->log(spdlog::level::debug, "No verify session");
+            if (!m_verify_task.running()) {
+                m_logger->log(spdlog::level::debug, "No verify session task.");
+                m_verify_task = init_session_vrfy();
+                m_verify_task.start();
+            }
+            if (!co_await m_verify_task) {
+                m_logger->log(spdlog::level::debug, "Verify task completed false");
+                co_return
+                false;
+            }
         }
-        if (!co_await m_verify_task) {
-            co_return false;
-        }
-    }
+        m_logger->log(spdlog::level::debug, "Authenticating with Verify session");
+    } while (!(session = m_vrfy.lock()));
     switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
         default:
             if (!session->xml_stream().auth_ready()) {
@@ -171,7 +188,7 @@ void Route::queue(std::unique_ptr<DB::Verify> &&s) {
             bounce_dialback(true);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_dialback.push_back(std::move(s));
-    METRE_LOG(Metre::Log::DEBUG, "Queued stanza for " << m_local.domain() << "=>" << m_domain.domain());
+    SPDLOG_DEBUG(m_logger, "Queued verify");
 }
 
 void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
@@ -190,7 +207,6 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
 void Route::bounce_dialback(bool timeout) {
     if (m_stanzas.empty()) return;
     METRE_LOG(Log::DEBUG, "Timeout on verify");
-    m_srv_valid = m_a_valid = false;
     auto verify = m_vrfy.lock();
     if (verify) {
         verify->close();
@@ -207,7 +223,6 @@ void Route::bounce_stanzas(Stanza::Error e) {
         RouteTable::routeTable(bounce->from()).route(bounce->to())->transmit(std::move(bounce));
     }
     m_stanzas.clear();
-    m_srv_valid = m_a_valid = false;
     auto to = m_to.lock();
     if (to) {
         to->close();
@@ -222,67 +237,24 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
             bounce_stanzas(Stanza::remote_server_timeout);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_stanzas.push_back(std::move(s));
-    METRE_LOG(Metre::Log::DEBUG, "Queued stanza for " << m_local.domain() << "=>" << m_domain.domain());
+    SPDLOG_DEBUG(m_logger, "Queued stanza");
 }
 
 void Route::transmit(std::unique_ptr<Stanza> &&s) {
+    SPDLOG_TRACE(m_logger, "Transmit stanza request");
     auto to = m_to.lock();
     if (to) {
         to->xml_stream().send(move(s));
     } else {
+        SPDLOG_DEBUG(m_logger, "No stanza session, spin-up");
         queue(std::move(s));
         if (!m_to_task.running()) {
+            SPDLOG_DEBUG(m_logger, "No current task");
             m_to_task = init_session_to();
             m_to_task.start();
         }
     }
-}
-
-void Route::doSrvLookup() {
-    if (m_srv.domain.empty() || !m_srv.error.empty() || !m_srv_valid || !m_a_valid) {
-        Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain()).connect(this, &Route::SrvResult, true);
-    }
-}
-
-sigslot::signal<Route &> &Route::collateNames() {
-    if (m_srv.domain.empty() || !m_srv.error.empty()) {
-        // No SRV record yet, look it up.
-        doSrvLookup();
-    } else {
-        if (!m_srv.dnssec) {
-            // Have a SRV. Was it DNSSEC signed?
-            Router::defer([this]() {
-                onNamesCollated.emit(*this);
-            });
-        } else if (m_tlsa.size() == m_srv.rrs.size()) {
-            // Do we have TLSAs yet?
-            Router::defer([this]() {
-                onNamesCollated.emit(*this);
-            });
-        }
-    }
-    return onNamesCollated;
-}
-
-void Route::SrvResult(DNS::Srv const *srv) {
-    METRE_LOG(Metre::Log::DEBUG, "Got SRV " << m_local.domain() << "=>" << m_domain.domain() << " : " << srv->domain);
-    if (!srv->error.empty()) {
-        METRE_LOG(Metre::Log::WARNING, "Got an error during SRV: " << srv->error);
-        onNamesCollated.emit(*this);
-        return;
-    }
-    if (m_srv_valid) return;
-    m_srv = *srv;
-    // Scan through TLSA records if DNSSEC has been used.
-    if (m_srv.dnssec) {
-        for (auto &rr : m_srv.rrs) {
-            Config::config().domain(m_domain.domain()).TlsaLookup(rr.port, rr.hostname).connect(this,
-                                                                                                &Route::TlsaResult,
-                                                                                                true);
-        }
-    } else {
-        onNamesCollated.emit(*this);
-    }
+    SPDLOG_DEBUG(m_logger, "Stanza accepted.");
 }
 
 void Route::SessionClosed(NetSession &n) {
@@ -298,24 +270,7 @@ void Route::SessionClosed(NetSession &n) {
                 m_to.reset();
             }
         }
-    } else {
-        m_srv_valid = m_a_valid = false;
     }
-}
-
-void Route::TlsaResult(const DNS::Tlsa *tlsa) {
-    METRE_LOG(Metre::Log::DEBUG, "TLSA for " << tlsa->domain << ", currently " << m_tlsa.size());
-    m_tlsa.erase(
-            std::remove_if(m_tlsa.begin(), m_tlsa.end(), [=](DNS::Tlsa const &r) { return r.domain == tlsa->domain; }),
-            m_tlsa.end());
-    m_tlsa.push_back(*tlsa);
-    METRE_LOG(Metre::Log::DEBUG, "TLSA for " << tlsa->domain << ", now " << m_tlsa.size());
-    collateNames();
-}
-
-std::vector<DNS::Tlsa> const &Route::tlsa() const {
-    if (!m_tlsa.empty()) return m_tlsa;
-    return Config::config().domain(m_domain.domain()).tlsa();
 }
 
 RouteTable &RouteTable::routeTable(std::string const &d) {
