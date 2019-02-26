@@ -113,8 +113,9 @@ set(SOURCE_FILES
         src/xmlstream.cc src/saslexternal.cc include/dhparams.h include/http.h src/http.cc include/tls.h)
 
 ## Capabilities.
-set(SOURCE_FILES ${SOURCE_FILES} src/capabilities/pubsub.cc src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h include/node.h src/capabilities/node.cc src/capabilities/disco.cc src/capabilities/version.cc)
-##
+set(CAPABILITY_SOURCES src/capabilities/pubsub.cc src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h include/node.h src/capabilities/node.cc src/capabilities/disco.cc src/capabilities/version.cc)
+set(SOURCE_FILES ${SOURCE_FILES} ${CAPABILITY_SOURCES})
+        ##
 
 if (UNIX)
     set(SOURCE_FILES ${SOURCE_FILES} src/linuxmain.cc)
@@ -154,7 +155,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
 
 install(TARGETS metre DESTINATION bin)
 
-add_executable(metre-test tests/log.cc src/stanza.cc src/jid.cc tests/stanza.cc tests/jid.cc src/endpoint.cc src/capability.cc src/capabilities/disco.cc src/capabilities/ping.cc src/capabilities/pubsub.cc src/capabilities/node.cc tests/endpoint.cc)
+add_executable(metre-test tests/log.cc src/stanza.cc src/jid.cc tests/stanza.cc tests/jid.cc ${CAPABILITY_SOURCES} tests/endpoint.cc)
 include_directories(./deps/googletest/googletest/include)
 target_link_libraries(metre-test ${LIBUNBOUND} ${ICU_LIBS} gtest gtest_main)
 target_compile_definitions(metre-test PUBLIC METRE_TESTING=1)
