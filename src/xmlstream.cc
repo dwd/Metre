@@ -636,28 +636,24 @@ sigslot::tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
     co_return ret;
 }
 
-void XMLStream::task_completed(bool success) {
+void XMLStream::task_completed() {
     METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task completed, currently " << m_tasks.size() << " running.");
     Router::defer([this]() {
-        for (auto it = m_tasks.begin(); it != m_tasks.end();) {
-            auto next = it;
-            ++next;
-            if (not(*it)->running()) {
-                m_tasks.erase(it);
+        m_tasks.remove_if([this](auto & task) {
+            if(!task->running()) {
+                in_context([task]() {
+                    task->get();
+                });
+                return true;
             }
-            it = next;
-        }
+            return false;
+        });
     });
     thaw();
 }
 
 std::shared_ptr<sigslot::tasklet<bool>> XMLStream::start_task(std::string const & s, sigslot::tasklet<bool> &&otask) {
     auto task = std::make_shared<sigslot::tasklet<bool>>(std::move(otask));
-    task->exception().connect(this, [this](auto eptr) {
-        this->in_context([eptr](){
-            std::rethrow_exception(eptr);
-        });
-    });
     task->set_name(s);
     METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task " << s << " starting, currently " << m_tasks.size() << " running.");
     task->start();

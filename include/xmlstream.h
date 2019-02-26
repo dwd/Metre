@@ -98,7 +98,7 @@ namespace Metre {
 
         void in_context(std::function<void()> &&);
 
-        void task_completed(bool);
+        void task_completed();
 
         std::shared_ptr<sigslot::tasklet<bool>> start_task(std::string const & s, sigslot::tasklet<bool> &&);
 

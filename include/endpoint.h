@@ -7,6 +7,7 @@
 
 #include <random>
 #include <sigslot/sigslot.h>
+#include <sigslot/tasklet.h>
 #include "jid.h"
 #include "stanza.h"
 #include "capability.h"
@@ -15,7 +16,7 @@
 namespace Metre {
     class Capability;
 
-    class Endpoint {
+    class Endpoint: public sigslot::has_slots {
     public:
         static Endpoint &endpoint(Jid const &);
 
@@ -25,13 +26,13 @@ namespace Metre {
             return m_jid;
         }
 
-        virtual void process(Presence const & presence);
+        virtual sigslot::tasklet<void> process(Presence const & presence);
 
-        virtual void process(Message const & message);
+        virtual sigslot::tasklet<void> process(Message const & message);
 
-        virtual void process(Iq const & iq);
+        virtual sigslot::tasklet<void> process(Iq const & iq);
 
-        void process(Stanza const & stanza);
+        void process(std::unique_ptr<Stanza> && stanza);
 
         std::string random_identifier();
 
@@ -42,16 +43,16 @@ namespace Metre {
         // Config API:
         void add_capability(std::string const &name);
 
-        std::list<std::unique_ptr<Capability>> const &capabilities() const {
+        std::set<std::unique_ptr<Capability>> const &capabilities() const {
             return m_capabilities;
         }
 
         void add_handler(std::string const &xmlns, std::string const &local,
-                         std::function<void(Iq const &)> &&fn);
+                         std::function<sigslot::tasklet<void>(Iq const &)> &&fn);
 
         virtual ~Endpoint();
 
-        void node(std::string const &name, std::function<void(Node &)> &&fn, bool create = false);
+        sigslot::tasklet<Node *> node(std::string const &name, bool create = false);
 
         std::map<std::string, std::unique_ptr<Node>> const &nodes() const {
             return m_nodes;
@@ -63,6 +64,12 @@ namespace Metre {
         sigslot::signal<Stanza &, Jid const &, Jid const &> sent_stanza;
 #endif
     protected:
+        struct process_task {
+            std::unique_ptr<Stanza> stanza;
+            sigslot::tasklet<void> task;
+        };
+        void task_complete(process_task *);
+
         Jid m_jid;
         static const size_t id_len = 16;
         static const char characters[];
@@ -72,8 +79,9 @@ namespace Metre {
 
 
     private:
-        std::list<std::unique_ptr<Capability>> m_capabilities;
-        std::map<std::pair<std::string, std::string>, std::function<void(Iq const &)>> m_handlers;
+        std::list<std::unique_ptr<process_task>> m_tasks;
+        std::set<std::unique_ptr<Capability>> m_capabilities;
+        std::map<std::pair<std::string, std::string>, std::function<sigslot::tasklet<void>(Iq const &)>> m_handlers;
         std::map<std::string, std::function<void(Stanza const &)>> m_stanza_callbacks;
     };
 }

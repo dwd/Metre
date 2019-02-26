@@ -113,8 +113,8 @@ set(SOURCE_FILES
         src/xmlstream.cc src/saslexternal.cc include/dhparams.h include/http.h src/http.cc include/tls.h)
 
 ## Capabilities.
-set(SOURCE_FILES ${SOURCE_FILES}  src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h include/node.h src/capabilities/node.cc)
-## src/capabilities/pubsub.cc  src/capabilities/disco.cc
+set(SOURCE_FILES ${SOURCE_FILES} src/capabilities/pubsub.cc src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h include/node.h src/capabilities/node.cc src/capabilities/disco.cc src/capabilities/version.cc)
+##
 
 if (UNIX)
     set(SOURCE_FILES ${SOURCE_FILES} src/linuxmain.cc)

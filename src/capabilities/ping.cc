@@ -18,10 +18,10 @@ namespace {
         };
 
         Ping(BaseDescription const &descr, Endpoint &jid) : Capability(descr, jid) {
-            jid.add_handler("urn:xmpp:ping", "ping", [this](Iq const & iq) {
+            jid.add_handler("urn:xmpp:ping", "ping", [this](Iq const & iq) -> sigslot::tasklet<void> {
                 std::unique_ptr<Stanza> pong{new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id())};
                 m_endpoint.send(std::move(pong));
-                return true;
+                co_return;
             });
         }
     };

@@ -33,7 +33,7 @@ namespace {
 
         // Operations.
 
-        void publish(Iq const &iq, rapidxml::xml_node<> *operation) {
+        sigslot::tasklet<void> publish(Iq const &iq, rapidxml::xml_node<> *operation) {
             auto node_attr = operation->first_attribute("node");
             if (!node_attr) {
                 throw Metre::stanza_bad_format("Missing node attribute");
@@ -44,30 +44,28 @@ namespace {
             if (!itemxml) throw std::runtime_error("Missing item");
             auto item_idattr = itemxml->first_attribute("id");
             std::string item_id{item_idattr->value(), item_idattr->value_size()};
+            Node & node = *co_await m_endpoint.node(node_name, true);
             auto item = std::make_shared<Node::Item>(item_id, "");
-            auto siq = std::shared_ptr<Iq>(std::move(iq));
-            m_endpoint.node(node_name,
-                            [this, item, siq](Node &node) {
-                                publish(*siq, node, item);
-                            },
-                            true // Auto-create.
-            );
+            publish(iq, node, item);
+            co_return;
+        }
+
+        sigslot::tasklet<void> unknown(Iq const & iq) {
+            auto error = iq.create_bounce(Stanza::Error::feature_not_implemented);
+            m_endpoint.send(std::move(error));
+            co_return;
         }
 
         Pubsub(BaseDescription const &descr, Endpoint &endpoint) : Capability(descr, endpoint) {
             endpoint.add_handler("http://jabber.org/protocol/pubsub", "pubsub", [this](Iq const & iq) {
-                iq.freeze();
                 auto operation = iq.query().first_node();
                 std::string op_name{operation->name(), operation->name_size()};
                 if (op_name == "publish") {
-                    publish(iq, operation);
-                    return true;
+                    return publish(iq, operation);
                 } else {
                     // Not known.
-                    auto error = iq.create_bounce(Stanza::Error::feature_not_implemented);
-                    m_endpoint.send(std::move(error));
+                    return unknown(iq);
                 }
-                return true;
             });
         }
     };

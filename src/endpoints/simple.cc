@@ -11,15 +11,16 @@ namespace {
     public:
         Simple(Jid const &jid) : Endpoint(jid) {
             add_capability("ping");
-            //add_capability("disco");
-            //add_capability("pubsub");
+            add_capability("disco");
+            add_capability("pubsub");
+            add_capability("version");
         };
 
-        void process(Iq const & iq) override {
+        sigslot::tasklet<void> process(Iq const & iq) override {
             if (iq.to().full() != m_jid.domain()) {
                 throw stanza_service_unavailable();
             }
-            Endpoint::process(iq);
+            return Endpoint::process(iq);
         }
     };
 }
