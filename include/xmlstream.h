@@ -36,6 +36,7 @@ SOFTWARE.
 #include "feature.h"
 #include "xmppexcept.h"
 #include "filter.h"
+#include "sigslot/tasklet.h"
 
 struct X509_crl_st;
 
@@ -48,7 +49,7 @@ namespace Metre {
 
     class Stanza;
 
-    class XMLStream : public sigslot::has_slots<sigslot::thread::st> {
+    class XMLStream : public sigslot::has_slots {
     public:
         typedef enum {
             NONE, REQUESTED, AUTHORIZED
@@ -68,11 +69,9 @@ namespace Metre {
         std::string m_stream_remote;
         bool m_opened = false;
         bool m_closed = false;
-        bool m_seen_open = false;
         bool m_secured = false; // Crypto in place via TLS. //
         bool m_authready = false; // Channel is ready for dialback/SASL //
         bool m_compressed = false; // Channel has compression enabled, by TLS or XEP-0138 //
-        bool m_frozen = false;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_rx;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
         std::list<std::unique_ptr<Filter>> m_filters;
@@ -81,7 +80,9 @@ namespace Metre {
         bool m_crl_complete = false;
         bool m_x2x_mode = false;
         bool m_bidi = false;
-        std::map<std::string, sigslot::signal<sigslot::thread::st, Stanza const &>> m_response_callbacks;
+        std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
+        std::list<std::shared_ptr<sigslot::tasklet<bool>>> m_tasks;
+        int m_in_flight = 0; // Tasks in flight.
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
@@ -97,12 +98,16 @@ namespace Metre {
 
         void in_context(std::function<void()> &&);
 
+        void task_completed();
+
+        std::shared_ptr<sigslot::tasklet<bool>> start_task(std::string const & s, sigslot::tasklet<bool> &&);
+
         void freeze() {
-            m_frozen = true;
+            ++m_in_flight;
         }
 
         bool frozen() const {
-            return m_frozen;
+            return m_in_flight > 0;
         }
 
         void thaw();
@@ -164,7 +169,7 @@ namespace Metre {
 
         bool x2x_mode() const { return m_x2x_mode; }
 
-        bool tls_auth_ok(Route &domain);
+        sigslot::tasklet<bool> tls_auth_ok(Route &domain);
 
         AUTH_STATE s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION) const;
 
@@ -198,8 +203,8 @@ namespace Metre {
         Feature &feature(std::string const &);
 
         // Signals:
-        sigslot::signal<sigslot::thread::st, XMLStream &> onAuthReady;
-        sigslot::signal<sigslot::thread::st, XMLStream &> onAuthenticated;
+        sigslot::signal<XMLStream &> onAuthReady;
+        sigslot::signal<XMLStream &> onAuthenticated;
 
     private:
         void handle(rapidxml::xml_node<> *);
@@ -208,7 +213,7 @@ namespace Metre {
 
         void stream_open();
 
-        void send_stream_open(bool);
+        sigslot::tasklet<bool> send_stream_open(bool);
     };
 }
 

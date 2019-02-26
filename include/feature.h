@@ -29,6 +29,7 @@ SOFTWARE.
 #include "defs.h"
 #include "rapidxml.hpp"
 #include "xmlstream.h"
+#include "sigslot/tasklet.h"
 #include <list>
 
 namespace Metre {
@@ -45,7 +46,9 @@ namespace Metre {
         public:
             BaseDescription(std::string const &, Feature::Type);
 
-            virtual void offer(rapidxml::xml_node<> *node, XMLStream &s) {}
+            virtual sigslot::tasklet<bool> offer(rapidxml::xml_node<> *node, XMLStream &s) {
+                co_return false;
+            }
 
             std::string const &xmlns() const;
 
@@ -78,7 +81,7 @@ namespace Metre {
         };
 
 
-        virtual bool handle(rapidxml::xml_node<> *) = 0;
+        virtual sigslot::tasklet<bool> handle(rapidxml::xml_node<> *) = 0;
 
         virtual bool negotiate(rapidxml::xml_node<> *) { return false; }
 

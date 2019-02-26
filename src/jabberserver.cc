@@ -38,20 +38,16 @@ using namespace rapidxml;
 namespace {
     const std::string sasl_ns = "jabber:server";
 
-    class JabberServer : public Feature, public sigslot::has_slots<> {
+    class JabberServer : public Feature, public sigslot::has_slots {
     public:
         explicit JabberServer(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<JabberServer> {
         public:
             Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
-
-            virtual void offer(xml_node<> *, XMLStream &) override {
-                // No feature advertised.
-            }
         };
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
@@ -65,11 +61,12 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
             }
-            handle(s);
-            return true;
+            auto task = m_stream.start_task("jabber::server handle(Stanza)", handle(s));
+            co_await *task;
+            co_return true;
         }
 
-        void handle(std::unique_ptr<Stanza> &s) {
+        sigslot::tasklet<bool> handle(std::unique_ptr<Stanza> &s) {
             try {
                 try {
                     Jid const &to = s->to();
@@ -78,23 +75,16 @@ namespace {
                     if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
                         if (m_stream.x2x_mode()) {
                             if (m_stream.secured()) {
-                                Stanza *holding = s.release();
-                                holding->freeze();
+                                s->freeze();
                                 auto r = RouteTable::routeTable(to.domain()).route(from.domain());
-                                r->onNamesCollated.connect(this, [this, holding](Route &r) {
-                                    std::unique_ptr<Stanza> s(holding);
-                                    if (m_stream.tls_auth_ok(r)) {
-                                        m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
-                                                               XMLStream::AUTHORIZED);
-                                    } else {
-                                        throw Metre::not_authorized();
-                                    }
-                                    m_stream.in_context([this, &s]() { handle(s); }, *s);
-                                    m_stream.thaw();
-                                }, true);
-                                m_stream.freeze();
-                                r->collateNames();
-                                return;
+                                auto task = m_stream.start_task("jabber::server tls_auth_ok", m_stream.tls_auth_ok(*r));
+                                bool result = co_await *task;
+                                if (result) {
+                                    m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
+                                                           XMLStream::AUTHORIZED);
+                                } else {
+                                    throw Metre::not_authorized();
+                                }
                             }
                         } else {
                             throw Metre::not_authorized();
@@ -102,7 +92,7 @@ namespace {
                     }
                     if (DROP == Config::config().domain(to.domain()).filter(INBOUND, *s)) {
                         METRE_LOG(Log::INFO, "Stanza discarded by filters");
-                        return;
+                        co_return true;
                     }
                     if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
                         Endpoint::endpoint(to).process(std::move(s));
@@ -123,6 +113,7 @@ namespace {
                 std::shared_ptr<Route> route = RouteTable::routeTable(st->from()).route(st->to());
                 route->transmit(std::move(st));
             }
+            co_return true;
         }
     };
 

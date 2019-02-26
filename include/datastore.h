@@ -31,7 +31,7 @@ namespace Metre {
 
         void del(std::string const &scope, std::string const &node, std::string const &item_id, callback const &fn);
 
-        sigslot::signal<sigslot::thread::st, std::string, std::string, std::string, std::string> changed; // scope, node, item_id, item
+        sigslot::signal<std::string, std::string, std::string, std::string> changed; // scope, node, item_id, item
 
     private:
         Datastore();

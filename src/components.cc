@@ -36,17 +36,13 @@ using namespace Metre;
 namespace {
     const std::string sasl_ns = "jabber:component:accept";
 
-    class Component : public Feature, public sigslot::has_slots<> {
+    class Component : public Feature, public sigslot::has_slots {
     public:
         explicit Component(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<Component> {
         public:
             Description() : Feature::Description<Component>(sasl_ns, FEAT_POSTAUTH) {};
-
-            void offer(xml_node<> *, XMLStream &) override {
-                // No feature advertised.
-            }
         };
 
         std::string handshake_content() const {
@@ -86,7 +82,7 @@ namespace {
             return false;
         }
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
@@ -112,7 +108,7 @@ namespace {
                 auto handshake = d.allocate_node(node_element, "handshake");
                 d.append_node(handshake);
                 m_stream.send(d);
-                return true;
+                co_return true;
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
             }
@@ -139,7 +135,7 @@ namespace {
                 std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
                 route->transmit(std::move(st));
             }
-            return true;
+            co_return true;
         }
     };
 

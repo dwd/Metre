@@ -30,32 +30,30 @@ SOFTWARE.
 #include "jid.h"
 #include "stanza.h"
 #include "dns.h"
+#include "sigslot/tasklet.h"
 
 #include <string>
 #include <memory>
 #include <queue>
 #include <map>
+#include <spdlog/logger.h>
 
 struct event_base;
 
 namespace Metre {
     class NetSession;
 
-    class Route : public sigslot::has_slots<> {
+    class Route : public sigslot::has_slots {
     private:
         std::weak_ptr<NetSession> m_to;
+        sigslot::tasklet<bool> m_to_task;
         std::weak_ptr<NetSession> m_vrfy;
+        sigslot::tasklet<bool> m_verify_task;
         std::list<std::unique_ptr<Stanza>> m_stanzas;
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
         Jid const m_domain;
-        bool m_srv_valid = false;
-        DNS::Srv m_srv;
-        std::vector<DNS::SrvRR>::const_iterator m_rr;
-        bool m_a_valid = false;
-        DNS::Address m_addr;
-        std::vector<struct sockaddr_storage>::const_iterator m_arr;
-        std::vector<DNS::Tlsa> m_tlsa;
+        std::shared_ptr<spdlog::logger> m_logger;
     public:
         Route(Jid const &from, Jid const &to);
 
@@ -67,41 +65,18 @@ namespace Metre {
             return m_local.domain();
         }
 
+        sigslot::tasklet<bool> init_session_vrfy();
+
+        sigslot::tasklet<bool> init_session_to();
+
         void outbound(NetSession *ns);
 
         void transmit(std::unique_ptr<Stanza> &&);
 
         void transmit(std::unique_ptr<DB::Verify> &&);
 
-        void doSrvLookup();
-
-        void try_srv(bool init = false);
-
-        void try_addr(bool init = false);
-
-        // Callbacks:
-        void SrvResult(DNS::Srv const *);
-
-        void AddressResult(DNS::Address const *);
-
-        void TlsaResult(DNS::Tlsa const *);
-
         // Slots
-        void SessionDialback(XMLStream &);
-
-        void SessionAuthenticated(XMLStream &);
-
         void SessionClosed(NetSession &);
-
-        sigslot::signal<sigslot::thread::st, Route &> &collateNames();
-
-        sigslot::signal<sigslot::thread::st, Route &> onNamesCollated;
-
-        std::vector<DNS::Tlsa> const &tlsa() const;
-
-        DNS::Srv const &srv() const {
-            return m_srv;
-        }
 
     protected:
         void bounce_stanzas(Stanza::Error);
@@ -111,6 +86,10 @@ namespace Metre {
         void queue(std::unique_ptr<Stanza> &&);
 
         void queue(std::unique_ptr<DB::Verify> &&);
+
+        void set_to(std::shared_ptr<NetSession> & to);
+
+        void set_vrfy(std::shared_ptr<NetSession> & vrfy);
     };
 
     class RouteTable {

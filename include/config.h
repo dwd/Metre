@@ -54,9 +54,9 @@ namespace Metre {
     class Config {
     public:
         /* DNS */
-        typedef sigslot::signal<sigslot::thread::st, DNS::Srv const *> srv_callback_t;
-        typedef sigslot::signal<sigslot::thread::st, DNS::Address const *> addr_callback_t;
-        typedef sigslot::signal<sigslot::thread::st, DNS::Tlsa const *> tlsa_callback_t;
+        typedef sigslot::signal<DNS::Srv const *> srv_callback_t;
+        typedef sigslot::signal<DNS::Address const *> addr_callback_t;
+        typedef sigslot::signal<DNS::Tlsa const *> tlsa_callback_t;
 
         class Domain {
             friend class ::Metre::Config;
@@ -193,7 +193,15 @@ namespace Metre {
                 return m_auth_host;
             }
 
+            spdlog::logger & logger() {
+                if (!m_logger) {
+                    m_logger = Config::config().logger("domain <" + m_domain + ">");
+                }
+                return *m_logger;
+            }
+
         private:
+            std::shared_ptr<spdlog::logger> m_logger;
             std::string m_domain;
             SESSION_TYPE m_type;
             bool m_forward = false;
@@ -248,6 +256,8 @@ namespace Metre {
 
         void log_init(bool systemd = false);
 
+        void dns_init() const;
+
         Domain const &domain(std::string const &domain) const;
 
         void load(std::string const &filename);
@@ -294,8 +304,10 @@ namespace Metre {
         }
 
         spdlog::logger &logger() const {
-            return *m_logger;
+            return *m_root_logger;
         }
+
+        std::shared_ptr<spdlog::logger> logger(std::string const &) const;
 
         std::string const &database() const {
             return m_database;
@@ -318,6 +330,7 @@ namespace Metre {
         std::map<std::string, std::unique_ptr<Domain>> m_domains;
         struct ub_ctx *m_ub_ctx = nullptr;
         std::list<Listener> m_listeners;
+        std::shared_ptr<spdlog::logger> m_root_logger;
         std::shared_ptr<spdlog::logger> m_logger;
     };
 }

@@ -39,7 +39,7 @@ namespace {
      * Here, we advertise the feature, and if seen, we just (blindly) send a bidi request.
      * We don't need to do anything special aside from marking the stream bidirectional.
      */
-    class Bidi : public Feature, public sigslot::has_slots<> {
+    class Bidi : public Feature, public sigslot::has_slots {
     public:
         explicit Bidi(XMLStream &s) : Feature(s) {}
 
@@ -47,19 +47,21 @@ namespace {
         public:
             Description() : Feature::Description<Bidi>(bidi_feat_ns, FEAT_PREAUTH) {};
 
-            void offer(xml_node<> *node, XMLStream &s) override {
-                if (s.bidi()) return;
+            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
+                if (s.bidi()) co_return false;
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "bidi");
                 feature->append_attribute(d->allocate_attribute("xmlns", bidi_feat_ns.c_str()));
                 node->append_node(feature);
+                co_return
+                true;
             }
         };
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             // We don't really handle it here, since we picked a different Namespace.
             // That was silly of us.
-            return false;
+            co_return false;
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {
@@ -77,7 +79,7 @@ namespace {
      * In this namespace, we handle inbound bidi requests.
      * Again, we don't actually need to do anything yet because we're not - yet - authenticated.
      */
-    class BidiInbound : public Feature, public sigslot::has_slots<> {
+    class BidiInbound : public Feature, public sigslot::has_slots {
     public:
         explicit BidiInbound(XMLStream &s) : Feature(s) {}
 
@@ -86,9 +88,9 @@ namespace {
             Description() : Feature::Description<BidiInbound>(bidi_ns, FEAT_PREAUTH) {};
         };
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             m_stream.bidi(true);
-            return true;
+            co_return true;
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {

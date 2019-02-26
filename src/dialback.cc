@@ -50,10 +50,10 @@ namespace {
         public:
             Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH_FALLBACK) {};
 
-            void offer(xml_node<> *node, XMLStream &s) override {
+            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
                 if (!s.secured() && (Config::config().domain(s.local_domain()).require_tls() ||
                                      Config::config().domain(s.remote_domain()).require_tls())) {
-                    return;
+                    co_return false;
                 }
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "dialback");
@@ -61,6 +61,7 @@ namespace {
                 auto errors = d->allocate_node(node_element, "errors");
                 feature->append_node(errors);
                 node->append_node(feature);
+                co_return true;
             }
         };
 
@@ -74,12 +75,12 @@ namespace {
             return false;
         }
 
-        bool handle(rapidxml::xml_node<> *) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *) override {
             throw Metre::unsupported_stanza_type("Wrong namespace for dialback.");
         }
     };
 
-    class Dialback : public Feature, public sigslot::has_slots<> {
+    class Dialback : public Feature, public sigslot::has_slots {
     public:
         explicit Dialback(XMLStream &s) : Feature(s) {}
 
@@ -97,28 +98,7 @@ namespace {
         /**
          * Inbound handling.
          */
-        void result_step(Route &route, std::string const &key) {
-            // Shortcuts here.
-            if (m_stream.tls_auth_ok(route)) {
-                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route.domain(), route.local(), DB::VALID);
-                m_stream.send(std::move(d));
-                m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::AUTHORIZED);
-                return;
-            }
-            Config::Domain const &from_domain = Config::config().domain(route.domain());
-            if (!from_domain.auth_dialback()) {
-                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route.domain(), route.local(),
-                                                                         Stanza::not_authorized);
-                m_stream.send(std::move(d));
-                return;
-            }
-            m_stream.s2s_auth_pair(route.local(), route.domain(), INBOUND, XMLStream::REQUESTED);
-            // With syntax done, we should send the key:
-            route.transmit(std::make_unique<DB::Verify>(route.domain(), route.local(), m_stream.stream_id(), key));
-            m_keys.erase(key);
-        }
-
-        void result(DB::Result const &result) {
+        sigslot::tasklet<bool> result(DB::Result &result) {
             /*
              * This is a request to authenticate, using the current key.
              */
@@ -127,25 +107,37 @@ namespace {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
                                                                          Stanza::not_acceptable);
                 m_stream.send(std::move(d));
-                return;
+                co_return true;
             }
             m_stream.check_domain_pair(result.from().domain(), result.to().domain());
             if (!m_stream.secured() && Config::config().domain(result.to().domain()).require_tls()) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
                                                                          Stanza::policy_violation);
                 m_stream.send(std::move(d));
-                return;
+                co_return true;
             }
             // Need to perform name collation:
-            std::shared_ptr<Route> &route = RouteTable::routeTable(result.to()).route(result.from());
-            m_keys.insert(result.key());
-            const char *keytmp = m_keys.find(result.key())->c_str();
-            route->onNamesCollated.connect(this, [=](Route &r) {
-                m_stream.in_context([&]() {
-                    result_step(r, keytmp);
-                });
-            }, true);
-            route->collateNames();
+            auto &route = RouteTable::routeTable(result.to()).route(result.from());
+            result.freeze();
+            // Shortcuts here.
+            if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(*route))) {
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain(), route->local(), DB::VALID);
+                m_stream.send(std::move(d));
+                m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::AUTHORIZED);
+                co_return true;
+            }
+            if (!from_domain.auth_dialback()) {
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain(), route->local(),
+                                                                         Stanza::not_authorized);
+                m_stream.send(std::move(d));
+                co_return true;
+            }
+            m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::REQUESTED);
+            // With syntax done, we should send the key:
+            route->transmit(
+                    std::make_unique<DB::Verify>(route->domain(), route->local(), m_stream.stream_id(), result.key()));
+            co_return
+            true;
         }
 
         void result_valid(DB::Result const &result) {
@@ -213,7 +205,7 @@ namespace {
             }
         }
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string stanza = node->name();
@@ -230,7 +222,8 @@ namespace {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:result");
                     }
                 } else {
-                    result(*p);
+                    auto task = m_stream.start_task("Dialback calling result", result(*p));
+                    co_return co_await *task;
                 }
             } else if (stanza == "verify") {
                 auto p = std::make_unique<DB::Verify>(node);
@@ -248,7 +241,8 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type("Unknown dialback element");
             }
-            return true;
+            co_return
+            true;
         }
     };
 

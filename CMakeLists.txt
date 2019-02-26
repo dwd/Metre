@@ -39,15 +39,16 @@ find_path(ICU_INCLUDE_DIR PATHS /usr/local/opt/icu4c/include NAMES unicode/unorm
 message("ICU2 dir is ${ICU2_INCLUDE_DIR}")
 message("ICU dir is ${ICU_INCLUDE_DIR}")
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_definitions(-DSIGSLOT_PURE_ISO)
+add_definitions(-DSIGSLOT_COROUTINES)
 
 if(UNIX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O0 -g")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O0 -g -fcoroutines-ts -stdlib=libc++")
     add_definitions(-DMETRE_UNIX)
 else()
     add_definitions(-DMETRE_WINDOWS)
+    set(CMAKE_CXX_FLAGS /await)
 endif()
 set(ICU_LIBS)
 if (ICU2_INCLUDE_DIR)
@@ -88,8 +89,6 @@ set(SOURCE_FILES
     include/jid.h
     include/log.h
     include/netsession.h
-    include/optional
-    include/optional.h
     include/router.h
         include/stanza.h
     include/xmlstream.h
@@ -111,7 +110,11 @@ set(SOURCE_FILES
     src/router.cc
     src/stanza.cc
     src/starttls.cc src/bidi.cc
-        src/xmlstream.cc src/saslexternal.cc include/dhparams.h include/http.h src/http.cc include/tls.h src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h src/capabilities/pubsub.cc src/capabilities/disco.cc include/node.h src/capabilities/node.cc)
+        src/xmlstream.cc src/saslexternal.cc include/dhparams.h include/http.h src/http.cc include/tls.h)
+
+## Capabilities.
+set(SOURCE_FILES ${SOURCE_FILES} src/capabilities/pubsub.cc src/pubsub/pubsub.cc include/capability.h src/capability.cc src/capabilities/ping.cc include/endpoint.h src/endpoint.cc src/endpoints/simple.cc include/datastore.h src/datastore.cc include/sql.h include/node.h src/capabilities/node.cc src/capabilities/disco.cc src/capabilities/version.cc)
+##
 
 if (UNIX)
     set(SOURCE_FILES ${SOURCE_FILES} src/linuxmain.cc)

@@ -84,7 +84,7 @@ namespace {
 namespace {
     const std::string tls_ns = "urn:ietf:params:xml:ns:xmpp-tls";
 
-    class StartTls : public Feature, public sigslot::has_slots<> {
+    class StartTls : public Feature, public sigslot::has_slots {
     public:
         explicit StartTls(XMLStream &s) : Feature(s) {}
 
@@ -92,10 +92,10 @@ namespace {
         public:
             Description() : Feature::Description<StartTls>(tls_ns, FEAT_SECURE) {};
 
-            void offer(xml_node<> *node, XMLStream &s) override {
-                if (s.secured()) return;
+            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
+                if (s.secured()) co_return false;
                 SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
-                if (!ctx) return;
+                if (!ctx) co_return false;
                 xml_document<> *d = node->document();
                 auto feature = d->allocate_node(node_element, "starttls");
                 feature->append_attribute(d->allocate_attribute("xmlns", tls_ns.c_str()));
@@ -104,38 +104,32 @@ namespace {
                     feature->append_node(required);
                 }
                 node->append_node(feature);
+                co_return true;
             }
         };
 
-        bool handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string name = node->name();
             if ((name == "starttls" && m_stream.direction() == INBOUND) ||
                 (name == "proceed" && m_stream.direction() == OUTBOUND)) {
                 if (!m_stream.remote_domain().empty()) {
-                    std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
-                            m_stream.remote_domain());
-                    route->onNamesCollated.connect(this, [this](Route &r) {
-                        METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
-                        m_stream.in_context([this]() { start_tls(m_stream, true); });
-                    }, true);
-                    m_stream.freeze();
-                    route->collateNames();
-                    return true;
+                    METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
+                    start_tls(m_stream, true);
+                    co_return true;
                 } else if (m_stream.type() == COMP) {
                     start_tls(m_stream, true);
-                    return true;
+                    co_return true;
                 } else {
                     xml_document<> doc;
                     auto failure = doc.allocate_node(node_element, "failure");
                     failure->append_attribute(doc.allocate_attribute("xmlns", tls_ns.c_str()));
                     m_stream.send(doc);
-                    return false;
+                    co_return false;
                 }
-            } else {
-                throw std::runtime_error("Unimplemented");
             }
+            co_return false;
         }
 
         bool negotiate(rapidxml::xml_node<> *) override {
@@ -190,40 +184,90 @@ namespace Metre {
         return retval;
     }
 
-    bool verify_tls(XMLStream &stream, Route &route) {
+    /**
+     * This is a fairly massive coroutine, but I've kept it this way because it's
+     * difficult to break apart. Indeed, I pulled it together out of two major callback
+     * loops which were pretty nasty in complexity terms.
+     *
+     * @param stream
+     * @param route
+     * @return true if TLS verified correctly.
+     */
+    sigslot::tasklet<bool> verify_tls(XMLStream &stream, Route &route) {
         SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
-        if (!ssl) return false; // No TLS.
-        if (X509_V_OK != SSL_get_verify_result(ssl)) {
-            METRE_LOG(Metre::Log::INFO, "Cert failed verification but rechecking anyway.");
-        } // TLS failed basic verification.
+        if (!ssl) co_return false; // No TLS.
         X509 *cert = SSL_get_peer_certificate(ssl);
         if (!cert) {
             METRE_LOG(Metre::Log::INFO, "No cert, so no auth");
-            return false;
+            co_return false;
         }
+        if (X509_V_OK != SSL_get_verify_result(ssl)) {
+            METRE_LOG(Metre::Log::INFO, "Cert failed verification but rechecking anyway.");
+        } // TLS failed basic verification.
         METRE_LOG(Metre::Log::DEBUG, "[Re]verifying TLS for " + route.domain());
         STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
         SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
         X509_VERIFY_PARAM *vpm = X509_VERIFY_PARAM_new();
         if (Config::config().domain(route.domain()).auth_pkix_status()) {
-            stream.crl([&](X509_CRL *crl) {
+            STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
+            SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+            X509_STORE *store = SSL_CTX_get_cert_store(ctx);
+            X509_STORE_CTX *st = X509_STORE_CTX_new();
+            X509_STORE_CTX_init(st, store, cert, chain);
+            X509_verify_cert(st);
+            STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
+            std::list<std::string> crls;
+            for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
+                auto cert = sk_X509_value(verified, certnum);
+                std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
+                        (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),
+                        [](STACK_OF(DIST_POINT) *crldp) { sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
+                auto crldp = crldp_ptr.get();
+                if (crldp) {
+                    for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
+                        DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
+                        if (dp->distpoint->type == 0) { // Full Name
+                            auto names = dp->distpoint->name.fullname;
+                            for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
+                                GENERAL_NAME *name = sk_GENERAL_NAME_value(names, ii);
+                                if (name->type == GEN_URI) {
+                                    ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
+                                    std::string uristr{reinterpret_cast<char *>(uri->data),
+                                                       static_cast<std::size_t>(uri->length)};
+                                    METRE_LOG(Metre::Log::INFO, "Fetching CRL - " << uristr);
+                                    Http::crl(uristr);
+                                    // We don't await here, just get them going in parallel.
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Now we wait for them all. Order doesn't matter - we'll get new copies
+            // in the rare case we happen to cross an expiry boundary, but that's
+            // no biggie.
+            for (auto & uri : crls) {
+                std::string uristr;
+                int code;
+                X509_CRL *crl;
+                std::tie(uristr, code, crl) = co_await Http::crl(uri);
+                METRE_LOG(Metre::Log::INFO, "Fetched CRL - " << uristr << ", with code " << code);
                 if (!X509_STORE_add_crl(store, crl)) {
-                    // Most likely already added. Wipe the error.
+                    // Erm. Whoops? Probably doesn't matter.
                     ERR_clear_error();
                 }
-            });
+            }
             X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CRL_CHECK_ALL);
         }
         X509_VERIFY_PARAM_set1_host(vpm, route.domain().c_str(), route.domain().size());
         // Add RFC 6125 additional names.
-        DNS::Srv const &srv = route.srv();
-        if (srv.domain.empty()) {
-            METRE_LOG(Metre::Log::WARNING, "Trying to validate TLS before SRV available!");
-        }
-        if (srv.dnssec) {
-            for (auto &rr : srv.rrs) {
-                X509_VERIFY_PARAM_add1_host(vpm, rr.hostname.c_str(), rr.hostname.size());
+        auto srv = *co_await Config::config().domain(route.domain()).SrvLookup(route.domain());
+        if (srv.error.empty()) {
+            if (srv.dnssec) {
+                for (auto &rr : srv.rrs) {
+                    X509_VERIFY_PARAM_add1_host(vpm, rr.hostname.c_str(), rr.hostname.size());
+                }
             }
         }
         X509_STORE_CTX *st = X509_STORE_CTX_new();
@@ -241,36 +285,41 @@ namespace Metre {
         // If we have DANE records, iterate through them to find one that works.
         bool dane_ok = false;
         bool dane_present = false;
-        for (auto &tlsa : route.tlsa()) {
-            if (!tlsa.dnssec) continue;
-            if (!tlsa.error.empty()) continue;
-            dane_present = true;
-            for (auto &rr : tlsa.rrs) {
-                switch (rr.certUsage) {
-                    case DNS::TlsaRR::CertConstraint:
-                        if (!valid) continue;
-                        // Fallthrough
-                    case DNS::TlsaRR::DomainCert:
-                        if (tlsa_matches(rr, sk_X509_value(verified, 0))) {
-                            dane_ok = true;
-                            goto tlsa_done;
-                        }
-                        break;
-                    case DNS::TlsaRR::CAConstraint:
-                        if (!valid) continue;
-                        // Fallthrough
-                    case DNS::TlsaRR::TrustAnchorAssertion:
-                        if (sk_X509_num(verified) == 0) continue; // Problem there.
-                        X509 *ta = sk_X509_value(verified, sk_X509_num(verified) - 1);
-                        if (tlsa_matches(rr, ta)) {
-                            if (rr.certUsage == DNS::TlsaRR::TrustAnchorAssertion) {
-                                dane_ok = (1 == X509_check_host(cert, route.domain().c_str(), route.domain().size(), 0,
-                                                                NULL));
-                            } else {
+        if (srv.dnssec) {
+            for (auto &rr : srv.rrs) {
+                auto tlsa = *co_await Config::config().domain(route.domain()).TlsaLookup(rr.port, rr.hostname);
+                if (!tlsa.dnssec) continue;
+                if (!tlsa.error.empty()) continue;
+                dane_present = true;
+                for (auto &rr : tlsa.rrs) {
+                    switch (rr.certUsage) {
+                        case DNS::TlsaRR::CertConstraint:
+                            if (!valid) continue;
+                            // Fallthrough
+                        case DNS::TlsaRR::DomainCert:
+                            if (tlsa_matches(rr, sk_X509_value(verified, 0))) {
                                 dane_ok = true;
+                                goto tlsa_done;
                             }
-                            if (dane_ok) goto tlsa_done;
-                        }
+                            break;
+                        case DNS::TlsaRR::CAConstraint:
+                            if (!valid) continue;
+                            // Fallthrough
+                        case DNS::TlsaRR::TrustAnchorAssertion:
+                            if (sk_X509_num(verified) == 0) continue; // Problem there.
+                            X509 *ta = sk_X509_value(verified, sk_X509_num(verified) - 1);
+                            if (tlsa_matches(rr, ta)) {
+                                if (rr.certUsage == DNS::TlsaRR::TrustAnchorAssertion) {
+                                    dane_ok = (1 ==
+                                               X509_check_host(cert, route.domain().c_str(), route.domain().size(),
+                                                               0,
+                                                               NULL));
+                                } else {
+                                    dane_ok = true;
+                                }
+                                if (dane_ok) goto tlsa_done;
+                            }
+                    }
                 }
             }
         }
@@ -280,51 +329,7 @@ namespace Metre {
         METRE_LOG(Metre::Log::INFO, "[Re]verify: DANE " << (dane_present ? "Present" : "Not present") << ", checked "
                                                         << (dane_ok ? "OK" : "Not OK") << ", PKIX "
                                                         << (valid ? "Passed" : "Failed"));
-        return dane_present ? dane_ok : valid;
-    }
-
-    bool prep_crl(XMLStream & stream) {
-        if (Config::config().fetch_pkix_status()) return false;
-        SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
-        if (!ssl) return false; // No TLS.
-        X509 *cert = SSL_get_peer_certificate(ssl);
-        if (!cert) {
-            METRE_LOG(Metre::Log::INFO, "No cert, so no auth");
-            return false;
-        }
-        bool fetch_any = false;
-        STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
-        SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
-        X509_STORE *store = SSL_CTX_get_cert_store(ctx);
-        X509_STORE_CTX *st = X509_STORE_CTX_new();
-        X509_STORE_CTX_init(st, store, cert, chain);
-        X509_verify_cert(st);
-        STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
-        for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
-            auto cert = sk_X509_value(verified, certnum);
-            std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
-            auto crldp = crldp_ptr.get();
-            if (crldp) {
-                for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-                    DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
-                    if (dp->distpoint->type == 0) { // Full Name
-                        auto names = dp->distpoint->name.fullname;
-                        for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-                            GENERAL_NAME *name = sk_GENERAL_NAME_value(names, ii);
-                            if (name->type == GEN_URI) {
-                                ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
-                                std::string uristr{reinterpret_cast<char *>(uri->data),
-                                                   static_cast<std::size_t>(uri->length)};
-                                METRE_LOG(Metre::Log::INFO, "Fetching CRL - " << uristr);
-                                stream.fetch_crl(uristr);
-                                fetch_any = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return fetch_any;
+        co_return dane_present ? dane_ok : valid;
     }
 
     bool start_tls(XMLStream &stream, bool send_proceed) {

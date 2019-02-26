@@ -63,7 +63,8 @@ namespace {
         };
 
         Spiffing(BaseDescription &b, Config::Domain &s, rapidxml::xml_node<> *config) : Filter(b) {
-            for (auto policy = config->first_node("allowed-policy"); policy; policy->next_sibling("allowed-policy")) {
+            for (auto policy = config->first_node("allowed-policy"); policy; policy = policy->next_sibling(
+                    "allowed-policy")) {
                 auto att = policy->first_attribute("id");
                 if (!att) {
                     att = policy->first_attribute("name");
@@ -78,7 +79,8 @@ namespace {
                 }
                 m_allowed_policies.emplace(spif->policy_id());
             }
-            for (auto clearance = config->first_node("clearance"); clearance; clearance->next_sibling("clearance")) {
+            for (auto clearance = config->first_node("clearance"); clearance; clearance = clearance->next_sibling(
+                    "clearance")) {
                 std::shared_ptr<::Spiffing::Clearance> clr{
                         new ::Spiffing::Clearance(std::string{clearance->contents(), clearance->contents_size()},
                                                   ::Spiffing::Format::ANY)};

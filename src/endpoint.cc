@@ -16,57 +16,67 @@ Endpoint::Endpoint(Jid const &jid) : m_jid(jid), m_random(std::random_device{}()
 std::string Endpoint::random_identifier() {
     std::string id(id_len, char{});
     std::generate_n(id.begin(), id_len, [this]() { return characters[m_dist(m_random)]; });
-    return std::move(id);
+    return id;
 }
 
-void Endpoint::process(std::unique_ptr<Stanza> &&stanza) {
-    if (stanza->id()) {
-        auto it = m_stanza_callbacks.find(*stanza->id());
+void Endpoint::process(std::unique_ptr<Stanza> && stanza_ptr) {
+    if (stanza_ptr->id()) {
+        auto it = m_stanza_callbacks.find(*stanza_ptr->id());
         if (it != m_stanza_callbacks.end()) {
-            (*it).second(std::move(stanza));
+            (*it).second(*stanza_ptr);
             return;
         }
     }
-    if (stanza->name() == Message::name) {
-        std::unique_ptr<Message> msg(dynamic_cast<Message *>(stanza.release()));
-        process(std::move(msg));
-    } else if (stanza->name() == Presence::name) {
-        std::unique_ptr<Presence> pres(dynamic_cast<Presence *>(stanza.release()));
-        process(std::move(pres));
-    } else if (stanza->name() == Iq::name) {
-        std::unique_ptr<Iq> iq(dynamic_cast<Iq *>(stanza.release()));
-        process(std::move(iq));
+    auto task = std::make_unique<process_task>();
+    task->stanza = std::move(stanza_ptr);
+    if (task->stanza->name() == Message::name) {
+        task->task = process(dynamic_cast<Message const &>(*(task->stanza)));
+    } else if (task->stanza->name() == Presence::name) {
+        task->task = process(dynamic_cast<Presence const &>(*(task->stanza)));
+    } else if (task->stanza->name() == Iq::name) {
+        task->task = process(dynamic_cast<Iq const &>(*(task->stanza)));
     } else {
-        throw stanza_service_unavailable();
+        throw unsupported_stanza_type();
+    }
+    task->task.start();
+    if (task->task.running()) {
+        task->task.complete().connect(this, [this, t = task.get()]() {
+            task_complete(t);
+        });
+        m_tasks.emplace_back(std::move(task));
+    } else {
+        task_complete(task.get());
     }
 }
 
-void Endpoint::process(std::unique_ptr<Presence> &&presence) {
+sigslot::tasklet<void> Endpoint::process(Presence const & presence) {
     throw stanza_service_unavailable();
+    co_return;
 }
 
-void Endpoint::process(std::unique_ptr<Message> &&message) {
+sigslot::tasklet<void> Endpoint::process(Message const & message) {
     throw stanza_service_unavailable();
+    co_return;
 }
 
-void Endpoint::process(std::unique_ptr<Iq> &&iq) {
-    switch (iq->type()) {
+sigslot::tasklet<void> Endpoint::process(Iq const & iq) {
+    switch (iq.type()) {
         case Iq::GET:
         case Iq::SET: {
-            auto payload = iq->node()->first_node();
+            auto payload = iq.node()->first_node();
             if (payload != nullptr) {
                 std::string xmlns{payload->xmlns(), payload->xmlns_size()};
                 std::string local{payload->name(), payload->name_size()};
                 auto i = m_handlers.find(std::make_pair(xmlns, local));
                 if (i != m_handlers.end()) {
-                    (*i).second(std::move(iq));
-                    return;
+                    co_await (*i).second(iq);
+                    co_return;
                 }
             }
         }
         case Iq::RESULT:
         case Iq::STANZA_ERROR:
-            return;
+            co_return;
     }
     throw stanza_service_unavailable();
 }
@@ -74,12 +84,12 @@ void Endpoint::process(std::unique_ptr<Iq> &&iq) {
 Endpoint::~Endpoint() = default;
 
 void Endpoint::add_handler(std::string const &xmlns, std::string const &local,
-                           std::function<void(std::unique_ptr<Iq> &&)> &&fn) {
+                           std::function<sigslot::tasklet<void>(Iq const &)> &&fn) {
     m_handlers.emplace(std::make_pair(xmlns, local), std::move(fn));
 }
 
 void Endpoint::add_capability(std::string const &name) {
-    m_capabilities.emplace_back(Capability::create(name, *this));
+    m_capabilities.emplace(Capability::create(name, *this));
 }
 
 void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
@@ -90,27 +100,25 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
 #endif
 }
 
-void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(std::unique_ptr<Stanza> &&)> const &fn) {
+void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &fn) {
     if (!stanza->id()) {
         stanza->id(random_identifier());
     }
-    m_stanza_callbacks[stanza->id().value()] = fn;
+    m_stanza_callbacks[*(stanza->id())] = fn;
     send(std::move(stanza));
 }
 
-void Endpoint::node(std::string const &aname, std::function<void(Node &)> &&fn, bool create) {
-    Router::defer([this, fn = std::move(fn), name = aname, create]() {
-        auto it = m_nodes.find(name);
-        if (it == m_nodes.end()) {
-            if (create) {
-                m_nodes.emplace(std::make_pair(name, std::make_unique<Node>(*this, name)));
-                it = m_nodes.find(name);
-            } else {
-                throw std::runtime_error("Node not found");
-            }
+sigslot::tasklet<Node *> Endpoint::node(std::string const &name, bool create) {
+    auto it = m_nodes.find(name);
+    if (it == m_nodes.end()) {
+        if (create) {
+            m_nodes.emplace(std::make_pair(name, std::make_unique<Node>(*this, name)));
+            it = m_nodes.find(name);
+        } else {
+            throw stanza_service_unavailable("Node not found");
         }
-        fn(*(it->second.get()));
-    });
+    }
+    co_return (*it).second.get();
 }
 
 #include "../src/endpoints/simple.cc"
@@ -123,4 +131,20 @@ Endpoint &Endpoint::endpoint(Jid const &jid) {
         return *s_endpoints[jid.domain()];
     }
     return *((*i).second);
+}
+
+void Endpoint::task_complete(Endpoint::process_task * task) {
+    try {
+        try {
+            task->task.get();
+        } catch (Metre::base::stanza_exception &) {
+            throw;
+        } catch (std::runtime_error &e) {
+            throw Metre::stanza_undefined_condition(e.what());
+        }
+    } catch (Metre::base::stanza_exception const &stanza_error) {
+        std::unique_ptr<Stanza> st = task->stanza->create_bounce(stanza_error);
+        send(std::move(st));
+    }
+    m_tasks.remove_if([task](auto & t) { return task == t.get(); });
 }

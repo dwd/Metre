@@ -24,6 +24,8 @@ SOFTWARE.
 ***/
 
 #include <http.h>
+#include <xmlstream.h>
+
 #include "rapidxml.hpp"
 #include "xmlstream.h"
 #include "xmppexcept.h"
@@ -64,8 +66,9 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
 }
 
 void XMLStream::thaw() {
-    if (!m_frozen) return;
-    m_frozen = false;
+    if (m_in_flight <= 0) return;
+    --m_in_flight;
+    if (m_in_flight > 0) return;
     METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw");
     m_session->read();
     METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw done.");
@@ -74,7 +77,7 @@ void XMLStream::thaw() {
 size_t XMLStream::process(unsigned char *p, size_t len) {
     using namespace rapidxml;
     if (len == 0) return 0;
-    if (m_frozen) {
+    if (frozen()) {
         METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Data arrived when frozen");
         return 0;
     }
@@ -124,7 +127,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 handle(element);
                 buf.erase(0, end - buf.data());
                 m_stanza.clear();
-                if (m_frozen) return spaces + len - buf.length();
+                if (frozen()) return spaces + len - buf.length();
             }
         } catch (Metre::base::xmpp_exception &) {
             throw;
@@ -325,19 +328,13 @@ void XMLStream::stream_open() {
         m_stream_local = domainname;
         if (from.empty()) {
             // TODO: A bit cut'n'pastey here.
-            send_stream_open(with_ver);
+            start_task("Empty from inbound send_stream_open", send_stream_open(with_ver));
         } else {
             m_stream_remote = from;
             if (m_stream_remote == m_stream_local) {
                 throw std::runtime_error("That's me, you fool");
             }
-            auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            r->onNamesCollated.connect(this, [this, with_ver](Route &) {
-                send_stream_open(with_ver);
-                thaw();
-            }, true);
-            freeze();
-            r->collateNames();
+            start_task("With from, inbound send_stream_open", send_stream_open(with_ver));
         }
     } else if (m_dir == OUTBOUND) {
         if (m_type == S2S) {
@@ -354,11 +351,11 @@ void XMLStream::stream_open() {
     }
 }
 
-void XMLStream::send_stream_open(bool with_version) {
+sigslot::tasklet<bool> XMLStream::send_stream_open(bool with_version) {
     if (m_x2x_mode) {
         if (m_secured) {
             auto route = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            if (!tls_auth_ok(*route)) {
+            if (!co_await tls_auth_ok(*route)) {
                 throw host_unknown("Cannot authenticate host");
             }
         }
@@ -404,12 +401,14 @@ void XMLStream::send_stream_open(bool with_version) {
             auto features = doc.allocate_node(rapidxml::node_element, "stream:features");
             doc.append_node(features);
             for (auto f : Feature::features(m_type)) {
-                f->offer(features, *this);
+                co_await *start_task("Feature offer", f->offer(features, *this));
             }
             m_session->send(doc);
         }
     }
     m_opened = true;
+    co_return
+    true;
 }
 
 void XMLStream::send(rapidxml::xml_document<> &d) {
@@ -504,7 +503,12 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
 
         bool handled = false;
         if (f) {
-            handled = f->handle(element);
+            auto task = start_task("XMLStream handle element", f->handle(element));
+            if (task->running()) {
+                return;
+            } else {
+                handled = task->get();
+            }
         }
         METRE_LOG(Metre::Log::DEBUG, "Handled: " << handled);
         if (!handled) {
@@ -522,10 +526,6 @@ Feature &XMLStream::feature(const std::string &ns) {
 }
 
 void XMLStream::restart() {
-    // Check if I need to fetch CRLs at this point.
-    if (!m_crl_complete && prep_crl(*this)) {
-        return;
-    }
     do_restart();
 }
 
@@ -539,15 +539,7 @@ void XMLStream::do_restart() {
     m_stanza.clear();
     m_stream_buf.clear();
     if (m_dir == OUTBOUND) {
-        if (m_secured) {
-            auto &r = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            r->onNamesCollated.connect(this, [this](Route &) {
-                send_stream_open(true);
-            }, true);
-            r->collateNames();
-        } else {
-            send_stream_open(true);
-        }
+        start_task("Restart outbound send_stream_open", send_stream_open(true));
     }
     thaw();
 }
@@ -637,31 +629,41 @@ bool XMLStream::bidi(bool b) {
     return m_bidi;
 }
 
-bool XMLStream::tls_auth_ok(Route &route) {
-    if (!m_secured) return false;
-    return verify_tls(*this, route);
+sigslot::tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
+    if (!m_secured) co_return false;
+    auto task = start_task("tls_auth_ok call verify_tls", verify_tls(*this, route));
+    auto ret = co_await *task;
+    co_return ret;
 }
 
-void XMLStream::fetch_crl(std::string const &uri) {
-    m_num_crls++;
-    Http::crl(uri).connect(this, &XMLStream::add_crl);
-    freeze();
+void XMLStream::task_completed() {
+    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task completed, currently " << m_tasks.size() << " running.");
+    Router::defer([this]() {
+        m_tasks.remove_if([this](auto & task) {
+            if(!task->running()) {
+                in_context([task]() {
+                    task->get();
+                });
+                return true;
+            }
+            return false;
+        });
+    });
+    thaw();
 }
 
-void XMLStream::add_crl(std::string const &uri, int code, struct X509_crl_st *data) {
-    if (m_crl_complete) return;
-    if (code == 200) {
-        METRE_LOG(Log::INFO, "NS" << m_session->serial() << " - Got CRL from URI " << uri);
-        m_crls[uri] = data;
-        if (m_crls.size() == m_num_crls) {
-            m_crl_complete = true;
-            do_restart();
-        }
+std::shared_ptr<sigslot::tasklet<bool>> XMLStream::start_task(std::string const & s, sigslot::tasklet<bool> &&otask) {
+    auto task = std::make_shared<sigslot::tasklet<bool>>(std::move(otask));
+    task->set_name(s);
+    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task " << s << " starting, currently " << m_tasks.size() << " running.");
+    task->start();
+    if (!task->running()) {
+        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task " << s << " immediate stop, currently " << m_tasks.size() << " running.");
+    } else {
+        freeze();
+        task->complete().connect(this, &XMLStream::task_completed);
+        m_tasks.emplace_back(task);
+        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task " << s << " paused, now " << m_tasks.size() << " running.");
     }
-}
-
-void XMLStream::crl(std::function<void(struct X509_crl_st *)> const &fn) {
-    for (auto pair : m_crls) {
-        fn(pair.second);
-    }
+    return task;
 }

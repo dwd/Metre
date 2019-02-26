@@ -33,7 +33,7 @@ namespace Metre {
     }
 }
 
-class EndpointTest : public ::testing::Test, public sigslot::has_slots<> {
+class EndpointTest : public ::testing::Test, public sigslot::has_slots {
 public:
     bool stanza_seen = false;
     rapidxml::xml_document<> doc;
@@ -44,15 +44,38 @@ public:
     }
 
     // Utility function
-
+    template<typename S>
     std::unique_ptr<Stanza> parse_stanza(std::string &s) {
         doc.clear();
         doc.parse<rapidxml::parse_fastest>(const_cast<char *>(s.c_str()));
         doc.fixup<rapidxml::parse_full>(doc.first_node(), false);
-        return std::make_unique<Iq>(doc.first_node());
+        return std::make_unique<S>(doc.first_node());
     }
 
     // Callbacks
+
+    void check_msg_bounce(Stanza &stanza, Jid const &endpoint_jid, Jid const &stanza_to) {
+        stanza_seen = true;
+        ASSERT_EQ(stanza.id(), "qwerty");
+        ASSERT_EQ(stanza.name(), Message::name);
+        ASSERT_EQ(stanza.to().full(), std::string("dwd@dave.cridland.net/90210"));
+        ASSERT_EQ(stanza.type_str(), std::string("error"));
+        // Now reparse the stanza.
+        std::string xml;
+        {
+            rapidxml::xml_document<> doc;
+            stanza.render(doc);
+            rapidxml::print(std::back_inserter(xml), doc, rapidxml::print_no_indenting);
+        }
+        rapidxml::xml_document<> doc;
+        doc.parse<rapidxml::parse_full>(const_cast<char *>(xml.c_str()));
+        auto * msg = doc.first_node("message");
+        ASSERT_TRUE(msg);
+        auto * err = msg->first_node("error");
+        ASSERT_TRUE(err);
+        ASSERT_EQ(err->first_attribute("type")->value(), std::string("cancel"));
+        ASSERT_TRUE(err->first_node("service-unavailable", "urn:ietf:params:xml:ns:xmpp-stanzas"));
+    }
 
     void check_ping_response(Stanza &stanza, Jid const &endpoint_jid, Jid const &stanza_to) {
         stanza_seen = true;
@@ -136,7 +159,7 @@ TEST_F(EndpointTest, Ping) {
     // Send a ping. Should get one back.
     std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='5678' type='get'><ping xmlns='urn:xmpp:ping'/></iq>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_ping_response);
-    endpoint->process(parse_stanza(iq_xml));
+    endpoint->process(parse_stanza<Iq>(iq_xml));
     Router::run_pending();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response!";
@@ -147,7 +170,7 @@ TEST_F(EndpointTest, DiscoInfo) {
     // Send a disco#info query. Should get response with features.
     std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='1234' type='get'><query xmlns='http://jabber.org/protocol/disco#info'/></iq>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_discoinfo_response);
-    endpoint->process(parse_stanza(iq_xml));
+    endpoint->process(parse_stanza<Iq>(iq_xml));
     Router::run_pending();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response!";
@@ -161,7 +184,7 @@ TEST_F(EndpointTest, DiscoItems) {
                                   [this](Stanza &stanza, Jid const &from, Jid const &to) {
                                       check_discoitems_response(stanza, from, to, false);
                                   });
-    endpoint->process(parse_stanza(iq_xml));
+    endpoint->process(parse_stanza<Iq>(iq_xml));
     Router::run_pending();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response!";
@@ -172,7 +195,7 @@ TEST_F(EndpointTest, Publish) {
     // Send a pubsub publish query. Should get empty response, maybe.
     std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='5678' type='get'><pubsub xmlns='http://jabber.org/protocol/pubsub'><publish node='pubsub_node'><item id='item_id_here'><payload xmlns='https://surevine.com/protocol/test'/></item></publish></pubsub></iq>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_ping_response);
-    endpoint->process(parse_stanza(iq_xml));
+    endpoint->process(parse_stanza<Iq>(iq_xml));
     Router::run_pending();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No response to publish!";
@@ -183,9 +206,19 @@ TEST_F(EndpointTest, Publish) {
                                   [this](Stanza &stanza, Jid const &from, Jid const &to) {
                                       check_discoitems_response(stanza, from, to, true);
                                   });
-    endpoint->process(parse_stanza(iq2_xml));
+    endpoint->process(parse_stanza<Iq>(iq2_xml));
     Router::run_pending();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response to disco#items!";
+    stanza_seen = false;
+}
+
+TEST_F(EndpointTest, MessageFail) {
+    std::string msg_xml = "<message from='dwd@dave.cridland.net/90210' to='domain.example' type='chat' id='qwerty'><body>Testing</body></message>";
+    endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_msg_bounce);
+    endpoint->process(parse_stanza<Message>(msg_xml));
+    Router::run_pending();
+    endpoint->sent_stanza.disconnect(this);
+    ASSERT_TRUE(stanza_seen) << "No stanza response to message!";
     stanza_seen = false;
 }
