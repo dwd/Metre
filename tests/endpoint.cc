@@ -113,7 +113,7 @@ public:
             auto var = feature->first_attribute("var");
             m_features.emplace(var->value(), var->value_size());
         }
-        ASSERT_EQ(m_features.size(), 4u);
+        ASSERT_EQ(m_features.size(), 5u);
     }
 
     void check_discoitems_response(Stanza &stanza, Jid const &endpoint_jid, Jid const &stanza_to, bool added) {

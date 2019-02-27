@@ -29,6 +29,9 @@ SOFTWARE.
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+
+#else
+#include <ws2tcpip.h>
 #endif
 #include <map>
 #include <sstream>
