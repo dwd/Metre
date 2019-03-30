@@ -27,8 +27,8 @@ namespace {
                         std::make_unique<Node::Facet>(*this, pubsub_items, true));
             }
             facet->add_item(item, true);
-            std::unique_ptr<Stanza> pong = std::make_unique<Iq>(iq.to(), iq.from(), Iq::RESULT, iq.id());
-            m_endpoint.send(std::move(pong));
+            std::unique_ptr<Stanza> reply = std::make_unique<Iq>(iq.to(), iq.from(), Iq::RESULT, iq.id());
+            m_endpoint.send(std::move(reply));
         }
 
         // Operations.

@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 3.8)
 project(metre)
 
-set(CPACK_PACKAGE_CONTACT "dave.cridland@surevine.com")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "XMPP-S2S filtering and security proxy")
+set(CPACK_PACKAGE_CONTACT "dave@cridland.net")
+set(CPACK_PACKAGE_VENDOR "Dave Cridland")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Metre - XMPP-S2S filtering and security proxy")
+set(CPACK_PACKAGE_NAME "Metre")
 set(CPACK_PACKAGE_VERSION "0.0.1")
 set(CPACK_RPM_PACKAGE_LICENSE "MIT")
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave.cridland@surevine.com>")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
 option(VENDORED_DEPS "Use vendored depedencies" ON)
 
@@ -30,6 +32,12 @@ if (UNIX)
             set(CPACK_GENERATOR "${CPACK_GENERATOR};RPM")
         endif (${LSB_RELEASE_ID} MATCHES "RedHatEnterpriseServer")
     endif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+else ()
+    set(CPACK_COMPONENTS_ALL application)
+    set(CPACK_COMPONENT_APPLICATION_DISPLAY_NAME "Metre")
+    set(CPACK_COMPONENT_APPLICATION_DESCRIPTION "Metre itself")
+    set(CPACK_ALL_INSTALL_TYPES Full)
+    set(CPACK_COMPONENT_APPLICATION_INSTALL_TYPES Full)
 endif (UNIX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -240,7 +248,7 @@ else()
     )
 endif()
 
-install(TARGETS metre DESTINATION bin)
+install(TARGETS metre RUNTIME DESTINATION bin COMPONENT application)
 
 
 
