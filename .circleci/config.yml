@@ -1,0 +1,19 @@
+version: 2
+jobs:
+  build:
+    environment:
+      IMAGE_NAME: surevinecom/metre
+    docker:
+      - image: circleci/buildpack-deps:stretch
+    steps:
+      - checkout
+      - run: git submodule update --recursive --init deps/spiffing deps/rapidxml deps/sigslot
+      - setup_remote_docker
+      - run:
+          name: Build Docker image
+          command: docker build -t $IMAGE_NAME:latest .
+workflows:
+  version: 2
+  build-master:
+    jobs:
+      - build: {}
