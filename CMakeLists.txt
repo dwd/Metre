@@ -1,13 +1,17 @@
 cmake_minimum_required(VERSION 3.8)
 project(metre)
 
-set(CPACK_PACKAGE_CONTACT "dave.cridland@surevine.com")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "XMPP-S2S filtering and security proxy")
+set(CPACK_PACKAGE_CONTACT "dave@cridland.net")
+set(CPACK_PACKAGE_VENDOR "Dave Cridland")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Metre - XMPP-S2S filtering and security proxy")
+set(CPACK_PACKAGE_NAME "Metre")
 set(CPACK_PACKAGE_VERSION "0.0.1")
 set(CPACK_RPM_PACKAGE_LICENSE "MIT")
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave.cridland@surevine.com>")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
 option(VENDORED_DEPS "Use vendored depedencies" ON)
+option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
@@ -30,6 +34,19 @@ if (UNIX)
             set(CPACK_GENERATOR "${CPACK_GENERATOR};RPM")
         endif (${LSB_RELEASE_ID} MATCHES "RedHatEnterpriseServer")
     endif (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+else ()
+    set(CPACK_COMPONENTS_ALL application)
+    set(CPACK_COMPONENT_APPLICATION_DISPLAY_NAME "Metre")
+    set(CPACK_COMPONENT_APPLICATION_DESCRIPTION "Metre itself")
+    set(CPACK_ALL_INSTALL_TYPES Full)
+    set(CPACK_COMPONENT_APPLICATION_INSTALL_TYPES Full)
+    message(STATUS "VCREDIST_PATH set to ${VCREDIST_PATH}")
+    if (VCREDIST_PATH)
+        message(STATUS "Setting vcredist install path")
+        install(PROGRAMS ${VCREDIST_PATH} DESTINATION tmp COMPONENT application)
+        message(STATUS "Setting extra commands")
+        list(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS " ExecWait '$INSTDIR\\\\tmp\\\\vc_redist.x64.exe'")
+    endif ()
 endif (UNIX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -240,7 +257,7 @@ else()
     )
 endif()
 
-install(TARGETS metre DESTINATION bin)
+install(TARGETS metre RUNTIME DESTINATION bin COMPONENT application)
 
 
 
