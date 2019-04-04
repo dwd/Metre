@@ -45,7 +45,7 @@ else ()
         message(STATUS "Setting vcredist install path")
         install(PROGRAMS ${VCREDIST_PATH} DESTINATION tmp)
         message(STATUS "Setting extra commands")
-        list(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS " ExecWait '$INSTDIR\\\\tmp\\\\vc_redist.x64.exe")
+        list(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS " ExecWait '$INSTDIR\\\\tmp\\\\vc_redist.x64.exe'")
     endif ()
 endif (UNIX)
 
