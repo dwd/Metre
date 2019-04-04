@@ -32,6 +32,7 @@ COPY include src/include
 COPY src src/src
 COPY tests src/tests
 COPY CMakeLists.txt src/
+COPY LICENSE src/
 
 RUN set -eux; \
     mkdir build; \
