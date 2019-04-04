@@ -7,9 +7,11 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Metre - XMPP-S2S filtering and security p
 set(CPACK_PACKAGE_NAME "Metre")
 set(CPACK_PACKAGE_VERSION "0.0.1")
 set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
 option(VENDORED_DEPS "Use vendored depedencies" ON)
+option(VCREDIST_PATH "Visual Studio Redistributable Installer path")
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
@@ -38,6 +40,10 @@ else ()
     set(CPACK_COMPONENT_APPLICATION_DESCRIPTION "Metre itself")
     set(CPACK_ALL_INSTALL_TYPES Full)
     set(CPACK_COMPONENT_APPLICATION_INSTALL_TYPES Full)
+    if (${VCREDIST_PATH})
+        install(PROGRAMS ${VCREDIST_PATH} DESTINATION tmp)
+        list(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS " ExecWait '$INSTDIR\\\\tmp\\\\vc_redist.x64.exe")
+    endif ()
 endif (UNIX)
 
 set(CMAKE_CXX_STANDARD 17)
