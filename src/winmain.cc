@@ -91,7 +91,7 @@ HANDLE g_ServiceStopEvent = INVALID_HANDLE_VALUE;
 
 VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv);
 
-#define SERVICE_NAME  _T("My Sample Service")
+VOID WINAPI ServiceCtrlHandler(DWORD);
 
 DWORD WINAPI ServiceWorkerThread(LPVOID lpParam);
 
