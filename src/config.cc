@@ -584,9 +584,6 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
     spdlog::set_level(spdlog::level::trace);
     //spdlog::set_sync_mode();
     load(filename);
-    std::string tmp = asString();
-    std::ofstream of(m_data_dir + "/" + "metre.running.xml", std::ios_base::trunc);
-    of << tmp;
     m_ub_ctx = ub_ctx_create();
     if (!m_ub_ctx) {
         throw std::runtime_error("DNS context creation failure.");
@@ -595,6 +592,12 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
 
 Config::~Config() {
     // TODO: Should really do this, but need to shut it down first: ub_ctx_delete(m_ub_ctx);
+}
+
+void Config::write_runtime_config() const {
+    std::string tmp = asString();
+    std::ofstream of(m_data_dir + "/" + "metre.running.xml", std::ios_base::trunc);
+    of << tmp;
 }
 
 void Config::load(std::string const &filename) {
@@ -755,7 +758,7 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
     }
 }
 
-std::string Config::asString() {
+std::string Config::asString() const {
     xml_document<> doc;
     auto root = doc.allocate_node(node_element, root_name.c_str());
     root->append_attribute(doc.allocate_attribute("xmlns", xmlns.c_str()));
@@ -1089,6 +1092,13 @@ std::string Config::asString() {
     std::string tmp;
     rapidxml::print(std::back_inserter(tmp), doc);
     return tmp;
+}
+
+void Config::docker_setup() {
+	m_logfile = std::string();
+	m_data_dir = "/tmp";
+	m_runtime_dir = "/tmp";
+	log_init(true);
 }
 
 void Config::log_init(bool systemd) {

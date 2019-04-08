@@ -112,6 +112,7 @@ int main(int argc, char *argv[]) {
             close(1);
             close(2);
             config->log_init();
+            config->write_runtime_config();
             if (-1 == setsid()) {
                 METRE_LOG(Metre::Log::CRIT, "setsid() failed with " << strerror(errno));
             }
@@ -133,6 +134,15 @@ int main(int argc, char *argv[]) {
             Metre::Router::main();
         } else if (bc->boot_method == "none") {
             config->log_init();
+            config->write_runtime_config();
+            signal(SIGPIPE, SIG_IGN);
+            signal(SIGHUP, hup_handler);
+            signal(SIGTERM, term_handler);
+            signal(SIGINT, term_handler);
+            Metre::Router::main();
+        } else if (bc->boot_method == "docker") {
+            config->docker_setup();
+            config->write_runtime_config();
             signal(SIGPIPE, SIG_IGN);
             signal(SIGHUP, hup_handler);
             signal(SIGTERM, term_handler);
@@ -140,6 +150,7 @@ int main(int argc, char *argv[]) {
             Metre::Router::main();
         } else if (bc->boot_method == "systemd") {
             config->log_init(true);
+            config->write_runtime_config();
             signal(SIGPIPE, SIG_IGN);
             signal(SIGHUP, hup_handler);
             signal(SIGTERM, term_handler);

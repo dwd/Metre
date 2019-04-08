@@ -236,7 +236,9 @@ namespace Metre {
 
         ~Config();
 
-        std::string asString();
+        void write_runtime_config() const;
+
+        std::string asString() const;
 
         std::string const &default_domain() const {
             return m_default_domain;
@@ -255,6 +257,8 @@ namespace Metre {
         }
 
         void log_init(bool systemd = false);
+
+        void docker_setup();
 
         void dns_init() const;
 
