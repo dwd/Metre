@@ -46,6 +46,8 @@ else ()
         install(PROGRAMS ${VCREDIST_PATH} DESTINATION tmp COMPONENT application)
         message(STATUS "Setting extra commands")
         list(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS " ExecWait '$INSTDIR\\\\tmp\\\\vc_redist.x64.exe'")
+        list(APPEND CPACK_NSIS_EXTRA_INSTALL_COMMANDS " ExecWait 'sc create \\\"Metre\\\" binPath= $INSTDIR\\\\bin\\\\metre.exe'")
+        list(APPEND CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS " ExecWait 'sc delete \\\"Metre\\\"'")
     endif ()
 endif (UNIX)
 

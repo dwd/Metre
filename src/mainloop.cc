@@ -275,10 +275,13 @@ namespace Metre {
             return session;
         }
 
-        void run() {
+        void run(std::function<bool()> const &check_fn) {
             dns_setup();
             while (true) {
                 event_base_dispatch(m_event_base);
+                if (check_fn()) {
+                    m_shutdown = true;
+                }
                 if (m_shutdown_now && m_sessions.empty()) {
                     return;
                 }
@@ -409,14 +412,14 @@ namespace Metre {
             Mainloop::s_mainloop->do_later(std::move(fn), seconds);
         }
 
-        void main() {
+        void main(std::function<bool()> const &check_fn) {
             Metre::Mainloop loop;
             if (!loop.init()) {
                 METRE_LOG(Metre::Log::CRIT, "Loop initialization failure");
                 return;
             }
             //Config::config().dns_init();
-            loop.run();
+            loop.run(check_fn);
             METRE_LOG(Metre::Log::INFO, "Shutdown complete");
         }
 
