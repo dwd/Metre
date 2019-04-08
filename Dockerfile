@@ -66,4 +66,6 @@ WORKDIR /app
 COPY --from=cpp-build /app/install/bin/metre .
 
 USER metre
-ENTRYPOINT ["/app/metre"]
+ENTRYPOINT ["/app/metre", "-d", "docker"]
+
+EXPOSE 5269 5222 5275 5276

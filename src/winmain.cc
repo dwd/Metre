@@ -98,6 +98,7 @@ int main(int argc, char *argv[]) {
     try {
         if (bc->boot_method == "none") {
             config->log_init();
+            config->write_runtime_config();
             Metre::Router::main();
         } else {
             std::cerr << "I don't know what " << bc->boot_method << " means." << std::endl;
