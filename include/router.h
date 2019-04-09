@@ -130,7 +130,7 @@ namespace Metre {
 
         void defer(std::function<void()> &&, std::size_t seconds);
 
-        void main();
+        void main(std::function<bool()> const &);
 
         void reload();
 

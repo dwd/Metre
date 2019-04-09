@@ -33,6 +33,7 @@ COPY src src/src
 COPY tests src/tests
 COPY CMakeLists.txt src/
 COPY LICENSE src/
+COPY metre.conf.xml src/
 
 RUN set -eux; \
     mkdir build; \
