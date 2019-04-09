@@ -333,7 +333,7 @@ add_test(metre-test metre-test)
 
 ## These install into stupid places:
 ##
-## install(FILES metre.conf.xml DESTINATION ./etc/metre)
+install(FILES metre.conf.xml DESTINATION etc/metre)
 ## install(FILES data/README.md DESTINATION ./var/cache/metre)
 
 include(CPack)
