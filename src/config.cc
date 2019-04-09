@@ -446,6 +446,7 @@ FILTER_RESULT Config::Domain::filter(SESSION_DIRECTION dir, Stanza &s) const {
 
 
 Config::Domain::~Domain() {
+    METRE_LOG(Log::INFO, "Config::Domain::~Domain() called for " << m_domain);
     if (m_ssl_ctx) {
         SSL_CTX_free(m_ssl_ctx);
         m_ssl_ctx = nullptr;
@@ -1116,9 +1117,10 @@ void Config::log_init(bool systemd) {
     m_logger = logger("config");
 }
 
-Config::Domain const &Config::domain(std::string const &dom) const {
+void Config::create_domain(std::string const &dom) {
     std::string search{dom};
     auto it = m_domains.find(dom);
+    if (it != m_domains.end()) return;
     while (it == m_domains.end()) {
         it = m_domains.find("*." + search);
         if (it == m_domains.end()) {
@@ -1130,15 +1132,16 @@ Config::Domain const &Config::domain(std::string const &dom) const {
             }
             it = m_domains.find(search);
         }
-        if (it == m_domains.end()) {
-            assert(search != "");
-            continue;
-        }
-        m_logger->info("Creating new domain config {}from parent ({})", dom, (*it).second->domain());
-        std::unique_ptr<Config::Domain> newdom{new Config::Domain(*(*it).second, dom)};
-        std::tie(it, std::ignore) = const_cast<Config *>(this)->m_domains.insert(
-                std::make_pair(dom, std::move(newdom)));
-        break;
+    }
+    m_logger->info("Creating new domain config {}from parent ({})", dom, (*it).second->domain());
+    m_domains[dom] = std::make_unique<Config::Domain>(*(*it).second, dom);
+}
+
+Config::Domain const &Config::domain(std::string const &dom) const {
+    auto it = m_domains.find(dom);
+    while (it == m_domains.end()) {
+        const_cast<Config *>(this)->create_domain(dom);
+        it = m_domains.find(dom);
     }
     return *(*it).second;
 }
