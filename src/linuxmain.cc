@@ -139,7 +139,7 @@ int main(int argc, char *argv[]) {
             signal(SIGHUP, hup_handler);
             signal(SIGTERM, term_handler);
             signal(SIGINT, term_handler);
-            Metre::Router::main();
+            Metre::Router::main([]() { return false; });
         } else if (bc->boot_method == "docker") {
             config->docker_setup();
             config->write_runtime_config();
