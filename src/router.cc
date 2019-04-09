@@ -95,23 +95,26 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
 
 sigslot::tasklet<bool> Route::init_session_to() {
     m_logger->log(spdlog::level::debug, "Stanza session spin-up");
-    auto session = m_vrfy.lock();
-    do {
-        if (!session) {
-            m_logger->log(spdlog::level::debug, "No verify session");
-            if (!m_verify_task.running()) {
-                m_logger->log(spdlog::level::debug, "No verify session task.");
-                m_verify_task = init_session_vrfy();
-                m_verify_task.start();
+    auto session = Router::session_by_domain(m_domain.domain());
+    if (!session) {
+        session = m_vrfy.lock();
+        do {
+            if (!session) {
+                m_logger->log(spdlog::level::debug, "No verify session");
+                if (!m_verify_task.running()) {
+                    m_logger->log(spdlog::level::debug, "No verify session task.");
+                    m_verify_task = init_session_vrfy();
+                    m_verify_task.start();
+                }
+                if (!co_await m_verify_task) {
+                    m_logger->log(spdlog::level::debug, "Verify task completed false");
+                    co_return
+                    false;
+                }
             }
-            if (!co_await m_verify_task) {
-                m_logger->log(spdlog::level::debug, "Verify task completed false");
-                co_return
-                false;
-            }
-        }
-        m_logger->log(spdlog::level::debug, "Authenticating with Verify session");
-    } while (!(session = m_vrfy.lock()));
+            m_logger->log(spdlog::level::debug, "Authenticating with Verify session");
+        } while (!(session = m_vrfy.lock()));
+    }
     switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
         default:
             if (!session->xml_stream().auth_ready()) {
