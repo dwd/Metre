@@ -677,7 +677,7 @@ void Config::load(std::string const &filename) {
         auto any = external->first_node("any");
         if (any) {
             std::unique_ptr<Config::Domain> dom = parse_domain(nullptr, any, S2S);
-            any_domain = &*dom; // Save this pointer.
+            any_domain = dom.get(); // Save this pointer.
             m_domains[dom->domain()] = std::move(dom);
         } else {
             m_domains[""] = std::make_unique<Config::Domain>("", INTERNAL, false, true, true, true, true, false,
@@ -1601,7 +1601,7 @@ Config::addr_callback_t &Config::Domain::AddressLookup(std::string const &ihostn
     }
     auto it = arecs->find(hostname);
     if (it != arecs->end()) {
-        auto addr = &*(it->second);
+        auto addr = it->second.get();
         Router::defer([addr, this]() {
             m_a_pending[addr->hostname].emit(addr);
         });
@@ -1680,7 +1680,7 @@ Config::tlsa_callback_t &Config::Domain::TlsaLookup(unsigned short port, std::st
     }
     auto it = recs->find(domain);
     if (it != recs->end()) {
-        auto addr = &*(it->second);
+        auto addr = it->second.get();
         Router::defer([addr, this]() {
             m_tlsa_pending[addr->domain].emit(addr);
         });
