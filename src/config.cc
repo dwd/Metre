@@ -1133,7 +1133,7 @@ void Config::create_domain(std::string const &dom) {
             it = m_domains.find(search);
         }
     }
-    m_logger->info("Creating new domain config {}from parent ({})", dom, (*it).second->domain());
+    m_logger->info("Creating new domain config {} from parent ({})", dom, (*it).second->domain());
     m_domains[dom] = std::make_unique<Config::Domain>(*(*it).second, dom);
 }
 
@@ -1620,20 +1620,27 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
     std::string domain = toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
     METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain << " context:" << m_domain);
-    auto rec = &*m_srvrec;
-    if (!rec) {
-        for (Domain const *d = this; d; d = d->m_parent) {
-            METRE_LOG(Metre::Log::DEBUG, "DNS overrides empty, trying parent {" << d->domain() << "}");
-            rec = &*d->m_srvrec;
-            if (rec) break;
-        }
-    }
-    if (rec) {
+    if (m_srvrec) {
+        auto rec = m_srvrec.get();
         Router::defer([rec, this]() {
             m_srv_pending.emit(rec);
         });
-        METRE_LOG(Metre::Log::DEBUG, "Using DNS override");
-    } else if (base_domain.empty()) {
+        METRE_LOG(Metre::Log::DEBUG, "Using DNS override: " << rec->domain << " length: " << rec->rrs.size());
+        return m_srv_pending;
+    } else {
+        for (Domain const *d = this; d; d = d->m_parent) {
+            METRE_LOG(Metre::Log::DEBUG, "DNS overrides empty, trying parent {" << d->domain() << "}");
+            if (d->m_srvrec) {
+                auto rec = m_srvrec.get();
+                Router::defer([rec, this]() {
+                    m_srv_pending.emit(rec);
+                });
+                METRE_LOG(Metre::Log::DEBUG, "Using DNS override: " << rec->domain << " length: " << rec->rrs.size());
+                return m_srv_pending;
+            }
+        }
+    }
+    if (base_domain.empty()) {
         srv_callback_t &cb = m_srv_pending;
         Router::defer([&cb]() {
             DNS::Srv r;
