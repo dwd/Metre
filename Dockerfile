@@ -46,9 +46,10 @@ RUN set -eux; \
         -DVENDORED_DEPS=OFF \
         -GNinja \
         ../src; \
-    ninja; \
-    ninja test; \
-    ninja install
+    export CMAKE_BUILD_PARALLEL_LEVEL=4; \
+    cmake --build .; \
+    cmake --build . --target test; \
+    cmake --build . --target install
 
 RUN set -eux; \
     mkdir -p /app/deps/; \

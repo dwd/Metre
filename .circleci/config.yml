@@ -1,19 +1,129 @@
-version: 2
+version: 2.0
+
+x-common:
+  - &submodule-update 'git submodule update --recursive --init deps/spiffing deps/rapidxml deps/sigslot'
+  - &apt-install >
+          apt-get update;
+          apt-get install --quiet --yes --no-install-recommends \
+              clang \
+              cmake \
+              googletest \
+              libc++-dev \
+              libc++abi-dev \
+              libevent-dev \
+              libicu-dev \
+              libspdlog-dev \
+              libssl-dev \
+              libunbound-dev \
+              ninja-build \
+              pkg-config \
+          ;
+  - &cmake-build >
+          mkdir ../build;
+          cd ../build;
+          cmake \
+            -DCMAKE_C_COMPILER=/usr/bin/clang \
+            -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+            -DCMAKE_INSTALL_PREFIX=/app/install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DVENDORED_DEPS=OFF \
+            -GNinja \
+            ../src;
+          export CMAKE_BUILD_PARALLEL_LEVEL=3;
+          cmake --build .;
+          cmake --build . --target test;
+          cmake --build . --target install;
+
+x-common-vendored:
+  - &submodule-update-vendored 'git submodule update --recursive --init'
+  - &apt-install-vendored >
+          apt-get update;
+          apt-get install --quiet --yes --no-install-recommends \
+              build-essential \
+              clang \
+              cmake \
+              libc++-dev \
+              libc++abi-dev \
+              libicu-dev \
+              ninja-build \
+          ;
+  - &build-openssl-vendored >
+          cd deps/openssl;
+          ./config --prefix=/usr/local --openssldir=/etc/ssl no-shared;
+          make -j3;
+  - &cmake-build-vendored >
+          mkdir ../build;
+          cd ../build;
+          cmake \
+            -DCMAKE_C_COMPILER=/usr/bin/clang \
+            -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+            -DCMAKE_INSTALL_PREFIX=/app/install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DVENDORED_DEPS=ON \
+            -GNinja \
+            ../src;
+          export CMAKE_BUILD_PARALLEL_LEVEL=3;
+          cmake --build .;
+          cmake --build . --target install;
+
+x-linux-shared: &linux-shared
+  working_directory: ~/src
+  steps:
+    - checkout
+    - run: *submodule-update
+    - run: *apt-install
+    - run: *cmake-build
+
+x-linux-shared-vendored: &linux-shared-vendored
+  working_directory: ~/src
+  steps:
+    - checkout
+    - run: *submodule-update-vendored
+    - run: *apt-install-vendored
+    - run: *build-openssl-vendored
+    - run: *cmake-build-vendored
+
 jobs:
-  build:
+
+  build-docker:
     environment:
       IMAGE_NAME: surevinecom/metre
     docker:
       - image: circleci/buildpack-deps:stretch
     steps:
       - checkout
-      - run: git submodule update --recursive --init deps/spiffing deps/rapidxml deps/sigslot
+      - run: *submodule-update
       - setup_remote_docker
       - run:
           name: Build Docker image
           command: docker build -t $IMAGE_NAME:latest .
+
+  build-debian-sid:
+    <<: *linux-shared
+    docker:
+      - image: buildpack-deps:sid-scm
+  
+  build-ubuntu-devel:
+    <<: *linux-shared
+    docker:
+      - image: buildpack-deps:19.04-scm
+
+  build-debian-sid-vendored:
+    <<: *linux-shared-vendored
+    docker:
+      - image: buildpack-deps:sid-scm
+
+  build-ubuntu-lts-vendored:
+    <<: *linux-shared-vendored
+    docker:
+      - image: buildpack-deps:18.10-scm
+
 workflows:
   version: 2
-  build-master:
+  build-matrix:
     jobs:
-      - build: {}
+      - build-docker
+      - build-debian-sid
+      - build-ubuntu-devel
+      - build-debian-sid-vendored
+      - build-ubuntu-lts-vendored
