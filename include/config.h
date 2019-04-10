@@ -320,6 +320,8 @@ namespace Metre {
     private:
         static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
 
+        void create_domain(std::string const &dom);
+
         bool m_fetch_crls = true;
         std::string m_config_str;
         std::string m_default_domain;
