@@ -29,8 +29,9 @@ SOFTWARE.
 #include <unicode/ucnv.h>
 #endif
 #include <memory>
-#include <log.h>
 #include <algorithm>
+#include "log.h"
+#include "defs.h"
 
 using namespace Metre;
 

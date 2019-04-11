@@ -24,6 +24,7 @@ SOFTWARE.
 ***/
 
 #include "log.h"
+#include "config.h"
 #include <fstream>
 #include <iostream>
 

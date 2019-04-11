@@ -46,13 +46,14 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to) {
 
 sigslot::tasklet<bool> Route::init_session_vrfy() {
     m_logger->log(spdlog::level::info, "Verify session spin-up");
-    auto srv = co_await Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain());
+    DNS::Srv srv_copy = * co_await Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain());
+    auto srv = &srv_copy;
     if (!srv->error.empty()) {
-        m_logger->log(spdlog::level::warn, "SRV Lookup for {} failed: {}", m_domain.domain(), srv->error);
+        m_logger->log(spdlog::level::warn, "SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv->error);
         co_return false;
     }
     for (auto & rr : srv->rrs) {
-        m_logger->log(spdlog::level::debug, "Should look for {}:{}", rr.hostname, rr.port);
+        m_logger->log(spdlog::level::debug, "Should look for [{}:{}]", rr.hostname, rr.port);
         auto session = Router::session_by_address(rr.hostname, rr.port);
         if (session && !session->xml_stream().auth_ready()) {
             (void) co_await session->xml_stream().onAuthReady;
@@ -60,30 +61,30 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
                 continue;
             }
             set_vrfy(session);
-            m_logger->log(spdlog::level::info, "Reused existing outgoing session (verify stage) to {}:{}", rr.hostname, rr.port);
+            m_logger->log(spdlog::level::info, "Reused existing outgoing session (verify stage) to [{}:{}]", rr.hostname, rr.port);
             co_return true;
         }
     }
     for (auto & rr : srv->rrs) {
-        auto addr = co_await Config::config().domain(m_domain.domain()).AddressLookup(rr.hostname);
+        DNS::Address const * addr = co_await Config::config().domain(m_domain.domain()).AddressLookup(rr.hostname);
         if (!addr->error.empty()) {
-            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for {} failed: {}", rr.hostname, srv->error);
+            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, srv->error);
             continue;
         }
         for (auto & arr : addr->addr) {
             try {
-                m_logger->log(spdlog::level::debug, "Trying {}:{}", rr.hostname, rr.port);
+                m_logger->log(spdlog::level::debug, "Trying [{}:{}]", rr.hostname, rr.port);
                 auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                        const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&arr)),
                                        rr.port, Config::config().domain(m_domain.domain()).transport_type(),
                                        rr.tls ? IMMEDIATE : STARTTLS);
-                METRE_LOG(Metre::Log::DEBUG, "Connected, " << &*session);
+                METRE_LOG(Metre::Log::DEBUG, "Connected, " << session.get());
                 (void) co_await session->xml_stream().onAuthReady;
                 if (!session->xml_stream().auth_ready()) {
                     continue;
                 }
                 set_vrfy(session);
-                m_logger->log(spdlog::level::info, "New outgoing session (verify stage) to {}:{}", rr.hostname, rr.port);
+                m_logger->log(spdlog::level::info, "New outgoing session (verify stage) to [{}:{}]", rr.hostname, rr.port);
                 co_return true;
             } catch (std::runtime_error &e) {
                 METRE_LOG(Log::DEBUG, "Connection failed, reloop: " << e.what());
