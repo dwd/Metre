@@ -1621,17 +1621,16 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
     std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
     METRE_LOG(Metre::Log::DEBUG, "SRV lookup for " << domain << " context:" << m_domain);
     if (m_srvrec) {
-        auto rec = m_srvrec.get();
-        Router::defer([rec, this]() {
-            m_srv_pending.emit(rec);
+        Router::defer([this]() {
+            m_srv_pending.emit(m_srvrec.get());
         });
-        METRE_LOG(Metre::Log::DEBUG, "Using DNS override: " << rec->domain << " length: " << rec->rrs.size());
+        METRE_LOG(Metre::Log::DEBUG, "Using DNS override: " << m_srvrec->domain << " length: " << m_srvrec->rrs.size());
         return m_srv_pending;
     } else {
         for (Domain const *d = this; d; d = d->m_parent) {
             METRE_LOG(Metre::Log::DEBUG, "DNS overrides empty, trying parent {" << d->domain() << "}");
             if (d->m_srvrec) {
-                auto rec = m_srvrec.get();
+                auto rec = d->m_srvrec.get();
                 Router::defer([rec, this]() {
                     m_srv_pending.emit(rec);
                 });
@@ -1641,18 +1640,16 @@ Config::srv_callback_t &Config::Domain::SrvLookup(std::string const &base_domain
         }
     }
     if (base_domain.empty()) {
-        srv_callback_t &cb = m_srv_pending;
-        Router::defer([&cb]() {
+        Router::defer([this]() {
             DNS::Srv r;
             r.error = "Empty Domain - DNS aborted";
-            cb.emit(&r);
+            m_srv_pending.emit(&r);
         });
     } else if (m_type == X2X) {
-        srv_callback_t &cb = m_srv_pending;
-        Router::defer([&cb]() {
+        Router::defer([this]() {
             DNS::Srv r;
             r.error = "X2X - DNS aborted";
-            cb.emit(&r);
+            m_srv_pending.emit(&r);
         });
     } else {
         m_current_srv.xmpp = m_current_srv.xmpps = false;
