@@ -124,7 +124,7 @@ else()
 
     # Find libs with pkg-config
     find_package(PkgConfig)
-    pkg_check_modules(SPDLOG spdlog REQUIRED)
+    pkg_check_modules(SPDLOG spdlog>=1.0.0 REQUIRED)
     pkg_check_modules(EVENT libevent libevent_openssl libevent_pthreads REQUIRED)
     pkg_check_modules(UNBOUND libunbound REQUIRED)
     pkg_check_modules(ICU icu-uc REQUIRED)
