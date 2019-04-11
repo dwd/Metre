@@ -459,8 +459,8 @@ void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
     if (hostname[hostname.length() - 1] != '.') hostname += '.';
     address->dnssec = true;
     address->hostname = hostname;
-    address->addr.emplace_back();
-    struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&*address->addr.rbegin());
+    auto& a = address->addr.emplace_back();
+    struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&a);
     sin->sin_family = AF_INET;
     sin->sin_addr.s_addr = inaddr;
     m_host_arecs[hostname] = std::move(address);
@@ -1517,23 +1517,22 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
     } else if (!result->secure && m_dnssec_required) {
         error = "DNSSEC required but unsigned";
     } else {
-        DNS::Address &a = m_current_arec;
-        if (a.hostname != result->qname) {
-            a.error = "";
-            a.dnssec = !!result->secure;
-            a.hostname = result->qname;
-            a.addr.clear();
-            a.ipv4 = a.ipv6 = false;
+        if (m_current_arec.hostname != result->qname) {
+            m_current_arec.error = "";
+            m_current_arec.dnssec = !!result->secure;
+            m_current_arec.hostname = result->qname;
+            m_current_arec.addr.clear();
+            m_current_arec.ipv4 = m_current_arec.ipv6 = false;
         } else {
-            a.dnssec = a.dnssec && !!result->secure;
-            a.error = "";
+            m_current_arec.dnssec = m_current_arec.dnssec && !!result->secure;
+            m_current_arec.error = "";
         }
         METRE_LOG(Log::DEBUG, "... Success for " << result->qtype);
         if (result->qtype == 1) {
             m_current_arec.ipv4 = true;
             for (int i = 0; result->data[i]; ++i) {
-                a.addr.emplace_back();
-                struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&*a.addr.rbegin());
+                auto& a = m_current_arec.addr.emplace_back();
+                struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&a);
                 sin->sin_family = AF_INET;
 #ifdef METRE_WINDOWS
                 sin->sin_addr = *reinterpret_cast<struct in_addr *>(result->data[i]);
@@ -1544,14 +1543,14 @@ void Config::Domain::a_lookup_done(int err, struct ub_result *result) {
         } else if (result->qtype == 28) {
             m_current_arec.ipv6 = true;
             for (int i = 0; result->data[i]; ++i) {
-                a.addr.emplace(a.addr.begin());
-                struct sockaddr_in6 *sin = reinterpret_cast<struct sockaddr_in6 *>(&*a.addr.begin());
+                auto it = m_current_arec.addr.emplace(m_current_arec.addr.begin());
+                struct sockaddr_in6 *sin = reinterpret_cast<struct sockaddr_in6 *>(&*it);
                 sin->sin6_family = AF_INET6;
                 memcpy(sin->sin6_addr.s6_addr, result->data[i], 16);
             }
         }
         if (m_current_arec.ipv4 && m_current_arec.ipv6) {
-            m_a_pending[a.hostname].emit(&a);
+            m_a_pending[m_current_arec.hostname].emit(&m_current_arec);
         }
         return;
     }

@@ -30,7 +30,6 @@ SOFTWARE.
 #include <sstream>
 #include <memory>
 #include <ctime>
-#include "config.h"
 #include "spdlog/spdlog.h"
 
 namespace Metre {
