@@ -94,8 +94,6 @@ if(VENDORED_DEPS)
         message("No ICU Found")
     endif ()
 
-    set(gtest_force_shared_crt ON)
-
     set(OPENSSL_USE_STATIC_LIBS true)
     set(OPENSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl)
 
@@ -103,7 +101,6 @@ if(VENDORED_DEPS)
     add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
     add_subdirectory(deps/unbound EXCLUDE_FROM_ALL)
     add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
-    add_subdirectory(deps/googletest EXCLUDE_FROM_ALL)
 
     set(EVENT_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/libevent/include" ${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
     set(EVENT_LDFLAGS event_core_static event_openssl_static event_extra_static)
@@ -113,22 +110,36 @@ if(VENDORED_DEPS)
 
     set(SPDLOG_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/spdlog/include")
 
-    set(GTEST_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/googletest/googletest/include")
-    set(GTEST_BOTH_LIBRARIES gtest gtest_main)
+    set(GOOGLETEST_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/googletest")
+    find_package(GMock REQUIRED)
 else()
+    if(APPLE)
+        set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/usr/local/opt/openssl@1.1/lib/pkgconfig:/usr/local/opt/icu4c/lib/pkgconfig/")
+        set(GOOGLETEST_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/googletest")
+    elseif(UNIX)
+        # Nothing to do for Linux
+    else()
+        message(FATAL_ERROR "Non-vendored builds not supported on Windows yet")
+    endif()
+
     # Find libs with pkg-config
     find_package(PkgConfig)
     pkg_check_modules(SPDLOG spdlog REQUIRED)
-    set(SPDLOG_INCLUDE_DIRS "/usr/include/spdlog/") # Busted pkg-config file above
     pkg_check_modules(EVENT libevent libevent_openssl libevent_pthreads REQUIRED)
     pkg_check_modules(UNBOUND libunbound REQUIRED)
     pkg_check_modules(ICU icu-uc REQUIRED)
     add_definitions(-DHAVE_ICU)
 
     find_package(GMock REQUIRED)
+
+    if(APPLE)
+        set(SPDLOG_INCLUDE_DIRS "/usr/local/include/") # Busted pkg-config for SPDLOG
+    elseif(UNIX)
+        set(SPDLOG_INCLUDE_DIRS "/usr/include/spdlog/") # Busted pkg-config for SPDLOG
+    endif()
 endif()
 
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 1.1.0 REQUIRED)
 
 set(FILTER_SOURCES
     src/filters/disco-cache.cc

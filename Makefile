@@ -24,3 +24,33 @@ dhparams: gen/dh1024.cc gen/dh2048.cc gen/dh4096.cc
 
 gen/dh%.cc:
 	./deps/openssl/apps/openssl dhparam -C -noout $* >$@
+
+apt-deps:
+	apt-get install --quiet --no-install-recommends \
+		clang \
+		cmake \
+		googletest \
+		libc++-dev \
+		libc++abi-dev \
+		libevent-dev \
+		libexpat-dev \
+		libicu-dev \
+		libspdlog-dev \
+		libssl-dev \
+		libunbound-dev \
+		ninja-build \
+		pkg-config
+
+brew-deps:
+	brew install \
+		icu4c \
+		libevent \
+		ninja \
+		openssl@1.1 \
+		spdlog \
+		unbound
+
+eclipse:
+	mkdir -p ../metre-eclipse-build
+	# -DCMAKE_CXX_COMPILER_ARG1 is a trick to make the Eclipse project generate with the correct C++ version flags
+	cd ../metre-eclipse-build && cmake -G'Eclipse CDT4 - Ninja' -DCMAKE_CXX_COMPILER_ARG1="-std=c++17" -DVENDORED_DEPS=OFF ../metre

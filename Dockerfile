@@ -38,7 +38,9 @@ COPY metre.conf.xml src/
 RUN set -eux; \
     mkdir build; \
     cd build; \
-    CC=clang CXX=clang++ cmake \
+    cmake \
+    	-DCMAKE_C_COMPILER=/usr/bin/clang \
+    	-DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
         -DCMAKE_INSTALL_PREFIX=/app/install \
         -DCMAKE_BUILD_TYPE=Release \
         -DVENDORED_DEPS=OFF \
