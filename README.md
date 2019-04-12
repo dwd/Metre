@@ -3,6 +3,7 @@ Metre :: An XMPP Server (Sort Of)
 
 Latest CI builds:
 
+* CircleCI: [![CircleCI](https://circleci.com/gh/surevine/Metre.svg?style=svg)](https://circleci.com/gh/surevine/Metre)
 * Docker: ![Docker Cloud Build Status](https://img.shields.io/docker/cloud/build/surevinecom/metre.svg)
 * Linux: <a href="http://217.155.137.59:8111/viewType.html?buildTypeId=Metre_Build&guest=1"><img src="https://img.shields.io/teamcity/https/teamcity.cridland.io/e/Metre_Build.svg?label=TeamCity%20Build&logo=linux&logoColor=%23ffdd44&style=popout"/></a>
 * OS X: <a href="http://217.155.137.59:8111/viewType.html?buildTypeId=Metre_MacBuild&guest=1"><img src="https://img.shields.io/teamcity/https/teamcity.cridland.io/e/Metre_MacBuild.svg?label=TeamCity%20Build&logo=apple&logoColor=%23999999&style=popout"/></a>
