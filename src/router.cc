@@ -46,13 +46,14 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to) {
 
 sigslot::tasklet<bool> Route::init_session_vrfy() {
     m_logger->log(spdlog::level::info, "Verify session spin-up");
-    DNS::Srv srv_copy = * co_await Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain());
-    auto srv = &srv_copy;
-    if (!srv->error.empty()) {
-        m_logger->log(spdlog::level::warn, "SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv->error);
+    auto res = Config::config().domain(m_domain.domain()).resolver();
+    auto srv = co_await
+    res->SrvLookup(m_domain.domain());
+    if (!srv.error.empty()) {
+        m_logger->log(spdlog::level::warn, "SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv.error);
         co_return false;
     }
-    for (auto & rr : srv->rrs) {
+    for (auto &rr : srv.rrs) {
         m_logger->log(spdlog::level::debug, "Should look for [{}:{}]", rr.hostname, rr.port);
         auto session = Router::session_by_address(rr.hostname, rr.port);
         if (session && !session->xml_stream().auth_ready()) {
@@ -65,13 +66,14 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
             co_return true;
         }
     }
-    for (auto & rr : srv->rrs) {
-        DNS::Address const * addr = co_await Config::config().domain(m_domain.domain()).AddressLookup(rr.hostname);
-        if (!addr->error.empty()) {
-            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, srv->error);
+    for (auto &rr : srv.rrs) {
+        auto addr = co_await
+        res->AddressLookup(rr.hostname);
+        if (!addr.error.empty()) {
+            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, srv.error);
             continue;
         }
-        for (auto & arr : addr->addr) {
+        for (auto &arr : addr.addr) {
             try {
                 m_logger->log(spdlog::level::debug, "Trying [{}:{}]", rr.hostname, rr.port);
                 auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,

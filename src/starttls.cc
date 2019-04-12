@@ -262,7 +262,9 @@ namespace Metre {
         }
         X509_VERIFY_PARAM_set1_host(vpm, route.domain().c_str(), route.domain().size());
         // Add RFC 6125 additional names.
-        auto srv = *co_await Config::config().domain(route.domain()).SrvLookup(route.domain());
+        auto res = Config::config().domain(route.domain()).resolver();
+        auto srv = co_await
+        res->SrvLookup(route.domain());
         if (srv.error.empty()) {
             if (srv.dnssec) {
                 for (auto &rr : srv.rrs) {
@@ -287,7 +289,8 @@ namespace Metre {
         bool dane_present = false;
         if (srv.dnssec) {
             for (auto &rr : srv.rrs) {
-                auto tlsa = *co_await Config::config().domain(route.domain()).TlsaLookup(rr.port, rr.hostname);
+                auto tlsa = co_await
+                res->TlsaLookup(rr.port, rr.hostname);
                 if (!tlsa.dnssec) continue;
                 if (!tlsa.error.empty()) continue;
                 dane_present = true;

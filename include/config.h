@@ -54,13 +54,48 @@ namespace Metre {
     class Config {
     public:
         /* DNS */
-        typedef sigslot::signal<DNS::Srv const *> srv_callback_t;
-        typedef sigslot::signal<DNS::Address const *> addr_callback_t;
-        typedef sigslot::signal<DNS::Tlsa const *> tlsa_callback_t;
+        typedef sigslot::signal<DNS::Srv const &> srv_callback_t;
+        typedef sigslot::signal<DNS::Address const &> addr_callback_t;
+        typedef sigslot::signal<DNS::Tlsa const &> tlsa_callback_t;
+
+        class Domain;
+
+        class Resolver {
+        public:
+            Resolver(Domain const &);
+
+            /* DNS */
+            srv_callback_t &SrvLookup(std::string const &domain);
+
+            addr_callback_t &AddressLookup(std::string const &hostname);
+
+            tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname);
+
+            /* DNS callbacks */
+            void a_lookup_done(int err, struct ub_result *result);
+
+            void srv_lookup_done(int err, struct ub_result *result);
+
+            void tlsa_lookup_done(int err, struct ub_result *result);
+
+        private:
+            Domain const &m_domain;
+            DNS::Address m_current_arec;
+            DNS::Srv m_current_srv;
+            srv_callback_t m_srv_pending;
+            std::map<std::string, addr_callback_t> m_a_pending;
+            std::map<std::string, tlsa_callback_t> m_tlsa_pending;
+        };
 
         class Domain {
             friend class ::Metre::Config;
+
+            friend class ::Metre::Config::Resolver; // TODO : Shouldn't need this.
         public:
+            std::unique_ptr<::Metre::Config::Resolver> resolver() const {
+                return std::make_unique<Resolver>(*this);
+            }
+
             std::string const &domain() const {
                 return m_domain;
             }
@@ -156,20 +191,6 @@ namespace Metre {
 
             std::vector<DNS::Tlsa> const &tlsa() const;
 
-            /* DNS */
-            srv_callback_t &SrvLookup(std::string const &domain) const;
-
-            addr_callback_t &AddressLookup(std::string const &hostname) const;
-
-            tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname) const;
-
-            /* DNS callbacks */
-            void a_lookup_done(int err, struct ub_result *result);
-
-            void srv_lookup_done(int err, struct ub_result *result);
-
-            void tlsa_lookup_done(int err, struct ub_result *result);
-
             Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block,
                    bool auth_pkix, bool auth_dialback, bool auth_host, std::optional<std::string> &&m_auth_secret);
 
@@ -193,10 +214,7 @@ namespace Metre {
                 return m_auth_host;
             }
 
-            spdlog::logger & logger() {
-                if (!m_logger) {
-                    m_logger = Config::config().logger("domain <" + m_domain + ">");
-                }
+            spdlog::logger &logger() const {
                 return *m_logger;
             }
 
@@ -218,15 +236,11 @@ namespace Metre {
             std::string m_cipherlist;
             std::optional<std::string> m_auth_secret;
             struct ssl_ctx_st *m_ssl_ctx = nullptr;
+            // DNS Overrides:
             std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
             std::unique_ptr<DNS::Srv> m_srvrec;
             std::map<std::string, std::unique_ptr<DNS::Tlsa>> m_tlsarecs;
-            mutable DNS::Address m_current_arec;
-            mutable DNS::Srv m_current_srv;
             mutable std::vector<DNS::Tlsa> m_tlsa_all;
-            mutable srv_callback_t m_srv_pending;
-            mutable std::map<std::string, addr_callback_t> m_a_pending;
-            mutable std::map<std::string, tlsa_callback_t> m_tlsa_pending;
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;
             Domain const *m_parent = nullptr;
