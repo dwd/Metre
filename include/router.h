@@ -29,6 +29,7 @@ SOFTWARE.
 #include "defs.h"
 #include "jid.h"
 #include "stanza.h"
+#include "core.h"
 #include "sigslot.h"
 #include "sigslot/tasklet.h"
 
