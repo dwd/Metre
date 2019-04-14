@@ -53,7 +53,7 @@ endif (UNIX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_definitions(-DSIGSLOT_COROUTINES -DSIGSLOT_RESUME_OVERRIDE)
+add_definitions(-DSIGSLOT_COROUTINES)
 
 if(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O0 -g -fcoroutines-ts -stdlib=libc++")
@@ -247,6 +247,8 @@ target_link_libraries(metre PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+
+target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
 if (UNIX)
     target_include_directories(metre PRIVATE
