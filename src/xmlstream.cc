@@ -47,6 +47,21 @@ using namespace Metre;
 
 XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
         : has_slots(), m_session(n), m_dir(dir), m_type(t) {
+    std::ostringstream ss;
+    ss << "NS" << m_session->serial();
+    ss << (dir == INBOUND ? " IN" : " OUT");
+    switch (t) {
+        case S2S:
+            ss << " S2S";
+            break;
+        case COMP:
+            ss << " COMP";
+            break;
+        case X2X:
+            ss << " X2X";
+            break;
+    }
+    m_logger = Config::config().logger(ss.str());
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
@@ -58,6 +73,21 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
                      std::string const &stream_remote)
         : has_slots(), m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local),
           m_stream_remote(stream_remote) {
+    std::ostringstream ss;
+    ss << "NS" << m_session->serial();
+    ss << (dir == INBOUND ? " IN" : " OUT");
+    switch (t) {
+        case S2S:
+            ss << " S2S";
+            break;
+        case COMP:
+            ss << " COMP";
+            break;
+        case X2X:
+            ss << " X2X";
+            break;
+    }
+    m_logger = Config::config().logger(ss.str());
     if (t == X2X) {
         m_type = S2S;
         m_x2x_mode = true;
@@ -69,16 +99,16 @@ void XMLStream::thaw() {
     if (m_in_flight <= 0) return;
     --m_in_flight;
     if (m_in_flight > 0) return;
-    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw");
+    logger().debug("thaw");
     m_session->read();
-    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - thaw done.");
+    logger().debug("thaw done");
 }
 
 size_t XMLStream::process(unsigned char *p, size_t len) {
     using namespace rapidxml;
     if (len == 0) return 0;
     if (frozen()) {
-        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Data arrived when frozen");
+        logger().debug("Data arrived when frozen");
         return 0;
     }
     (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
@@ -97,7 +127,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
     if (spaces) m_session->used(spaces);
     if (len == 0) return spaces;
     std::string buf{reinterpret_cast<char *>(p + spaces), len};
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_session->serial() << " - Got [" << len << "] : " << buf);
+    logger().debug("Got [{}]: {}", len, buf);
     try {
         try {
             if (m_stream_buf.empty()) {
@@ -105,7 +135,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                  * We need to grab the stream open. Do so by parsing the main buffer to find where the open
                  * finishes, and copy that segment over to another buffer. Then reparse, this time properly.
                  */
-                METRE_LOG(Log::DEBUG, "Parsing stream open");
+                logger().debug("Parsing stream open");
                 char *end = m_stream.parse<parse_open_only | parse_fastest>(const_cast<char *>(buf.c_str()));
                 auto test = m_stream.first_node();
                 if (test && test->name()) {
@@ -140,7 +170,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 m_session->used(buf.size());
                 buf.clear();
             } else {
-                throw Metre::not_well_formed(e.what()); // TODO Also, need to freeze processing during pre-TLS lookups.
+                throw Metre::not_well_formed(e.what());
             }
         } catch (std::runtime_error &e) {
             throw Metre::undefined_condition(e.what());
@@ -153,7 +183,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
 
 void XMLStream::handle_exception(Metre::base::xmpp_exception &e) {
     using namespace rapidxml;
-    METRE_LOG(Metre::Log::INFO, "Raising error: " << e.what());
+    logger().info("Raising error: ", e.what());
     xml_document<> d;
     auto error = d.allocate_node(node_element, "stream:error");
     auto specific = d.allocate_node(node_element, e.element_name());
@@ -272,23 +302,23 @@ void XMLStream::stream_open() {
     if (xmlns && xmlns->value()) {
         std::string default_xmlns(xmlns->value(), xmlns->value_size());
         if (default_xmlns == "jabber:client") {
-            METRE_LOG(Metre::Log::DEBUG, "C2S stream detected.");
+            logger().debug("C2S stream detected.");
             m_type = C2S;
         } else if (default_xmlns == "jabber:server") {
-            METRE_LOG(Metre::Log::DEBUG, "S2S stream detected.");
+            logger().debug("S2S stream detected.");
             m_type = S2S;
         } else if (default_xmlns == "jabber:component:accept") {
-            METRE_LOG(Metre::Log::DEBUG, "114 stream detected.");
+            logger().debug("114 stream detected.");
             m_type = COMP;
         } else {
-            METRE_LOG(Metre::Log::WARNING, "Unidentified connection.");
+            logger().warn("Unidentified connection.");
         }
     }
     auto domainat = stream->first_attribute("to");
     std::string domainname;
     if (domainat && domainat->value()) {
         domainname.assign(domainat->value(), domainat->value_size());
-        METRE_LOG(Metre::Log::DEBUG, "Requested contact domain {" << domainname << "}");
+        logger().debug("Requested contact domain [{}]", domainname);
     } else if (m_dir == OUTBOUND) {
         domainname = Jid(m_stream_local).domain();
     } else {
@@ -300,11 +330,11 @@ void XMLStream::stream_open() {
         if (m_dir == OUTBOUND) {
             if (from != m_stream_remote) {
                 // throw Metre::host_unknown("You're not who I was expecting.");
-                METRE_LOG(Log::WARNING, "Remote server responded with " << from << ", not " << m_stream_remote);
+                logger().warn("Remote server responded with {}, not {}", from, m_stream_remote);
                 from = m_stream_remote;
             }
         }
-        METRE_LOG(Metre::Log::DEBUG, "Requesting domain is " << from);
+        logger().debug("Requesting domain is {}", from);
         check_domain_pair(from, domainname);
     }
     if (!stream->xmlns()) {
@@ -426,7 +456,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
     if (xmlns == "http://etherx.jabber.org/streams") {
         std::string elname(element->name(), element->name_size());
         if (elname == "features") {
-            METRE_LOG(Metre::Log::DEBUG, "It's features!");
+            logger().debug("It's features!");
             for (;;) {
                 rapidxml::xml_node<> *feature_offer = nullptr;
                 Feature::Type feature_type = Feature::Type::FEAT_NONE;
@@ -434,10 +464,10 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 for (auto feat_ad = element->first_node(); feat_ad; feat_ad = feat_ad->next_sibling()) {
                     std::string offer_name(feat_ad->name(), feat_ad->name_size());
                     std::string offer_ns(feat_ad->xmlns(), feat_ad->xmlns_size());
-                    METRE_LOG(Metre::Log::DEBUG, "Got feature offer: {" << offer_ns << "}" << offer_name);
+                    logger().debug("Got feature offer: {{}}{}", offer_ns, offer_name);
                     if (m_features.find(offer_ns) != m_features.end()) continue; // Already negotiated.
                     Feature::Type offer_type = Feature::type(offer_ns, *this);
-                    METRE_LOG(Metre::Log::DEBUG, "Offer type seems to be " << offer_type);
+                    logger().debug("Offer type seems to be {}", offer_type);
                     switch (offer_type) {
                         case Feature::Type::FEAT_NONE:
                             continue;
@@ -451,14 +481,13 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                             /* pass */;
                     }
                     if (feature_type < offer_type) {
-                        METRE_LOG(Metre::Log::DEBUG,
-                                  "I'll keep {" << offer_ns << "} instead of {" << feature_xmlns << "}");
+                        logger().debug("I'll keep [{}] instead of [{}]", offer_ns, feature_xmlns);
                         feature_offer = feat_ad;
                         feature_xmlns = offer_ns;
                         feature_type = offer_type;
                     }
                 }
-                METRE_LOG(Metre::Log::DEBUG, "Processing feature {" << feature_xmlns << "}");
+                logger().debug("Processing feature [{}]", feature_xmlns);
                 if (feature_type == Feature::Type::FEAT_NONE) {
                     if (m_features.find("urn:xmpp:features:dialback") == m_features.end()) {
                         auto so = m_stream.first_node();
@@ -478,27 +507,27 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 assert(f.get());
                 bool escape = f->negotiate(feature_offer);
                 m_features.emplace(feature_xmlns, std::move(f));
-                METRE_LOG(Metre::Log::DEBUG, "Feature negotiated, stream restart is " << escape);
+                logger().debug("Feature negotiated, stream restart is {}", escape);
                 if (escape) return; // We've done a stream restart or something.
             }
         } else if (elname == "error") {
-            METRE_LOG(Metre::Log::DEBUG, "It's a stream error!");
-            throw std::runtime_error("Actually, I have a bag of shite for error handling.");
+            logger().debug("It's a stream error!");
+            throw std::runtime_error("Actually, I don't do much error handling.");
         } else {
-            METRE_LOG(Metre::Log::DEBUG, "It's something weird.");
+            logger().debug("It's something weird.");
             throw Metre::unsupported_stanza_type("Unknown stream element");
         }
     } else {
         auto fit = m_features.find(xmlns);
         Feature *f = nullptr;
-        METRE_LOG(Metre::Log::DEBUG, "Hunting handling feature for {" << xmlns << "}");
+        logger().debug("Hunting handling feature for [{}]", xmlns);
         if (fit != m_features.end()) {
             f = (*fit).second.get();
         } else {
             std::unique_ptr<Feature> feat(Feature::feature(xmlns, *this));
             f = feat.get();
             if (f) m_features.emplace(xmlns, std::move(feat));
-            METRE_LOG(Metre::Log::DEBUG, "Created new feature << " << f);
+            logger().debug("Created new feature {}", xmlns);
         }
 
         bool handled = false;
@@ -510,7 +539,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 handled = task->get();
             }
         }
-        METRE_LOG(Metre::Log::DEBUG, "Handled: " << handled);
+        logger().debug("Handled: ", handled);
         if (!handled) {
             throw Metre::unsupported_stanza_type();
         }
@@ -603,11 +632,8 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     if (current < state) {
         m[key] = state;
         if (state == XMLStream::AUTHORIZED) {
-            METRE_LOG(Metre::Log::INFO,
-                      "NS" << m_session->serial() << " - Authorized "
-                           << (dir == INBOUND ? "INBOUND" : "OUTBOUND")
-                           << " session local:" << local << " remote:"
-                           << remote);
+            logger().info("Authorized {} session local: {} remote: {}", (dir == INBOUND ? "INBOUND" : "OUTBOUND"),
+                          local, remote);
             if (m_bidi && dir == INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
             onAuthenticated.emit(*this);
         }
@@ -637,7 +663,7 @@ sigslot::tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
 }
 
 void XMLStream::task_completed() {
-    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task completed, currently " << m_tasks.size() << " running.");
+    logger().debug("Task completed, currently {} running.", m_tasks.size());
     Router::defer([this]() {
         m_tasks.remove_if([this](auto & task) {
             if(!task->running()) {
@@ -655,15 +681,15 @@ void XMLStream::task_completed() {
 std::shared_ptr<sigslot::tasklet<bool>> XMLStream::start_task(std::string const & s, sigslot::tasklet<bool> &&otask) {
     auto task = std::make_shared<sigslot::tasklet<bool>>(std::move(otask));
     task->set_name(s);
-    METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task " << s << " starting, currently " << m_tasks.size() << " running.");
+    logger().debug("Task {} starting, currently {} running.", s, m_tasks.size());
     task->start();
     if (!task->running()) {
-        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task " << s << " immediate stop, currently " << m_tasks.size() << " running.");
+        logger().debug("Task {} immediate stop, currently {} running.", s, m_tasks.size());
     } else {
         freeze();
         task->complete().connect(this, &XMLStream::task_completed);
         m_tasks.emplace_back(task);
-        METRE_LOG(Log::DEBUG, "NS" << m_session->serial() << " - Task " << s << " paused, now " << m_tasks.size() << " running.");
+        logger().debug("Task {} paused, currently {} running.", s, m_tasks.size());
     }
     return task;
 }

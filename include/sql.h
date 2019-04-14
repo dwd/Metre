@@ -7,7 +7,7 @@
 
 #include <functional>
 #include <memory>
-#include <sigslot/sigslot.h>
+#include "sigslot.h"
 #include <postgresql/libpq-fe.h>
 
 namespace Metre {

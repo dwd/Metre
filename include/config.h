@@ -28,6 +28,7 @@ SOFTWARE.
 
 #include <string>
 #include <map>
+#include <unordered_set>
 #include <optional>
 #include <memory>
 #include <list>
@@ -65,6 +66,8 @@ namespace Metre {
         public:
             Resolver(Domain const &);
 
+            ~Resolver();
+
             /* DNS */
             srv_callback_t &SrvLookup(std::string const &domain);
 
@@ -91,6 +94,7 @@ namespace Metre {
             std::map<std::string, addr_callback_t> m_a_pending;
             std::map<std::string, tlsa_callback_t> m_tlsa_pending;
             std::shared_ptr<spdlog::logger> m_logger;
+            std::unordered_set<int> m_queries;
         };
 
         class Domain {

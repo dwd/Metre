@@ -42,7 +42,10 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
         : m_serial(serial), m_bev(nullptr),
           m_xml_stream(std::make_unique<XMLStream>(this, INBOUND, listen->session_type)) {
     bufferevent(bev);
-    METRE_LOG(Log::INFO, "New INBOUND session NS" << serial);
+    std::ostringstream ss;
+    ss << "NS" << serial << " IN " << listen->name;
+    m_logger = Config::config().logger(ss.str());
+    m_logger->info("New INBOUND session");
     if (listen->session_type == X2X) {
         m_xml_stream->remote_domain(listen->remote_domain);
         m_xml_stream->local_domain(listen->local_domain);
@@ -68,7 +71,10 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::
         : m_serial(serial), m_bev(nullptr),
           m_xml_stream(std::make_unique<XMLStream>(this, OUTBOUND, stype, stream_from, stream_to)) {
     bufferevent(bev);
-    METRE_LOG(Log::INFO, "New OUTBOUND session NS" << serial);
+    std::ostringstream ss;
+    ss << "NS" << serial << " OUT";
+    m_logger = Config::config().logger(ss.str());
+    m_logger->info("New OUTBOUND session");
     if (tls_mode == IMMEDIATE) {
         start_tls(*m_xml_stream, false);
     }
@@ -125,7 +131,7 @@ bool NetSession::drain() {
             m_xml_stream->process(evbuffer_pullup(buf, -1), len);
         } else {
             if (len > 0)
-            METRE_LOG(Metre::Log::WARNING, "NS" << m_serial << " - Stuff left after close: {" << len << "}");
+                m_logger->warn("Stuff left after close: {}", len);
             return true;
         }
     }
@@ -146,7 +152,7 @@ void NetSession::send(rapidxml::xml_document<> &d) {
     if (!buf) {
         return;
     }
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << tmp);
+    m_logger->debug("Send: {}", tmp);
     evbuffer_add(buf, tmp.data(),
                  tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
 }
@@ -154,7 +160,7 @@ void NetSession::send(rapidxml::xml_document<> &d) {
 void NetSession::send(std::string const &s) {
     if (!m_bev) return;
     struct evbuffer *buf = bufferevent_get_output(m_bev);
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Send: " << s);
+    m_logger->debug("Send: {}", s);
     if (!buf) {
         return;
     }
@@ -168,15 +174,15 @@ void NetSession::send(const char *p) {
 }
 
 void NetSession::read() {
+    m_logger->debug("Read.");
     if (drain()) {
-        METRE_LOG(Log::INFO, "NS" << m_serial << " - Closing during read.");
+        m_logger->info("Closing during read.");
         onClosed.emit(*this);
     }
 }
 
 void NetSession::read_cb(struct bufferevent *, void *arg) {
     NetSession &ns = *reinterpret_cast<NetSession *>(arg);
-    METRE_LOG(Metre::Log::DEBUG, "NS" << ns.serial() << " - Read.");
     ns.read();
 }
 
@@ -188,12 +194,12 @@ void NetSession::bev_closed() {
         });
         return;
     }*/
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Closed.");
+    m_logger->debug("Closed.");
     onClosed.emit(*this);
 }
 
 void NetSession::bev_connected() {
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Connected.");
+    m_logger->debug("Connected.");
     onConnected.emit(*this);
     m_xml_stream->restart();
 }
@@ -203,23 +209,22 @@ void NetSession::bev_connected() {
 
 void NetSession::event_cb(struct bufferevent *b, short events, void *arg) {
     NetSession &ns = *reinterpret_cast<NetSession *>(arg);
-    METRE_LOG(Metre::Log::DEBUG, "NS" << ns.serial() << " - Events have happened.");
+    ns.m_logger->debug("Events have happened.");
     if (b != ns.m_bev) {
-        METRE_LOG(Log::DEBUG, "Not my BEV");
+        ns.m_logger->debug("No my BEV");
         return;
     }
     if (events & BEV_EVENT_EOF) {
-        METRE_LOG(Metre::Log::DEBUG, "NS" << ns.serial() << " - BEV EOF.");
+        ns.m_logger->debug("BEV EOF");
         ns.bev_closed();
     } else if (events & BEV_EVENT_TIMEOUT) {
-        METRE_LOG(Log::INFO, "NS" << ns.serial() << " timed out, closing");
+        ns.m_logger->info("Timed out, closing");
         ns.bev_closed();
     } else if (events & BEV_EVENT_ERROR) {
-        METRE_LOG(Metre::Log::DEBUG,
-                  "NS" << ns.serial() << " - BEV Error " << events << " : " << strerror(EVUTIL_SOCKET_ERROR()));
+        ns.m_logger->info("BEV Error {}: {}", events, strerror(EVUTIL_SOCKET_ERROR()));
         while (unsigned long ssl_err = bufferevent_get_openssl_error(b)) {
             char buf[1024];
-            METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, buf));
+            ns.m_logger->info("OpenSSL: {}", ERR_error_string(ssl_err, buf));
         }
         ns.bev_closed();
     } else if (events & BEV_EVENT_CONNECTED) {
@@ -234,7 +239,7 @@ void NetSession::close() {
         });
         return;
     }*/
-    METRE_LOG(Metre::Log::DEBUG, "NS" << m_serial << " - Closing.");
+    m_logger->debug("Closing (close called)");
     if (!m_bev) return;
     bufferevent_flush(m_bev, EV_WRITE, BEV_FINISHED);
     onClosed.emit(*this);

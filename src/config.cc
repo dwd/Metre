@@ -448,7 +448,7 @@ FILTER_RESULT Config::Domain::filter(SESSION_DIRECTION dir, Stanza &s) const {
 
 
 Config::Domain::~Domain() {
-    METRE_LOG(Log::INFO, "Config::Domain::~Domain() called for " << m_domain);
+    logger().warn("Domain {} destroyed", m_domain);
     if (m_ssl_ctx) {
         SSL_CTX_free(m_ssl_ctx);
         m_ssl_ctx = nullptr;
@@ -934,7 +934,7 @@ rapidxml::xml_node<> *Config::Domain::to_xml(rapidxml::xml_document<> &doc) cons
     }
     {
         SSL_CTX *ctx = ssl_ctx();
-        if (!ctx) {
+        if (!ctx and m_parent) {
             ctx = m_parent->ssl_ctx();
             d->append_node(doc.allocate_node(node_comment, nullptr, "X.509 settings copied from parent domain"));
         }
@@ -1231,6 +1231,11 @@ std::shared_ptr<spdlog::logger> Config::logger(std::string const & logger_name) 
  */
 
 namespace {
+    // This holds a set of live resolver pointers.
+    // If a result comes in for an old one, we can therefore ignore it.
+    // Yeah, this is a bit weird.
+    std::unordered_set<Config::Resolver const *> s_resolvers;
+
     class UBResult {
         /* Quick guard class. */
     public:
@@ -1243,17 +1248,26 @@ namespace {
 
     void srv_lookup_done_cb(void *x, int err, struct ub_result *result) {
         UBResult r{result};
-        reinterpret_cast<Config::Resolver *>(x)->srv_lookup_done(err, result);
+        METRE_LOG(Log::DEBUG, "DNS result for resolver " << x);
+        auto resolver = reinterpret_cast<Config::Resolver *>(x);
+        if (s_resolvers.find(resolver) == s_resolvers.end()) return;
+        resolver->srv_lookup_done(err, result);
     }
 
     void a_lookup_done_cb(void *x, int err, struct ub_result *result) {
         UBResult r{result};
-        reinterpret_cast<Config::Resolver *>(x)->a_lookup_done(err, result);
+        METRE_LOG(Log::DEBUG, "DNS result for resolver " << x);
+        auto resolver = reinterpret_cast<Config::Resolver *>(x);
+        if (s_resolvers.find(resolver) == s_resolvers.end()) return;
+        resolver->a_lookup_done(err, result);
     }
 
     void tlsa_lookup_done_cb(void *x, int err, struct ub_result *result) {
         UBResult r{result};
-        reinterpret_cast<Config::Resolver *>(x)->tlsa_lookup_done(err, result);
+        METRE_LOG(Log::DEBUG, "DNS result for resolver " << x);
+        auto resolver = reinterpret_cast<Config::Resolver *>(x);
+        if (s_resolvers.find(resolver) == s_resolvers.end()) return;
+        resolver->tlsa_lookup_done(err, result);
     }
 }
 
@@ -1327,6 +1341,8 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
 
 Config::Resolver::Resolver(Domain const &d) : m_domain(d) {
     m_logger = Config::config().logger("resolver <" + d.domain() + ">");
+    METRE_LOG(Log::DEBUG, "New resolver " << this);
+    s_resolvers.insert(this);
 }
 
 void Config::Resolver::tlsa_lookup_done(int err, struct ub_result *result) {
@@ -1580,19 +1596,22 @@ void Config::Resolver::a_lookup_done(int err, struct ub_result *result) {
 }
 
 namespace {
-    void resolve_async(Config::Resolver const *resolver, std::string const &record, int rrtype, ub_callback_type cb) {
+    int resolve_async(Config::Resolver const *resolver, std::string const &record, int rrtype, ub_callback_type cb) {
         int retval;
+        int async_id;
         if ((retval = ub_resolve_async(Config::config().ub_ctx(), const_cast<char *>(record.c_str()), rrtype, 1,
-                                       const_cast<void *>(reinterpret_cast<const void *>(resolver)), cb, NULL)) < 0) {
+                                       const_cast<void *>(reinterpret_cast<const void *>(resolver)), cb, &async_id)) <
+            0) {
             throw std::runtime_error(std::string("While resolving ") + record + ": " + ub_strerror(retval));
         }
+        return async_id;
     }
 }
 
 Config::addr_callback_t &Config::Resolver::AddressLookup(std::string const &ihostname) {
     std::string hostname = toASCII(ihostname);
     logger().info("A/AAAA lookup for {}", hostname);
-    for (Domain const *override = &m_domain; override; override->parent()) {
+    for (Domain const *override = &m_domain; override; override = override->parent()) {
         if (!override->address_overrides().empty()) {
             logger().debug("Found overrides at {}", override->domain());
             auto it = override->address_overrides().find(hostname);
@@ -1609,8 +1628,8 @@ Config::addr_callback_t &Config::Resolver::AddressLookup(std::string const &ihos
     m_current_arec.hostname = "";
     m_current_arec.addr.clear();
     m_current_arec.ipv6 = m_current_arec.ipv4 = false;
-    resolve_async(this, hostname, 28, a_lookup_done_cb);
-    resolve_async(this, hostname, 1, a_lookup_done_cb);
+    m_queries.insert(resolve_async(this, hostname, 28, a_lookup_done_cb));
+    m_queries.insert(resolve_async(this, hostname, 1, a_lookup_done_cb));
     return m_a_pending[hostname];
 }
 
@@ -1618,7 +1637,7 @@ Config::srv_callback_t &Config::Resolver::SrvLookup(std::string const &base_doma
     std::string domain = toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
     logger().info("SRV lookup for {}", domain);
-    for (Domain const *override = &m_domain; override; override->parent()) {
+    for (Domain const *override = &m_domain; override; override = override->parent()) {
         if (override->srv_override()) {
             logger().debug("Found override at {}", override->domain());
             Router::defer([override, this]() {
@@ -1645,8 +1664,8 @@ Config::srv_callback_t &Config::Resolver::SrvLookup(std::string const &base_doma
         m_current_srv.rrs.clear();
         m_current_srv.dnssec = true;
         m_current_srv.error.clear();
-        resolve_async(this, domain, 33, srv_lookup_done_cb);
-        resolve_async(this, domains, 33, srv_lookup_done_cb);
+        m_queries.insert(resolve_async(this, domain, 33, srv_lookup_done_cb));
+        m_queries.insert(resolve_async(this, domains, 33, srv_lookup_done_cb));
     }
     return m_srv_pending;
 }
@@ -1656,7 +1675,7 @@ Config::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port, std::
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = toASCII(out.str());
     logger().info("TLSA lookup for {}", domain);
-    for (Domain const *override = &m_domain; override; override->parent()) {
+    for (Domain const *override = &m_domain; override; override = override->parent()) {
         if (!override->tlsa_overrides().empty()) {
             logger().debug("Found overrides at {}", override->domain());
             auto it = override->tlsa_overrides().find(domain);
@@ -1678,7 +1697,17 @@ Config::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port, std::
             cb.emit(r);
         });
     } else {
-        resolve_async(this, domain, 52, tlsa_lookup_done_cb);
+        m_queries.insert(resolve_async(this, domain, 52, tlsa_lookup_done_cb));
     }
     return m_tlsa_pending[domain];
+}
+
+Config::Resolver::~Resolver() {
+    logger().debug("Shutting down...");
+    for (auto async_id : m_queries) {
+        ub_cancel(Config::config().ub_ctx(), async_id);
+    }
+    s_resolvers.erase(this);
+    logger().debug("Done.");
+    METRE_LOG(Log::DEBUG, "Deleted resolver " << this);
 }

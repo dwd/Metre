@@ -60,6 +60,8 @@ namespace Metre {
     class XMLStream;
 
     class Route;
+
+    class NetSession;
 }
 
 #ifndef SIGSLOT_PURE_ISO

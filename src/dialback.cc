@@ -68,7 +68,7 @@ namespace {
         bool negotiate(rapidxml::xml_node<> *) override { // Note that this offer, unusually, can be nullptr.
             if (!m_stream.secured() && (Config::config().domain(m_stream.local_domain()).require_tls() ||
                                         Config::config().domain(m_stream.remote_domain()).require_tls())) {
-                METRE_LOG(Metre::Log::DEBUG, "Supressed dialback due to missing required TLS");
+                m_stream.logger().info("Supressed dialback due to missing required TLS");
                 return false;
             }
             m_stream.set_auth_ready();
@@ -165,12 +165,12 @@ namespace {
         void verify(DB::Verify const &v) {
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
             DB::Type validity = DB::INVALID;
-            METRE_LOG(Log::DEBUG, "Handling db:verify");
+            m_stream.logger().debug("Handling db:verify");
             if (session) {
-                METRE_LOG(Log::DEBUG, "[NS" << session->serial() << "] session found.");
+                m_stream.logger().debug("Verify [NS{}] session found.", session->serial());
                 if (session->xml_stream().s2s_auth_pair(v.to().domain(), v.from().domain(), OUTBOUND) >=
                     XMLStream::REQUESTED) {
-                    METRE_LOG(Log::DEBUG, "[NS" << session->serial() << "] Auth State is correct.");
+                    m_stream.logger().debug("Verify [NS{}] Auth State is correct.", session->serial());
                     std::string expected = Config::config().dialback_key(*v.id(), v.to().domain(), v.from().domain());
                     if (v.key() == expected) validity = DB::VALID;
                 }

@@ -115,7 +115,7 @@ namespace {
             if ((name == "starttls" && m_stream.direction() == INBOUND) ||
                 (name == "proceed" && m_stream.direction() == OUTBOUND)) {
                 if (!m_stream.remote_domain().empty()) {
-                    METRE_LOG(Metre::Log::DEBUG, "Negotiating TLS");
+                    m_stream.logger().debug("Negotiating TLS");
                     start_tls(m_stream, true);
                     co_return true;
                 } else if (m_stream.type() == COMP) {
@@ -198,13 +198,13 @@ namespace Metre {
         if (!ssl) co_return false; // No TLS.
         X509 *cert = SSL_get_peer_certificate(ssl);
         if (!cert) {
-            METRE_LOG(Metre::Log::INFO, "No cert, so no auth");
+            stream.logger().info("verify_tls: No cert, so no auth");
             co_return false;
         }
         if (X509_V_OK != SSL_get_verify_result(ssl)) {
-            METRE_LOG(Metre::Log::INFO, "Cert failed verification but rechecking anyway.");
+            stream.logger().info("verify_tls: Cert failed verification but rechecking anyway.");
         } // TLS failed basic verification.
-        METRE_LOG(Metre::Log::DEBUG, "[Re]verifying TLS for " + route.domain());
+        stream.logger().debug("verify_tls: [Re]verifying TLS for {}", route.domain());
         STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
         SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
@@ -235,7 +235,7 @@ namespace Metre {
                                     ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
                                     std::string uristr{reinterpret_cast<char *>(uri->data),
                                                        static_cast<std::size_t>(uri->length)};
-                                    METRE_LOG(Metre::Log::INFO, "Fetching CRL - " << uristr);
+                                    stream.logger().info("verify_tls: Fetching CRL - {}", uristr);
                                     Http::crl(uristr);
                                     // We don't await here, just get them going in parallel.
                                 }
@@ -252,7 +252,7 @@ namespace Metre {
                 int code;
                 X509_CRL *crl;
                 std::tie(uristr, code, crl) = co_await Http::crl(uri);
-                METRE_LOG(Metre::Log::INFO, "Fetched CRL - " << uristr << ", with code " << code);
+                stream.logger().info("verify_tls: Fetched CRL - {}, with code {}", uristr, code);
                 if (!X509_STORE_add_crl(store, crl)) {
                     // Erm. Whoops? Probably doesn't matter.
                     ERR_clear_error();
@@ -280,8 +280,8 @@ namespace Metre {
             auto error = X509_STORE_CTX_get_error(st);
             auto depth = X509_STORE_CTX_get_error_depth(st);
             char buf[1024];
-            METRE_LOG(Log::WARNING,
-                      "Chain failed validation: " << ERR_error_string(error, buf) << " (at " << depth << ")");
+            stream.logger().warn("verify_tls: Chain failed validation: {} (at depth {})", ERR_error_string(error, buf),
+                                 depth);
         }
         STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
         // If we have DANE records, iterate through them to find one that works.
@@ -329,9 +329,9 @@ namespace Metre {
         tlsa_done:
         sk_X509_pop_free(verified, &X509_free);
         X509_STORE_CTX_free(st);
-        METRE_LOG(Metre::Log::INFO, "[Re]verify: DANE " << (dane_present ? "Present" : "Not present") << ", checked "
-                                                        << (dane_ok ? "OK" : "Not OK") << ", PKIX "
-                                                        << (valid ? "Passed" : "Failed"));
+        stream.logger().info("verify_tls: [Re]verify: DANE {}, checked {}, PKIX {}",
+                             (dane_present ? "Present" : "Not present"), (dane_ok ? "OK" : "Not OK"),
+                             (valid ? "Passed" : "Failed"));
         co_return dane_present ? dane_ok : valid;
     }
 

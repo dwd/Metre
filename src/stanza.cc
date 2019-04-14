@@ -59,7 +59,6 @@ void Stanza::freeze() {
         return;
     }
     m_payload_str.assign(m_payload, m_payload_l);
-    METRE_LOG(Metre::Log::DEBUG, "Frozen stanza: " + m_payload_str);
     m_payload = m_payload_str.data();
     m_node = nullptr;
 }

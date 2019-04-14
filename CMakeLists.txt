@@ -53,7 +53,7 @@ endif (UNIX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_definitions(-DSIGSLOT_COROUTINES)
+add_definitions(-DSIGSLOT_COROUTINES -DSIGSLOT_RESUME_OVERRIDE)
 
 if(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O0 -g -fcoroutines-ts -stdlib=libc++")
@@ -217,7 +217,7 @@ set(SOURCE_FILES
     src/stanza.cc
     src/starttls.cc
     src/xmlstream.cc
-)
+        include/sigslot.h include/core.h)
 
 if(UNIX)
     list(APPEND SOURCE_FILES src/linuxmain.cc)

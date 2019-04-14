@@ -31,7 +31,7 @@ SOFTWARE.
 #include <optional>
 #include <memory>
 #include <vector>
-#include "sigslot/sigslot.h"
+#include "sigslot.h"
 #include "rapidxml.hpp"
 #include "feature.h"
 #include "xmppexcept.h"
@@ -83,12 +83,17 @@ namespace Metre {
         std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
         std::list<std::shared_ptr<sigslot::tasklet<bool>>> m_tasks;
         int m_in_flight = 0; // Tasks in flight.
+        std::shared_ptr<spdlog::logger> m_logger;
 
     public:
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
 
         XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type, std::string const &stream_from,
                   std::string const &stream_to);
+
+        spdlog::logger &logger() const {
+            return *m_logger;
+        }
 
         size_t process(unsigned char *, size_t);
 
