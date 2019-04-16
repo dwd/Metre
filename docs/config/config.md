@@ -97,7 +97,7 @@ This defaults to the same as the Runtime Directory.
 The `dnssec` element contains a full path to the DNSSEC Key File used to initialize DNS SEC support. This is in zone format, and will need to be obtained securely. The format will be the same as the output of `dig . DNSKEY` - but you'll need to ensure the contents are properly verified.
 
 ```xml
-<dnssec>/etc/metre/keys
+<dnssec>/etc/metre/keys</dnssec>
 ``` 
 
 The default is to disable DNSSEC.
@@ -106,7 +106,11 @@ The default is to disable DNSSEC.
 
 By default, Metre will fetch CRLs given by the CRL Distribution Point attribute in certificates. These will then be used to validate certificate status.
 
-Setting this to `false` disables all CRL fetching (and, by inference, all certificate status checks).
+Setting the `fetch-crls` element's value to `false` disables all CRL fetching (and, by inference, all certificate status checks).
+
+```xml
+<fetch-crls>false</fetch-crls>
+```
 
 #### Filter Global Configuration
 
@@ -119,6 +123,14 @@ Peer domains are configured within two different sections - `local` and `remote`
 A domain defined in local defaults to a transport type of `internal`, and will respond to XEP-0199 "Ping" requests.
 
 The remainder of this section assumes that the section is `remote`.
+
+```xml
+<remote>
+  <domain name="test.example">
+   <!-- ... -->
+  </domain>
+</remote>
+```
 
 #### Domain Search
 
@@ -135,9 +147,30 @@ A normal domain block uses the `domain` element with a `name` attribute specifyi
 
 Otherwise, both `domain` and `any` share the same attributes and child elements.
 
+```xml
+<remote>
+  <any>
+    <!-- Defaults and catch-all -->
+  </any>
+  <domain name="explicit.example">
+    <!-- Only for this domain. -->  
+  </domain>
+  <domain name="*.explicit.example">
+    <!-- For all subdomains. -->
+  </domain>
+</remote>
+```
+
 #### Blocking Communication
 
 A `block` attribute specifies whether Metre should allow any communcation to or from the domain. The default is to allow communication to any domain for which there is a block in the configuration file (including `<any/>`), and deny communication to any other domain.
+
+```xml
+<remote>
+  <any block="false"/><!-- Don't block domains by default -->
+  <domain name="evil.example" block="true"/><!-- Block this one, it's clearly evil. -->
+</remote>
+```
 
 #### Forwarding Communication
 
@@ -148,12 +181,24 @@ Domains that have the `forward` attribute set will have communications forwarded
 
 Forward defaults to `false` for most domains, however a domain with a transport type of `114` will default to forwarding.
 
+```xml
+<remote>
+  <any/>
+  <domain name="Internal.example" forward="true"/><!-- Allow anyone to reach this via Metre -->
+</remote>
+```
+
 #### Timeouts
 
 There are two timeouts, both controlled by child elements of a domain:
 
 * `connect-timeout` is the timeout for attempts to connect to a remote host for this domain. This timeout includes DNS lookups as well as TCP connections and initial XMLStream setup.
 * `stanza-timeout` is the total timeout for a stanza request. This may include multiple connection attempts.
+
+```xml
+<connect-timeout>15</connect-timeout>
+<stanza-timeout>60</stanza-timeout>
+```
 
 #### Transports
 
@@ -226,6 +271,15 @@ Within the `dns` element are any overrides required:
 * `host` elements hold A and AAAA lookups. The `a` attribute holds either an IPv4 address in "Dotted Quad" notation or an IPv6 address in normal notation.
 * `tlsa` elements hold TLSA lookups. These hold information about expected TLS certificates from the peer.
 
+```xml
+<dns dnssec="true">
+  <srv host="other.host.example"/><!-- Everything else defaults -->
+  <srv host="other.host.example" tls="true"/><!-- Support XEP-0368 at well -->
+  <host name="other.host.example" a="::1"/><!-- Loopback IPv6 -->
+  <host name="other.host.example" a="127.0.0.1"/><!-- Loopback IPv4 -->
+</dns>
+```
+
 TLSA records follow RFC 6698, which should be consulted for detailed behaviour, but an overview is that there is a certificate usage, match type, and selector, and the data to match.
 
 We hold the certificate usage field in the attribute `certusage`. The values, taken from the RFC, are:
@@ -245,6 +299,22 @@ Finally, the value of the element is one of:
 * A hex-notation hash value, for the hash `matchtype`s.
 * A base64-encoded DER value of the data for any `matchtype` of `Full`. 
 * For `Full` matches of `FullCert`, this can additionally be a filename.
+
+Combining TLSA records has the same effect as they would have in DNS - any matching TLSA record is sufficient on its own.
+
+```xml
+<dns>
+    <tlsa hostname="other.host.example" port="5269"
+       certusage="TrustAnchorAssertion"
+       matchtype="Full"
+       selector="FullCert">/etc/metre/foreign-private-ca.der</tlsa><!-- Could have base64 here instead -->
+   <tlsa hostname="other.host.example" port="5270"
+       certusage="CertConstraint"
+       matchtype="Sha256"
+       selector="SubjectPublicKeyInfo">12:34:56:78:90:ab:cd:ef</tlsa><!-- Needn't have the colons -->
+</dns>
+
+```
 
 #### Domain Filters
 
