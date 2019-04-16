@@ -76,6 +76,7 @@ namespace {
         }
 
         sigslot::tasklet<bool> handle(rapidxml::xml_node<> *) override {
+            METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             throw Metre::unsupported_stanza_type("Wrong namespace for dialback.");
         }
     };
@@ -206,6 +207,7 @@ namespace {
         }
 
         sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+            METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string stanza = node->name();

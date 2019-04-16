@@ -183,7 +183,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
 
 void XMLStream::handle_exception(Metre::base::xmpp_exception &e) {
     using namespace rapidxml;
-    logger().info("Raising error: ", e.what());
+    logger().error("Raising error: [{}]", e.what());
     xml_document<> d;
     auto error = d.allocate_node(node_element, "stream:error");
     auto specific = d.allocate_node(node_element, e.element_name());
@@ -464,10 +464,10 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 for (auto feat_ad = element->first_node(); feat_ad; feat_ad = feat_ad->next_sibling()) {
                     std::string offer_name(feat_ad->name(), feat_ad->name_size());
                     std::string offer_ns(feat_ad->xmlns(), feat_ad->xmlns_size());
-                    logger().debug("Got feature offer: {{}}{}", offer_ns, offer_name);
+                    logger().debug("Got feature offer: [{}:{}]", offer_ns, offer_name);
                     if (m_features.find(offer_ns) != m_features.end()) continue; // Already negotiated.
                     Feature::Type offer_type = Feature::type(offer_ns, *this);
-                    logger().debug("Offer type seems to be {}", offer_type);
+                    logger().debug("Offer type seems to be [{}]", offer_type);
                     switch (offer_type) {
                         case Feature::Type::FEAT_NONE:
                             continue;
@@ -507,7 +507,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 assert(f.get());
                 bool escape = f->negotiate(feature_offer);
                 m_features.emplace(feature_xmlns, std::move(f));
-                logger().debug("Feature negotiated, stream restart is {}", escape);
+                logger().debug("Feature negotiated, stream restart is [{}]", escape);
                 if (escape) return; // We've done a stream restart or something.
             }
         } else if (elname == "error") {
@@ -527,7 +527,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
             std::unique_ptr<Feature> feat(Feature::feature(xmlns, *this));
             f = feat.get();
             if (f) m_features.emplace(xmlns, std::move(feat));
-            logger().debug("Created new feature {}", xmlns);
+            logger().debug("Created new feature [{}]", xmlns);
         }
 
         bool handled = false;
@@ -539,7 +539,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 handled = task->get();
             }
         }
-        logger().debug("Handled: ", handled);
+        logger().debug("Handled: [{}]", handled);
         if (!handled) {
             throw Metre::unsupported_stanza_type();
         }
@@ -663,7 +663,7 @@ sigslot::tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
 }
 
 void XMLStream::task_completed() {
-    logger().debug("Task completed, currently {} running.", m_tasks.size());
+    logger().debug("Task completed, currently [{}] running.", m_tasks.size());
     Router::defer([this]() {
         m_tasks.remove_if([this](auto & task) {
             if(!task->running()) {
@@ -681,15 +681,15 @@ void XMLStream::task_completed() {
 std::shared_ptr<sigslot::tasklet<bool>> XMLStream::start_task(std::string const & s, sigslot::tasklet<bool> &&otask) {
     auto task = std::make_shared<sigslot::tasklet<bool>>(std::move(otask));
     task->set_name(s);
-    logger().debug("Task {} starting, currently {} running.", s, m_tasks.size());
+    logger().debug("Task [{}] starting, currently [{}] running.", s, m_tasks.size());
     task->start();
     if (!task->running()) {
-        logger().debug("Task {} immediate stop, currently {} running.", s, m_tasks.size());
+        logger().debug("Task [{}] immediate stop, currently [{}] running.", s, m_tasks.size());
     } else {
         freeze();
         task->complete().connect(this, &XMLStream::task_completed);
         m_tasks.emplace_back(task);
-        logger().debug("Task {} paused, currently {} running.", s, m_tasks.size());
+        logger().debug("Task [{}] paused, currently [{}] running.", s, m_tasks.size());
     }
     return task;
 }

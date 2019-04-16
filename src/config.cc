@@ -1472,7 +1472,7 @@ void Config::Resolver::srv_lookup_done(int err, struct ub_result *result) {
                 rr.hostname += ".";
             }
             m_current_srv.rrs.push_back(rr);
-            logger().debug("Data[{}]: ({} bytes) {}:{}:{}::{}", i, result->len[i], rr.priority, rr.weight,
+            logger().debug("Data[{}]: ({} bytes) [{}:{}:{}::{}]", i, result->len[i], rr.priority, rr.weight,
                            rr.port, rr.hostname);
         }
         if (m_current_srv.xmpp && m_current_srv.xmpps) {
@@ -1500,7 +1500,7 @@ void Config::Resolver::srv_lookup_done(int err, struct ub_result *result) {
         if (m_current_srv.rrs.empty()) {
             if (m_current_srv.nxdomain) {
                 // Synthesize an SRV.
-                logger().debug("Synthetic SRV for {} : {}", m_current_srv.domain, m_current_srv.error);
+                logger().debug("Synthetic SRV for domain=[{}] error=[{}]", m_current_srv.domain, m_current_srv.error);
                 DNS::SrvRR rr;
                 rr.port = 5269;
                 rr.hostname =
@@ -1524,7 +1524,7 @@ void Config::Resolver::srv_lookup_done(int err, struct ub_result *result) {
 }
 
 void Config::Resolver::a_lookup_done(int err, struct ub_result *result) {
-    logger().info("Lookup for {} complete.", result->qname);
+    logger().info("Lookup for [{}] complete.", result->qname);
     std::string error;
     if (err != 0) {
         error = ub_strerror(err);
@@ -1572,7 +1572,7 @@ void Config::Resolver::a_lookup_done(int err, struct ub_result *result) {
         }
         return;
     }
-    logger().debug("... Failure for {} with {}", result->qtype, error);
+    logger().error("... Failure for [{}] with [{}]", result->qtype, error);
     if (m_current_arec.hostname != result->qname) {
         m_current_arec.error = error;
         m_current_arec.dnssec = !!result->secure;
@@ -1586,6 +1586,7 @@ void Config::Resolver::a_lookup_done(int err, struct ub_result *result) {
             break;
         case 28:
             m_current_arec.ipv6 = true;
+            break;
     }
     if (m_current_arec.ipv4 && m_current_arec.ipv6) {
         if (m_current_arec.addr.empty()) {
@@ -1674,7 +1675,7 @@ Config::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port, std::
     std::ostringstream out;
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = toASCII(out.str());
-    logger().info("TLSA lookup for {}", domain);
+    logger().info("TLSA lookup for domain=[{}]", domain);
     for (Domain const *override = &m_domain; override; override = override->parent()) {
         if (!override->tlsa_overrides().empty()) {
             logger().debug("Found overrides at {}", override->domain());
@@ -1684,7 +1685,7 @@ Config::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port, std::
                 Router::defer([addr, this]() {
                     m_tlsa_pending[addr->domain].emit(*addr);
                 });
-                logger().debug("Using override at {}", override->domain());
+                logger().debug("Using override at [{}]", override->domain());
                 return m_tlsa_pending[domain];
             }
         }
