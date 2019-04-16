@@ -185,6 +185,7 @@ set(SOURCE_FILES
     gen/dh4096.cc
     include/base64.h
     include/config.h
+    include/core.h
     include/defs.h
     include/dhparams.h
     include/dns.h
@@ -195,6 +196,7 @@ set(SOURCE_FILES
     include/log.h
     include/netsession.h
     include/router.h
+    include/sigslot.h
     include/stanza.h
     include/tls.h
     include/xmlstream.h
@@ -217,7 +219,7 @@ set(SOURCE_FILES
     src/stanza.cc
     src/starttls.cc
     src/xmlstream.cc
-        include/sigslot.h include/core.h)
+)
 
 if(UNIX)
     list(APPEND SOURCE_FILES src/linuxmain.cc)
