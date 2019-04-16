@@ -2,10 +2,15 @@
 // Created by dwd on 13/04/19.
 //
 
-#include "defs.h"
 
 #ifndef METRE_CORE_H
 #define METRE_CORE_H
+
+#include "defs.h"
+
+#include <functional>
+#include <memory>
+#include <string>
 
 struct event_base;
 struct sockaddr;
