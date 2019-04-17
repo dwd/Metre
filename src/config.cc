@@ -934,7 +934,7 @@ rapidxml::xml_node<> *Config::Domain::to_xml(rapidxml::xml_document<> &doc) cons
     }
     {
         SSL_CTX *ctx = ssl_ctx();
-        if (!ctx and m_parent) {
+        if (!ctx && m_parent) {
             ctx = m_parent->ssl_ctx();
             d->append_node(doc.allocate_node(node_comment, nullptr, "X.509 settings copied from parent domain"));
         }
