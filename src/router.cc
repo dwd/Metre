@@ -46,13 +46,14 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to) {
 
 sigslot::tasklet<bool> Route::init_session_vrfy() {
     m_logger->log(spdlog::level::info, "Verify session spin-up");
-    DNS::Srv srv_copy = * co_await Config::config().domain(m_domain.domain()).SrvLookup(m_domain.domain());
-    auto srv = &srv_copy;
-    if (!srv->error.empty()) {
-        m_logger->log(spdlog::level::warn, "SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv->error);
+    auto res = Config::config().domain(m_domain.domain()).resolver();
+    auto srv = co_await
+    res->SrvLookup(m_domain.domain());
+    if (!srv.error.empty()) {
+        m_logger->log(spdlog::level::warn, "SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv.error);
         co_return false;
     }
-    for (auto & rr : srv->rrs) {
+    for (auto &rr : srv.rrs) {
         m_logger->log(spdlog::level::debug, "Should look for [{}:{}]", rr.hostname, rr.port);
         auto session = Router::session_by_address(rr.hostname, rr.port);
         if (session && !session->xml_stream().auth_ready()) {
@@ -65,20 +66,21 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
             co_return true;
         }
     }
-    for (auto & rr : srv->rrs) {
-        DNS::Address const * addr = co_await Config::config().domain(m_domain.domain()).AddressLookup(rr.hostname);
-        if (!addr->error.empty()) {
-            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, srv->error);
+    for (auto &rr : srv.rrs) {
+        auto addr = co_await
+        res->AddressLookup(rr.hostname);
+        if (!addr.error.empty()) {
+            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, addr.error);
             continue;
         }
-        for (auto & arr : addr->addr) {
+        for (auto &arr : addr.addr) {
             try {
                 m_logger->log(spdlog::level::debug, "Trying [{}:{}]", rr.hostname, rr.port);
                 auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                        const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&arr)),
                                        rr.port, Config::config().domain(m_domain.domain()).transport_type(),
                                        rr.tls ? IMMEDIATE : STARTTLS);
-                METRE_LOG(Metre::Log::DEBUG, "Connected, " << session.get());
+                m_logger->debug("Connected, NS{}", session->serial());
                 (void) co_await session->xml_stream().onAuthReady;
                 if (!session->xml_stream().auth_ready()) {
                     continue;
@@ -87,7 +89,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
                 m_logger->log(spdlog::level::info, "New outgoing session (verify stage) to [{}:{}]", rr.hostname, rr.port);
                 co_return true;
             } catch (std::runtime_error &e) {
-                METRE_LOG(Log::DEBUG, "Connection failed, reloop: " << e.what());
+                m_logger->info("Connection failed, reloop: {}", e.what());
             }
         }
     }
@@ -210,7 +212,7 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
 
 void Route::bounce_dialback(bool timeout) {
     if (m_stanzas.empty()) return;
-    METRE_LOG(Log::DEBUG, "Timeout on verify");
+    m_logger->warn("Timeout on verify");
     auto verify = m_vrfy.lock();
     if (verify) {
         verify->close();
@@ -220,7 +222,7 @@ void Route::bounce_dialback(bool timeout) {
 
 void Route::bounce_stanzas(Stanza::Error e) {
     if (m_stanzas.empty()) return;
-    METRE_LOG(Log::DEBUG, "Timeout on stanzas");
+    m_logger->warn("Timeout on stanzas");
     for (auto &stanza : m_stanzas) {
         if (stanza->type_str() && *stanza->type_str() == "error") continue;
         auto bounce = stanza->create_bounce(e);
@@ -241,7 +243,7 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
             bounce_stanzas(Stanza::remote_server_timeout);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_stanzas.push_back(std::move(s));
-    SPDLOG_DEBUG(m_logger, "Queued stanza");
+    m_logger->debug("Queued stanza");
 }
 
 void Route::transmit(std::unique_ptr<Stanza> &&s) {
@@ -250,15 +252,15 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
     if (to) {
         to->xml_stream().send(move(s));
     } else {
-        SPDLOG_DEBUG(m_logger, "No stanza session, spin-up");
+        m_logger->debug("No stanza session, spin-up");
         queue(std::move(s));
         if (!m_to_task.running()) {
-            SPDLOG_DEBUG(m_logger, "No current task");
+            m_logger->debug("No current task");
             m_to_task = init_session_to();
             m_to_task.start();
         }
     }
-    SPDLOG_DEBUG(m_logger, "Stanza accepted.");
+    SPDLOG_TRACE(m_logger, "Stanza accepted.");
 }
 
 void Route::SessionClosed(NetSession &n) {

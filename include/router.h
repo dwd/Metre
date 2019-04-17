@@ -29,7 +29,8 @@ SOFTWARE.
 #include "defs.h"
 #include "jid.h"
 #include "stanza.h"
-#include "dns.h"
+#include "core.h"
+#include "sigslot.h"
 #include "sigslot/tasklet.h"
 
 #include <string>
@@ -37,8 +38,6 @@ SOFTWARE.
 #include <queue>
 #include <map>
 #include <spdlog/logger.h>
-
-struct event_base;
 
 namespace Metre {
     class NetSession;
@@ -107,37 +106,6 @@ namespace Metre {
         static RouteTable &routeTable(Jid const &);
     };
 
-    namespace Router {
-        std::shared_ptr<NetSession> session_by_address(std::string const &remote_addr, unsigned short port);
-
-        std::shared_ptr<NetSession> session_by_domain(std::string const &remote_addr);
-
-        void register_session_domain(std::string const &dom, NetSession &);
-
-        std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
-                unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode);
-
-        std::shared_ptr<NetSession> session_by_stream_id(std::string const &stream_id);
-
-        std::shared_ptr<NetSession> session_by_serial(long long int);
-
-        void register_stream_id(std::string const &, NetSession &);
-
-        void unregister_stream_id(std::string const &);
-
-        void defer(std::function<void()> &&);
-
-        void defer(std::function<void()> &&, std::size_t seconds);
-
-        void main(std::function<bool()> const &);
-
-        void reload();
-
-        void quit();
-
-        struct event_base * event_base();
-    }
 }
 
 #endif

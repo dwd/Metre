@@ -59,6 +59,7 @@ namespace {
         };
 
         sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+            METRE_LOG(Metre::Log::DEBUG, "Handle BIDI");
             // We don't really handle it here, since we picked a different Namespace.
             // That was silly of us.
             co_return false;
@@ -89,6 +90,7 @@ namespace {
         };
 
         sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+            METRE_LOG(Metre::Log::DEBUG, "Handle BIDI Inbound");
             m_stream.bidi(true);
             co_return true;
         }

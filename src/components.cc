@@ -83,6 +83,8 @@ namespace {
         }
 
         sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+            METRE_LOG(Metre::Log::DEBUG, "Handle component");
+
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
@@ -97,8 +99,6 @@ namespace {
                 std::string const handshake_offered{node->value(), node->value_size()};
                 std::string const handshake_expected = handshake_content();
                 if (handshake_offered != handshake_expected) {
-                    METRE_LOG(Metre::Log::DEBUG, "RX: '" << handshake_offered << "'");
-                    METRE_LOG(Metre::Log::DEBUG, "TX: '" << handshake_expected << "'");
                     throw not_authorized("Component handshake failure");
                 }
 

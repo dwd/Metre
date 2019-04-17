@@ -48,7 +48,7 @@ SOFTWARE.
 #include <cerrno>
 #include <cstring>
 #include <atomic>
-#include "sigslot/sigslot.h"
+#include "sigslot.h"
 #include "dns.h"
 #include "config.h"
 #include "log.h"
@@ -435,5 +435,14 @@ namespace Metre {
         struct event_base * event_base() {
             return Mainloop::s_mainloop->event_base();
         }
+    }
+}
+
+namespace sigslot {
+    void resume(std::experimental::coroutine_handle<> coro) {
+        Metre::Router::defer([=]() {
+            std::experimental::coroutine_handle<> c = coro;
+            c.resume();
+        });
     }
 }

@@ -5,7 +5,7 @@
 #ifndef METRE_HTTP_H
 #define METRE_HTTP_H
 
-#include <sigslot/sigslot.h>
+#include "sigslot.h"
 #include <map>
 
 struct evhttp_request;

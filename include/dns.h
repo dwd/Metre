@@ -27,7 +27,7 @@ SOFTWARE.
 #define METRE_DNS_H
 
 #include "defs.h"
-#include <sigslot/sigslot.h>
+#include "sigslot.h"
 #include <string>
 #include <vector>
 // For struct sockaddr_storage :

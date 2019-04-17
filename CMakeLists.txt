@@ -185,6 +185,7 @@ set(SOURCE_FILES
     gen/dh4096.cc
     include/base64.h
     include/config.h
+    include/core.h
     include/defs.h
     include/dhparams.h
     include/dns.h
@@ -195,6 +196,7 @@ set(SOURCE_FILES
     include/log.h
     include/netsession.h
     include/router.h
+    include/sigslot.h
     include/stanza.h
     include/tls.h
     include/xmlstream.h
@@ -247,6 +249,8 @@ target_link_libraries(metre PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
 )
+
+target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
 if (UNIX)
     target_include_directories(metre PRIVATE

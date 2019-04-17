@@ -23,6 +23,7 @@ SOFTWARE.
 
 ***/
 
+#include "log.h"
 #include "feature.h"
 #include "stanza.h"
 #include "xmppexcept.h"
@@ -141,6 +142,7 @@ namespace {
         }
 
         sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+            METRE_LOG(Metre::Log::DEBUG, "Handle SASL External");
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, true);
             std::string name = node->name();

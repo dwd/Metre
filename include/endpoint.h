@@ -6,7 +6,7 @@
 #define METRE_ENDPOINT_H
 
 #include <random>
-#include <sigslot/sigslot.h>
+#include "sigslot.h"
 #include <sigslot/tasklet.h>
 #include "jid.h"
 #include "stanza.h"

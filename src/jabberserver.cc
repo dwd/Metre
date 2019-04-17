@@ -48,6 +48,7 @@ namespace {
         };
 
         sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+            METRE_LOG(Metre::Log::DEBUG, "Handle JabberServer");
             xml_document<> *d = node->document();
             d->fixup<parse_default>(node, false); // Just terminate the header.
             std::string stanza = node->name();
@@ -91,7 +92,7 @@ namespace {
                         }
                     }
                     if (DROP == Config::config().domain(to.domain()).filter(INBOUND, *s)) {
-                        METRE_LOG(Log::INFO, "Stanza discarded by filters");
+                        m_stream.logger().info("Stanza discarded by filters");
                         co_return true;
                     }
                     if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
