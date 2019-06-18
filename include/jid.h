@@ -29,6 +29,8 @@ SOFTWARE.
 #include <string>
 #include <optional>
 
+#include <spdlog/common.h>
+
 namespace Metre {
     class Jid {
         std::optional<std::string> m_local;
@@ -65,6 +67,11 @@ namespace Metre {
     protected:
         void parse(std::string const &s);
     };
+
+    inline spdlog::string_view_t to_string_view(const Jid &jid) {
+        auto const& full = jid.full();
+        return {full.data(), full.length()};
+    }
 
 }
 

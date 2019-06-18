@@ -38,93 +38,103 @@ using namespace Metre;
 Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to) {
     if (m_domain.domain().empty() || m_local.domain().empty()) throw std::runtime_error("Cannot have route to/from empty domain");
     auto sinks = Config::config().logger().sinks();
-    m_logger = std::make_shared<spdlog::logger>("route " + m_local.domain() + "->" + m_domain.domain(), begin(sinks), end(sinks));
+    m_logger = std::make_shared<spdlog::logger>("Route from=[" + m_local.domain() + "] to=[" + m_domain.domain() + "]", begin(sinks), end(sinks));
     m_logger->flush_on(spdlog::level::trace);
     m_logger->set_level(spdlog::level::trace);
     m_logger->log(spdlog::level::info, "Route created");
 }
 
 sigslot::tasklet<bool> Route::init_session_vrfy() {
-    m_logger->log(spdlog::level::info, "Verify session spin-up");
+    m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
     auto res = Config::config().domain(m_domain.domain()).resolver();
-    auto srv = co_await
-    res->SrvLookup(m_domain.domain());
+    auto srv = co_await res->SrvLookup(m_domain.domain());
+    m_logger->trace("Verify session completed SRV lookup: domain=[{}]", m_domain);
+
     if (!srv.error.empty()) {
-        m_logger->log(spdlog::level::warn, "SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv.error);
+        m_logger->warn("SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv.error);
         co_return false;
     }
     for (auto &rr : srv.rrs) {
-        m_logger->log(spdlog::level::debug, "Should look for [{}:{}]", rr.hostname, rr.port);
+        m_logger->trace("Should look for [{}:{}]", rr.hostname, rr.port);
         auto session = Router::session_by_address(rr.hostname, rr.port);
         if (session && !session->xml_stream().auth_ready()) {
+            m_logger->trace("Awaiting auth ready on verify session serial=[{}]", session->serial());
             (void) co_await session->xml_stream().onAuthReady;
             if (!session->xml_stream().auth_ready()) {
+                m_logger->trace("Auth was not ready on verify session serial=[{}]", session->serial());
                 continue;
             }
             set_vrfy(session);
-            m_logger->log(spdlog::level::info, "Reused existing outgoing session (verify stage) to [{}:{}]", rr.hostname, rr.port);
+            m_logger->trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
             co_return true;
         }
     }
     for (auto &rr : srv.rrs) {
-        auto addr = co_await
-        res->AddressLookup(rr.hostname);
+        m_logger->trace("Awaiting address lookup for verify session: hostname=[{}]", rr.hostname);
+        auto addr = co_await res->AddressLookup(rr.hostname);
         if (!addr.error.empty()) {
-            m_logger->log(spdlog::level::warn, "A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, addr.error);
+            m_logger->warn("A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, addr.error);
             continue;
         }
         for (auto &arr : addr.addr) {
             try {
-                m_logger->log(spdlog::level::debug, "Trying [{}:{}]", rr.hostname, rr.port);
+                m_logger->trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
                 auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                        const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&arr)),
                                        rr.port, Config::config().domain(m_domain.domain()).transport_type(),
                                        rr.tls ? IMMEDIATE : STARTTLS);
-                m_logger->debug("Connected, NS{}", session->serial());
+                m_logger->trace("Connected verify session: address=[{}:{}] serial=[{}]", rr.hostname, rr.port, session->serial());
+
+                m_logger->trace("Awaiting auth ready on verify session: serial=[{}]", session->serial());
                 (void) co_await session->xml_stream().onAuthReady;
                 if (!session->xml_stream().auth_ready()) {
+                    m_logger->trace("Auth was not ready on verify session: serial=[{}]", session->serial());
                     continue;
                 }
                 set_vrfy(session);
-                m_logger->log(spdlog::level::info, "New outgoing session (verify stage) to [{}:{}]", rr.hostname, rr.port);
+                m_logger->debug("New outgoing verify session: address=[{}:{}]", rr.hostname, rr.port);
                 co_return true;
             } catch (std::runtime_error &e) {
-                m_logger->info("Connection failed, reloop: {}", e.what());
+                m_logger->error("Verify session connection failed, reloop: error=[{}]", e.what());
             }
         }
     }
+    m_logger->error("New outgoing verify session failed: domain=[{}]", m_domain);
     co_return false;
 }
 
 sigslot::tasklet<bool> Route::init_session_to() {
-    m_logger->log(spdlog::level::debug, "Stanza session spin-up");
+    m_logger->debug("Stanza session spin-up");
     auto session = Router::session_by_domain(m_domain.domain());
     if (!session) {
-        session = m_vrfy.lock();
+        m_logger->debug("No existing session for domain=[{}]", m_domain);
         do {
+            session = m_vrfy.lock();
+            m_logger->debug("Authenticating with verify session domain=[{}]", m_domain);
             if (!session) {
-                m_logger->log(spdlog::level::debug, "No verify session");
+                m_logger->debug("No verify session found");
                 if (!m_verify_task.running()) {
-                    m_logger->log(spdlog::level::debug, "No verify session task.");
+                    m_logger->debug("No verify session task found, starting");
                     m_verify_task = init_session_vrfy();
                     m_verify_task.start();
                 }
                 if (!co_await m_verify_task) {
-                    m_logger->log(spdlog::level::debug, "Verify task completed false");
-                    co_return
-                    false;
+                    m_logger->debug("Verify task failed");
+                    co_return false;
                 }
             }
-            m_logger->log(spdlog::level::debug, "Authenticating with Verify session");
-        } while (!(session = m_vrfy.lock()));
+        } while (!session);
+        m_logger->trace("Got verify session domain=[{}]", m_domain);
     }
     switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
         default:
             if (!session->xml_stream().auth_ready()) {
+                m_logger->trace("Awaiting authentication ready: domain=[{}]");
                 (void) co_await session->xml_stream().onAuthReady;
             }
             /// Send a dialback request.
             {
+                m_logger->trace("Dialing back: domain=[{}]");
                 std::string key = Config::config().dialback_key(session->xml_stream().stream_id(),
                                                                 m_local.domain(),
                                                                 m_domain.domain());
@@ -140,13 +150,17 @@ sigslot::tasklet<bool> Route::init_session_to() {
             }
             // Fallthrough
         case XMLStream::REQUESTED:
+            m_logger->trace("Awaiting authentication: domain=[{}]");
             (void) co_await session->xml_stream().onAuthenticated;
         case XMLStream::AUTHORIZED:
+            m_logger->trace("Authorized: domain=[{}]");
             break;
     }
     while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) != XMLStream::AUTHORIZED) {
+        m_logger->debug("Authenticating with verify session");
         (void) co_await session->xml_stream().onAuthenticated;
     }
+    m_logger->trace("Setting 'to' session");
     set_to(session);
     co_return true;
 }
@@ -177,8 +191,11 @@ void Route::set_vrfy(std::shared_ptr<Metre::NetSession> &vrfy) {
  * @param ns - NetSession of inbound session.
  */
 void Route::outbound(NetSession *ns) {
+    m_logger->debug("Outbound NetSession: serial=[{}]", ns->serial());
     auto to = m_to.lock();
-    if (!ns) return;
+    if (!ns) {
+        return;
+    }
     if (to && (to->serial() == ns->serial())) return;
     if (to) {
         to->close(); // Kill with fire.
@@ -188,16 +205,18 @@ void Route::outbound(NetSession *ns) {
 }
 
 void Route::queue(std::unique_ptr<DB::Verify> &&s) {
+    m_logger->trace("Queue verify: name=[{}] from=[{}] to=[{}]", s->Stanza::name(), s->from(), s->to());
     s->freeze();
     if (m_dialback.empty())
         Router::defer([this]() {
             bounce_dialback(true);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_dialback.push_back(std::move(s));
-    SPDLOG_DEBUG(m_logger, "Queued verify");
+    m_logger->debug("Route queued verify local=[{}] domain=[{}]", m_local, m_domain);
 }
 
 void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
+    m_logger->trace("Transmit verify: name=[{}] from=[{}] to=[{}]", v->Stanza::name(), v->from(), v->to());
     auto vrfy = m_vrfy.lock();
     if (vrfy) {
         vrfy->xml_stream().send(std::move(v));
@@ -211,8 +230,10 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
 }
 
 void Route::bounce_dialback(bool timeout) {
-    if (m_stanzas.empty()) return;
-    m_logger->warn("Timeout on verify");
+    if (m_stanzas.empty()) {
+        return;
+    }
+    m_logger->warn("Timeout of verify sessions: timeout=[{}]", timeout);
     auto verify = m_vrfy.lock();
     if (verify) {
         verify->close();
@@ -221,8 +242,10 @@ void Route::bounce_dialback(bool timeout) {
 }
 
 void Route::bounce_stanzas(Stanza::Error e) {
-    if (m_stanzas.empty()) return;
-    m_logger->warn("Timeout on stanzas");
+    if (m_stanzas.empty()) {
+        return;
+    }
+    m_logger->warn("Timeout on stanzas error=[{}]", e);
     for (auto &stanza : m_stanzas) {
         if (stanza->type_str() && *stanza->type_str() == "error") continue;
         auto bounce = stanza->create_bounce(e);
@@ -237,6 +260,7 @@ void Route::bounce_stanzas(Stanza::Error e) {
 }
 
 void Route::queue(std::unique_ptr<Stanza> &&s) {
+    m_logger->trace("Queue stanza: name=[{}] from=[{}] to=[{}]", s->name(), s->from(), s->to());
     s->freeze();
     if (m_stanzas.empty())
         Router::defer([this]() {
@@ -247,12 +271,13 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
 }
 
 void Route::transmit(std::unique_ptr<Stanza> &&s) {
-    SPDLOG_TRACE(m_logger, "Transmit stanza request");
+    m_logger->trace("Transmit stanza: name=[{}] from=[{}] to=[{}]", s->name(), s->from(), s->to());
     auto to = m_to.lock();
     if (to) {
+        m_logger->debug("Existing stanza session: serial=[{}]", to->serial());
         to->xml_stream().send(move(s));
     } else {
-        m_logger->debug("No stanza session, spin-up");
+        m_logger->debug("No stanza session");
         queue(std::move(s));
         if (!m_to_task.running()) {
             m_logger->debug("No current task");
@@ -260,10 +285,11 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
             m_to_task.start();
         }
     }
-    SPDLOG_TRACE(m_logger, "Stanza accepted.");
+    m_logger->trace("Stanza accepted");
 }
 
 void Route::SessionClosed(NetSession &n) {
+    m_logger->debug("Net Session closed");
     // One of my sessions has been closed. See what needs progressing.
     if (!m_dialback.empty() || !m_stanzas.empty()) {
         auto vrfy = m_vrfy.lock();
@@ -294,7 +320,9 @@ RouteTable &RouteTable::routeTable(Jid const &j) {
 std::shared_ptr<Route> &RouteTable::route(Jid const &to) {
     // TODO This needs to be more complex once we have clients.
     auto it = m_routes.find(to.domain());
-    if (it != m_routes.end()) return (*it).second;
+    if (it != m_routes.end()) {
+        return (*it).second;
+    }
     auto itp = m_routes.emplace(to.domain(), std::make_shared<Route>(m_local_domain, to.domain()));
     return (*(itp.first)).second;
 }

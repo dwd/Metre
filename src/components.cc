@@ -24,6 +24,7 @@ SOFTWARE.
 ***/
 
 #include "feature.h"
+#include "netsession.h"
 #include "stanza.h"
 #include "router.h"
 #include "log.h"
@@ -103,6 +104,7 @@ namespace {
                 }
 
                 m_stream.user(m_stream.local_domain());
+                METRE_LOG(Metre::Log::DEBUG, "Component registering session domain: domain=[" << m_stream.local_domain() << "] session=[" << m_stream.session().serial() << "]");
                 Router::register_session_domain(m_stream.local_domain(), m_stream.session());
                 xml_document<> d;
                 auto handshake = d.allocate_node(node_element, "handshake");
@@ -121,6 +123,7 @@ namespace {
                         throw not_authorized();
                     }
                     // Forward everything.
+                    METRE_LOG(Metre::Log::DEBUG, "Component creating route: from=[" << from.domain() << "] to=[" << to.domain() << "]");
                     std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
                     route->transmit(std::move(s));
                 } catch (Metre::base::xmpp_exception &) {
