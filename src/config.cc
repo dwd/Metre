@@ -1637,7 +1637,7 @@ Config::addr_callback_t &Config::Resolver::AddressLookup(std::string const &ihos
 Config::srv_callback_t &Config::Resolver::SrvLookup(std::string const &base_domain) {
     std::string domain = toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
-    logger().info("SRV lookup for {}", domain);
+    m_logger->debug("SRV lookup: domain=[{}]", base_domain);
     for (Domain const *override = &m_domain; override; override = override->parent()) {
         if (override->srv_override()) {
             logger().debug("Found override at {}", override->domain());

@@ -48,19 +48,23 @@ using namespace Metre;
 XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
         : has_slots(), m_session(n), m_dir(dir), m_type(t) {
     std::ostringstream ss;
-    ss << "NS" << m_session->serial();
+    ss << "XmlStream serial=[" << m_session->serial() << "]";
     ss << (dir == INBOUND ? " IN" : " OUT");
+    ss << " type=[";
     switch (t) {
         case S2S:
-            ss << " S2S";
+            ss << "S2S";
             break;
         case COMP:
-            ss << " COMP";
+            ss << "COMP";
             break;
         case X2X:
-            ss << " X2X";
+            ss << "X2X";
             break;
+        default:
+            throw std::logic_error("Unknown type: " + std::to_string(t));
     }
+    ss << "]";
     m_logger = Config::config().logger(ss.str());
     if (t == X2X) {
         m_type = S2S;
@@ -74,19 +78,23 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
         : has_slots(), m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local),
           m_stream_remote(stream_remote) {
     std::ostringstream ss;
-    ss << "NS" << m_session->serial();
+    ss << "XmlStream serial=[" << m_session->serial() << "]";
     ss << (dir == INBOUND ? " IN" : " OUT");
+    ss << " type=[";
     switch (t) {
         case S2S:
-            ss << " S2S";
+            ss << "S2S";
             break;
         case COMP:
-            ss << " COMP";
+            ss << "COMP";
             break;
         case X2X:
-            ss << " X2X";
+            ss << "X2X";
             break;
+        default:
+            throw std::logic_error("Unknown type: " + std::to_string(t));
     }
+    ss << "]";
     m_logger = Config::config().logger(ss.str());
     if (t == X2X) {
         m_type = S2S;
@@ -266,28 +274,26 @@ const char *XMLStream::content_namespace() const {
     return p;
 }
 
-void XMLStream::check_domain_pair(std::string const &from, std::string const &domainname) const {
-    Config::Domain const &domain = Config::config().domain(domainname);
-    if (domain.block()) {
-        throw Metre::host_unknown("Requested domain is blocked.");
+void XMLStream::check_domain_pair(std::string const &from_domain, std::string const &to_domain) const {
+    Config::Domain const &to = Config::config().domain(to_domain);
+    if (to.block()) {
+        throw Metre::host_unknown("Requested domain is blocked: to=[" + to_domain + "]");
     }
-    if (m_type == COMP && domain.transport_type() != COMP) {
-        throw Metre::host_unknown("That would be me.");
+    if (m_type == COMP && to.transport_type() != COMP) {
+        throw Metre::host_unknown("Component connection protocol mismatch: from=[" + from_domain + "] to=[" + to_domain + "] protocol id=[" + std::to_string(to.transport_type()) + "]");
     }
-    Config::Domain const &from_domain = Config::config().domain(from);
-    if (!from.empty()) {
-        if (from_domain.block()) {
-            throw Metre::host_unknown("Requesting domain is blocked");
+    Config::Domain const &from = Config::config().domain(from_domain);
+    if (!from_domain.empty()) {
+        if (from.block()) {
+            throw Metre::host_unknown("Requesting domain is blocked: from=[" + from_domain + "]");
         }
-        if ((domain.transport_type() != COMP) &&
-            ((from_domain.forward() == domain.forward()) && domain.transport_type() != INTERNAL &&
-             from_domain.transport_type() != INTERNAL)) {
-            throw Metre::host_unknown("Will not forward between those domains");
+        if ((to.transport_type() != COMP) &&
+            ((from.forward() == to.forward()) && to.transport_type() != INTERNAL &&
+             from.transport_type() != INTERNAL)) {
+            throw Metre::host_unknown("Will not forward between same domains with non-internal protocol: from=[" + from_domain + "] to=[" + to_domain + "]");
         }
-        if (from_domain.transport_type() == COMP) {
-            if (m_type != COMP) {
-                throw Metre::host_unknown("Seems unlikely.");
-            }
+        if (m_type != COMP && from.transport_type() == COMP) {
+            throw Metre::host_unknown("Attempting to connect to non-component with component protocol:from=[" + from_domain + "] to=[" + to_domain + "] protocol id=[" + std::to_string(to.transport_type()) + "]");
         }
     }
 }
@@ -308,7 +314,7 @@ void XMLStream::stream_open() {
             logger().debug("S2S stream detected.");
             m_type = S2S;
         } else if (default_xmlns == "jabber:component:accept") {
-            logger().debug("114 stream detected.");
+            logger().debug("114 (component) stream detected.");
             m_type = COMP;
         } else {
             logger().warn("Unidentified connection.");
@@ -437,8 +443,7 @@ sigslot::tasklet<bool> XMLStream::send_stream_open(bool with_version) {
         }
     }
     m_opened = true;
-    co_return
-    true;
+    co_return true;
 }
 
 void XMLStream::send(rapidxml::xml_document<> &d) {
@@ -455,8 +460,8 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
     std::string xmlns(element->xmlns(), element->xmlns_size());
     if (xmlns == "http://etherx.jabber.org/streams") {
         std::string elname(element->name(), element->name_size());
+        m_logger->trace("handle element=[{}]", elname);
         if (elname == "features") {
-            logger().debug("It's features!");
             for (;;) {
                 rapidxml::xml_node<> *feature_offer = nullptr;
                 Feature::Type feature_type = Feature::Type::FEAT_NONE;
@@ -481,13 +486,13 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                             /* pass */;
                     }
                     if (feature_type < offer_type) {
-                        logger().debug("I'll keep [{}] instead of [{}]", offer_ns, feature_xmlns);
+                        logger().debug("Feature [{}:{}] supersedes [{}]", offer_ns, offer_name, feature_xmlns);
                         feature_offer = feat_ad;
                         feature_xmlns = offer_ns;
                         feature_type = offer_type;
                     }
                 }
-                logger().debug("Processing feature [{}]", feature_xmlns);
+                m_logger->debug("Processing feature [{}]", feature_xmlns);
                 if (feature_type == Feature::Type::FEAT_NONE) {
                     if (m_features.find("urn:xmpp:features:dialback") == m_features.end()) {
                         auto so = m_stream.first_node();
@@ -507,27 +512,25 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 assert(f.get());
                 bool escape = f->negotiate(feature_offer);
                 m_features.emplace(feature_xmlns, std::move(f));
-                logger().debug("Feature negotiated, stream restart is [{}]", escape);
+                m_logger->debug("Feature negotiated, stream restart is [{}]", escape);
                 if (escape) return; // We've done a stream restart or something.
             }
         } else if (elname == "error") {
-            logger().debug("It's a stream error!");
-            throw std::runtime_error("Actually, I don't do much error handling.");
+            throw std::runtime_error("Received an unknown XMPP XML error");
         } else {
-            logger().debug("It's something weird.");
             throw Metre::unsupported_stanza_type("Unknown stream element");
         }
     } else {
         auto fit = m_features.find(xmlns);
         Feature *f = nullptr;
-        logger().debug("Hunting handling feature for [{}]", xmlns);
+        m_logger->debug("Hunting handling feature for [{}]", xmlns);
         if (fit != m_features.end()) {
             f = (*fit).second.get();
         } else {
             std::unique_ptr<Feature> feat(Feature::feature(xmlns, *this));
             f = feat.get();
             if (f) m_features.emplace(xmlns, std::move(feat));
-            logger().debug("Created new feature [{}]", xmlns);
+            m_logger->debug("Created new feature [{}]", xmlns);
         }
 
         bool handled = false;
@@ -539,7 +542,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 handled = task->get();
             }
         }
-        logger().debug("Handled: [{}]", handled);
+        m_logger->debug("Handled: [{}]", handled);
         if (!handled) {
             throw Metre::unsupported_stanza_type();
         }

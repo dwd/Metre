@@ -42,10 +42,6 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
         : m_serial(serial), m_bev(nullptr),
           m_xml_stream(std::make_unique<XMLStream>(this, INBOUND, listen->session_type)) {
     bufferevent(bev);
-    std::ostringstream ss;
-    ss << "NS" << serial << " IN " << listen->name;
-    m_logger = Config::config().logger(ss.str());
-    m_logger->info("New INBOUND session");
     if (listen->session_type == X2X) {
         m_xml_stream->remote_domain(listen->remote_domain);
         m_xml_stream->local_domain(listen->local_domain);
@@ -64,6 +60,10 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
                               stream_buf.size());
         m_xml_stream->set_auth_ready();
     }
+    std::ostringstream ss;
+    ss << "NetSession serial=[" << serial << "] IN type=[" << listen->name << "] from=[" << m_xml_stream->local_domain() << "] to=[" << m_xml_stream->remote_domain() << "]";
+    m_logger = Config::config().logger(ss.str());
+    m_logger->info("New INBOUND");
 }
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::string const &stream_from,
@@ -71,13 +71,13 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::
         : m_serial(serial), m_bev(nullptr),
           m_xml_stream(std::make_unique<XMLStream>(this, OUTBOUND, stype, stream_from, stream_to)) {
     bufferevent(bev);
-    std::ostringstream ss;
-    ss << "NS" << serial << " OUT";
-    m_logger = Config::config().logger(ss.str());
-    m_logger->info("New OUTBOUND session");
     if (tls_mode == IMMEDIATE) {
         start_tls(*m_xml_stream, false);
     }
+    std::ostringstream ss;
+    ss << "NetSession serial=" << serial << " OUT from=" << m_xml_stream->local_domain() << " to=" << m_xml_stream->remote_domain();
+    m_logger = Config::config().logger(ss.str());
+    m_logger->info("New OUTBOUND");
 }
 
 void NetSession::bufferevent(struct bufferevent *bev) {
@@ -109,6 +109,7 @@ namespace {
 }
 
 bool NetSession::drain() {
+    m_logger->trace("Drain");
     if (m_in_progress) return false;
     auto latch = std::make_unique<Latch>(m_in_progress);
     // While there is data, see how much we can consume with the XMLStream.
@@ -139,28 +140,34 @@ bool NetSession::drain() {
 }
 
 void NetSession::used(size_t n) {
-    if (!m_bev) return;
+    if (!m_bev) {
+        return;
+    }
     struct evbuffer *buf = bufferevent_get_input(m_bev);
     evbuffer_drain(buf, n);
 }
 
 void NetSession::send(rapidxml::xml_document<> &d) {
-    if (!m_bev) return;
+    if (!m_bev) {
+        return;
+    }
     std::string tmp;
     rapidxml::print(std::back_inserter(tmp), d, rapidxml::print_no_indenting);
     struct evbuffer *buf = bufferevent_get_output(m_bev);
     if (!buf) {
         return;
     }
-    m_logger->debug("Send XML: {}", tmp);
+    m_logger->debug("Send: {}", tmp);
     evbuffer_add(buf, tmp.data(),
                  tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
 }
 
 void NetSession::send(std::string const &s) {
-    if (!m_bev) return;
+    if (!m_bev) {
+        return;
+    }
     struct evbuffer *buf = bufferevent_get_output(m_bev);
-    m_logger->debug("Send String: {}", s);
+    m_logger->debug("Send string {}", s);
     if (!buf) {
         return;
     }
@@ -174,9 +181,9 @@ void NetSession::send(const char *p) {
 }
 
 void NetSession::read() {
-    m_logger->debug("Read.");
+    m_logger->trace("Read");
     if (drain()) {
-        m_logger->info("Closing during read.");
+        m_logger->debug("Closing during read");
         onClosed.emit(*this);
     }
 }
@@ -187,6 +194,7 @@ void NetSession::read_cb(struct bufferevent *, void *arg) {
 }
 
 void NetSession::bev_closed() {
+    m_logger->trace("BEV closed");
     // TODO : I had this here, but I think it's useless. It causes a nasty wait-free loop, though.
     /*if (m_xml_stream->frozen()) {
         Router::defer([this]() {
@@ -194,12 +202,11 @@ void NetSession::bev_closed() {
         });
         return;
     }*/
-    m_logger->debug("Closed.");
     onClosed.emit(*this);
 }
 
 void NetSession::bev_connected() {
-    m_logger->debug("Connected.");
+    m_logger->trace("BEV connected");
     onConnected.emit(*this);
     m_xml_stream->restart();
 }
@@ -209,9 +216,9 @@ void NetSession::bev_connected() {
 
 void NetSession::event_cb(struct bufferevent *b, short events, void *arg) {
     NetSession &ns = *reinterpret_cast<NetSession *>(arg);
-    ns.m_logger->debug("Events have happened.");
+    ns.m_logger->trace("Event callback");
     if (b != ns.m_bev) {
-        ns.m_logger->debug("No my BEV");
+        ns.m_logger->debug("No, my BEV");
         return;
     }
     if (events & BEV_EVENT_EOF) {
@@ -239,8 +246,10 @@ void NetSession::close() {
         });
         return;
     }*/
-    m_logger->debug("Closing (close called)");
-    if (!m_bev) return;
+    m_logger->trace("Close");
+    if (!m_bev) {
+        return;
+    }
     bufferevent_flush(m_bev, EV_WRITE, BEV_FINISHED);
     onClosed.emit(*this);
 }
