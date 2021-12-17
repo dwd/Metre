@@ -28,24 +28,28 @@ void Endpoint::process(std::unique_ptr<Stanza> && stanza_ptr) {
         }
     }
     auto task = std::make_unique<process_task>();
-    task->stanza = std::move(stanza_ptr);
-    if (task->stanza->name() == Message::name) {
-        task->task = process(dynamic_cast<Message const &>(*(task->stanza)));
-    } else if (task->stanza->name() == Presence::name) {
-        task->task = process(dynamic_cast<Presence const &>(*(task->stanza)));
-    } else if (task->stanza->name() == Iq::name) {
-        task->task = process(dynamic_cast<Iq const &>(*(task->stanza)));
-    } else {
-        throw unsupported_stanza_type();
-    }
-    task->task.start();
-    if (task->task.running()) {
-        task->task.complete().connect(this, [this, t = task.get()]() {
-            task_complete(t);
-        });
-        m_tasks.emplace_back(std::move(task));
-    } else {
-        task_complete(task.get());
+    try {
+        task->stanza = std::move(stanza_ptr);
+        if (task->stanza->name() == Message::name) {
+            task->task = process(dynamic_cast<Message const &>(*(task->stanza)));
+        } else if (task->stanza->name() == Presence::name) {
+            task->task = process(dynamic_cast<Presence const &>(*(task->stanza)));
+        } else if (task->stanza->name() == Iq::name) {
+            task->task = process(dynamic_cast<Iq const &>(*(task->stanza)));
+        } else {
+            throw unsupported_stanza_type();
+        }
+        task->task.start();
+        if (task->task.running()) {
+            task->task.complete().connect(this, [this, t = task.get()]() {
+                task_complete(t);
+            });
+            m_tasks.emplace_back(std::move(task));
+        } else {
+            task_complete(task.get());
+        }
+    } catch (Metre::base::stanza_exception const &stanza_error) {
+        send(task->stanza->create_bounce(stanza_error));
     }
 }
 

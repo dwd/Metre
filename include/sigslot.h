@@ -6,11 +6,11 @@
 #define METRE_SIGSLOT_H
 
 #ifdef SIGSLOT_RESUME_OVERRIDE
-#include <experimental/coroutine>
+#include <coroutine>
 #include "core.h"
 
 namespace sigslot {
-    void resume(std::experimental::coroutine_handle<> coro);
+    void resume(std::coroutine_handle<> coro);
 }
 #endif
 

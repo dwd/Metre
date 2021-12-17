@@ -77,7 +77,7 @@ namespace Metre {
             s_mainloop = this;
         }
 
-        virtual ~Mainloop() {
+        ~Mainloop() {
             if (m_ub_event) {
                 event_del(m_ub_event);
                 event_free(m_ub_event);
@@ -439,9 +439,9 @@ namespace Metre {
 }
 
 namespace sigslot {
-    void resume(std::experimental::coroutine_handle<> coro) {
+    void resume(std::coroutine_handle<> coro) {
         Metre::Router::defer([=]() {
-            std::experimental::coroutine_handle<> c = coro;
+            std::coroutine_handle<> c = coro;
             c.resume();
         });
     }

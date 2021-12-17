@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
             signal(SIGTERM, term_handler);
             Metre::Router::main([]() { return false; });
         } else if (bc->boot_method == "none") {
-            config->log_init();
+            config->log_init(true);
             config->write_runtime_config();
             signal(SIGPIPE, SIG_IGN);
             signal(SIGHUP, hup_handler);

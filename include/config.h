@@ -164,6 +164,15 @@ namespace Metre {
                 return d;
             }
 
+            TLS_PREFERENCE tls_preference() const {
+                return m_tls_preference;
+            }
+
+            TLS_PREFERENCE tls_preference(TLS_PREFERENCE p) {
+                m_tls_preference = p;
+                return p;
+            }
+
             std::string const &dhparam() const {
                 return m_dhparam;
             }
@@ -253,6 +262,7 @@ namespace Metre {
             bool m_auth_dialback = false;
             bool m_auth_host = false;
             bool m_dnssec_required = false;
+            TLS_PREFERENCE m_tls_preference = PREFER_ANY;
             unsigned m_stanza_timeout = 20;
             unsigned m_connect_timeout = 10;
             std::string m_dhparam;

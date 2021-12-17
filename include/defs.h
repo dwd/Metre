@@ -47,6 +47,12 @@ namespace Metre {
     } TLS_MODE;
 
     typedef enum {
+        PREFER_IMMEDIATE,
+        PREFER_STARTTLS,
+        PREFER_ANY
+    } TLS_PREFERENCE;
+
+    typedef enum {
         PASS,
         DROP
     } FILTER_RESULT;

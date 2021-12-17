@@ -1,43 +1,46 @@
 <config xmlns='http://surevine.com/xmlns/metre/config'>
   <globals>
-    <domain name='cridland.im'/>
+    <domain name='jekyll.cridland.im'/>
     <!-- Default domain. Used in extremis if no domain is present in the stream header. -->
 
-    <rundir>/home/dwd/src/metre/</rundir>
+    <rundir>/home/dwd/metre/</rundir>
     <!-- Run directory, used to store pid file. -->
 
-    <datadir>/home/dwd/src/metre/data/</datadir>
+    <datadir>/home/dwd/metre/data/</datadir>
     <!-- Data directory root; defaults to run directory -->
 
-    <logfile>/home/dwd/src/metre/metre.log</logfile>
+    <logfile/> <!-- /home/dwd/metre/metre.log</logfile> -->
     <!-- Logfile -->
 
-    <dnssec>/home/dwd/src/metre/keys</dnssec>
+    <dnssec>/home/dwd/metre/keys</dnssec>
     <!-- DNSSEC root keys file. -->
   </globals>
+  <local>
+    <domain name="jekyll.cridland.im">
+      <x509 chain="/home/dwd/metre/fullchain.pem" pkey="/home/dwd/metre/privkey.pem"/>
+    </domain>
+    <domain name="jekyll.dave.cridland.net">
+      <x509 chain="/home/dwd/metre/fullchain.pem" pkey="/home/dwd/metre/privkey.pem"/>
+    </domain>
+  </local>
   <remote>
     <!-- The Remote stanza lists known external domains and parameters for connections.
           There is a special "default" entry which is used to connect to unlisted domains - if this
           is not present, it will simply not connect to unlisted domains.
         -->
-    <domain name="cridland.im">
-      <transport type="114">
-        <auth type="secret">ThreadsMagic!</auth>
-      </transport>
-    </domain>
     <any>
       <!-- This is a special catch-all.
             If the code needs a domain and there isn't one, it'll use this.-->
       <transport type='s2s'
-                 sec='none'> <!-- Transport blocks contain a transport type (s2s or 114), and required security level (none or tls) -->
+                 prefer="direct"
+                 sec='true'> <!-- Transport blocks contain a transport type (s2s or 114), and required security level (none or tls) -->
+        <auth type="pkix">
+          <check-status>false</check-status>
+        </auth>
         <auth type="dialback"/><!-- Dialback authentication is reliant on DNS. Metre always checks DNSSEC, but not all domains have it and it won't enforce.. -->
       </transport>
+      <x509 chain="/home/dwd/metre/fullchain.pem" pkey="/home/dwd/metre/privkey.pem"/>
     </any>
-    <domain name="blah.dave.cridland.net">
-      <transport type="s2s" sec="none">
-        <auth type="dialback"/>
-      </transport>
-    </domain>
   </remote>
   <listeners>
     <listener name="S2S" address="::" port="5269" type="s2s" tls="false"/>

@@ -264,8 +264,7 @@ namespace Metre {
         X509_VERIFY_PARAM_set1_host(vpm, route.domain().c_str(), route.domain().size());
         // Add RFC 6125 additional names.
         auto res = Config::config().domain(route.domain()).resolver();
-        auto srv = co_await
-        res->SrvLookup(route.domain());
+        auto srv = co_await res->SrvLookup(route.domain());
         if (srv.error.empty()) {
             if (srv.dnssec) {
                 for (auto &rr : srv.rrs) {
@@ -338,7 +337,7 @@ namespace Metre {
 
     bool start_tls(XMLStream &stream, bool send_proceed) {
         SSL_CTX *ctx = Config::config().domain(stream.local_domain()).ssl_ctx();
-        if (!ctx) throw std::runtime_error("Failed to load certificates");
+        if (!ctx) throw std::runtime_error("Failed to load certificates for " + stream.local_domain());
         SSL *ssl = SSL_new(ctx);
         setup_session(ssl, stream.remote_domain());
         if (!ssl) throw std::runtime_error("Failure to initiate TLS, sorry!");

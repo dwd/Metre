@@ -194,6 +194,7 @@ namespace {
         bool dnssec_required = false;
         bool auth_pkix_crls = Config::config().fetch_pkix_status();
         bool auth_host = false;
+        TLS_PREFERENCE tls_preference = PREFER_ANY;
         int stanza_timeout = 20;
         int connect_timeout = 10;
         std::string dhparam = "4096";
@@ -203,6 +204,7 @@ namespace {
             auth_pkix = any->auth_pkix();
             auth_dialback = any->auth_dialback();
             tls_required = tls_required && any->require_tls();
+            tls_preference = any->tls_preference();
             dnssec_required = any->dnssec_required();
             dhparam = any->dhparam();
             cipherlist = any->cipherlist();
@@ -248,6 +250,15 @@ namespace {
             if (tls_a) {
                 tls_required = xmlbool(tls_a->value());
             }
+            auto tls_pref = transport->first_attribute("prefer");
+            if (tls_pref && tls_pref->value()) {
+                std::string tls_pref_str = tls_pref->value();
+                if (tls_pref_str == "immediate" || tls_pref_str == "direct") {
+                    tls_preference = PREFER_IMMEDIATE;
+                } else if (tls_pref_str == "starttls") {
+                    tls_preference = PREFER_STARTTLS;
+                }
+            }
             stanza_timeout = attrval<int>(domain->first_attribute("stanza-timeout"), stanza_timeout);
             connect_timeout = attrval<int>(domain->first_attribute("connect-timeout"), connect_timeout);
             auto forward_a = domain->first_attribute("forward");
@@ -290,6 +301,7 @@ namespace {
         dom->auth_pkix_status(auth_pkix_crls);
         dom->stanza_timeout(stanza_timeout);
         dom->connect_timeout(connect_timeout);
+        dom->tls_preference(tls_preference);
         auto x509t = domain->first_node("x509");
         if (x509t) {
             auto chain_a = x509t->first_attribute("chain");
@@ -428,6 +440,7 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
         : m_domain(domain), m_type(any.m_type), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
           m_block(any.m_block), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
+          m_tls_preference(any.m_tls_preference),
           m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist),
           m_ssl_ctx(nullptr), m_parent(&any) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
@@ -797,6 +810,18 @@ rapidxml::xml_node<> *Config::Domain::to_xml(rapidxml::xml_document<> &doc) cons
         }
         transport->append_attribute(doc.allocate_attribute("type", tt));
         transport->append_attribute(doc.allocate_attribute("sec", require_tls() ? "true" : "false"));
+        switch(tls_preference()) {
+            case PREFER_IMMEDIATE:
+                tt = "direct";
+                break;
+            case PREFER_STARTTLS:
+                tt = "starttls";
+                break;
+            case PREFER_ANY:
+                tt = "any";
+                break;
+        }
+        transport->append_attribute(doc.allocate_attribute("prefer", tt));
         transport->append_attribute(
                 doc.allocate_attribute("connect-timeout", alloc_short(connect_timeout())));
         if (auth_pkix()) {
@@ -1381,8 +1406,17 @@ void Config::Resolver::tlsa_lookup_done(int err, struct ub_result *result) {
 }
 
 namespace {
-    void srv_sort(DNS::Srv &srv) {
+    void srv_sort(DNS::Srv &srv, TLS_PREFERENCE pref) {
         std::vector<DNS::SrvRR> tmp = std::move(srv.rrs);
+        if (pref != PREFER_ANY) {
+            bool tls = (pref == PREFER_IMMEDIATE);
+            for (auto &rr : tmp) {
+                rr.priority *= 2;
+                if (rr.tls != tls) {
+                    rr.priority += 1;
+                }
+            }
+        }
         std::sort(tmp.begin(), tmp.end(), [](DNS::SrvRR const &a, DNS::SrvRR const &b) {
             return a.priority < b.priority;
         });
@@ -1476,7 +1510,7 @@ void Config::Resolver::srv_lookup_done(int err, struct ub_result *result) {
                            rr.port, rr.hostname);
         }
         if (m_current_srv.xmpp && m_current_srv.xmpps) {
-            srv_sort(m_current_srv);
+            srv_sort(m_current_srv, m_domain.tls_preference());
             m_srv_pending.emit(m_current_srv);
         }
         return;
@@ -1516,7 +1550,7 @@ void Config::Resolver::srv_lookup_done(int err, struct ub_result *result) {
             srv.dnssec = srv.dnssec && !!result->secure;
             m_srv_pending.emit(srv);
         } else {
-            srv_sort(m_current_srv);
+            srv_sort(m_current_srv, m_domain.tls_preference());
             m_current_srv.dnssec = m_current_srv.dnssec && !!result->secure;
             m_srv_pending.emit(m_current_srv);
         }
