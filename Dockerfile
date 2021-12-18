@@ -1,13 +1,11 @@
-FROM debian:sid-slim AS cpp-build
+FROM ubuntu:impish AS cpp-build
 
 RUN set -eux; \
    apt-get update; \
-   apt-get install --quiet --yes --no-install-recommends \
-       clang \
+   DEBIAN_FRONTEND=noninteractive apt-get install --quiet --yes --no-install-recommends \
+       build-essential \
        cmake \
        googletest \
-       libc++-dev \
-       libc++abi-dev \
        libevent-dev \
        libexpat-dev \
        libicu-dev \
@@ -39,8 +37,6 @@ RUN set -eux; \
     mkdir build; \
     cd build; \
     cmake \
-    	-DCMAKE_C_COMPILER=/usr/bin/clang \
-    	-DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
         -DCMAKE_INSTALL_PREFIX=/app/install \
         -DCMAKE_BUILD_TYPE=Release \
         -DVENDORED_DEPS=OFF \
