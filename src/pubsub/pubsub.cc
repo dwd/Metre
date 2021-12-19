@@ -4,7 +4,9 @@
 
 #include <stanza.h>
 #include <map>
+#ifdef USE_SPIFFING
 #include <spiffing/label.h>
+#endif
 #include <capability.h>
 
 namespace Metre {
@@ -21,7 +23,9 @@ namespace Metre {
         class Item {
             std::string m_id;
             std::string m_payload;
+#ifdef USE_SPIFFING
             Spiffing::Label m_label;
+#endif
             Jid m_publisher;
         };
 

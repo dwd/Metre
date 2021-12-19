@@ -72,6 +72,7 @@ if(USE_SPIFFING)
     add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
     set(SPIFFING_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/spiffing/include")
     set(SPIFFING_LDFLAGS spiffing spiffing-asn)
+    add_definitions(-DUSE_SPIFFING)
 endif(USE_SPIFFING)
 
 if(VENDORED_DEPS)
