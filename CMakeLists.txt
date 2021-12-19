@@ -12,6 +12,7 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
 option(VENDORED_DEPS "Use vendored depedencies" OFF)
 option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
+options(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
@@ -67,11 +68,11 @@ set(SIGSLOT_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/sigslot")
 set(RAPIDXML_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/rapidxml")
 
 set(BUILD_SHARED_LIBS OFF)
-if(UNIX)
+if(USE_SPIFFING)
     add_subdirectory(deps/spiffing EXCLUDE_FROM_ALL)
     set(SPIFFING_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/spiffing/include")
     set(SPIFFING_LDFLAGS spiffing spiffing-asn)
-endif(UNIX)
+endif(USE_SPIFFING)
 
 if(VENDORED_DEPS)
     find_path(_ICU2_INCLUDE_DIR PATHS /usr/local/opt/icu4c/include NAMES unicode/unorm2.h)
@@ -148,7 +149,7 @@ set(FILTER_SOURCES
     src/filters/domain-translation.cc
 )
 
-if (UNIX)
+if (USE_SPIFFING)
     list(APPEND FILTER_SOURCES src/filters/spiffing.cc)
 endif()
 
