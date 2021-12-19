@@ -12,7 +12,7 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
 option(VENDORED_DEPS "Use vendored depedencies" OFF)
 option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
-options(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
+option(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
