@@ -73,7 +73,7 @@ namespace Metre {
 
         /* Interface */
         /* Actually do the filter. Tinkering with the stanza is fine. */
-        virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Stanza &) = 0;
+        virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &) = 0;
 
     protected:
         /* Node will be an element of the filter name. */

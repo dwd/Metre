@@ -43,9 +43,9 @@ namespace {
         DiscoCache(BaseDescription &b, Config::Domain &, rapidxml::xml_node<> *) : Filter(b) {
         }
 
-        virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Stanza &s) override {
+        virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &s) override {
             if (dir == OUTBOUND) {
-                return PASS;
+                co_return PASS;
             }
             if (s.name() == Iq::name) {
                 Iq &iq = dynamic_cast<Iq &>(s);
@@ -53,21 +53,21 @@ namespace {
                     auto disco = iq.node()->first_node("query", "http://jabber.org/protocol/disco#info");
                     if (disco) { // It's a disco#info request.
                         auto node = disco->first_attribute("node");
-                        if (!node) return PASS;
+                        if (!node) co_return PASS;
                         auto it = caps_cache().find(std::string{node->value(), node->value_size()});
                         if (it != caps_cache().end()) {
                             std::unique_ptr<Stanza> response(new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id()));
                             response->payload((*it).second);
                             auto route = RouteTable::routeTable(iq.from()).route(iq.to());
                             route->transmit(std::move(response));
-                            return DROP;
+                            co_return DROP;
                         }
                     }
-                } else if (iq.type() == Iq::SET) {
+                } else if (iq.type() == Iq::RESULT) {
                     auto disco = iq.node()->first_node("query", "http://jabber.org/protocol/disco#info");
                     if (disco) { // It's a disco#info request.
                         auto node = disco->first_attribute("node");
-                        if (!node) return PASS;
+                        if (!node) co_return PASS;
                         bool client = false;
                         for (auto identity = disco->first_node("identity"); identity; identity = identity->next_sibling(
                                 "identity")) {
@@ -86,7 +86,7 @@ namespace {
                     }
                 }
             }
-            return PASS;
+            co_return PASS;
         }
 
     private:

@@ -42,26 +42,26 @@ namespace {
         Disco(BaseDescription &b, Config::Domain &domain, rapidxml::xml_node<> *config) : Filter(b) {
         }
 
-        virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Stanza &s) override {
+        virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &s) override {
             if (dir == OUTBOUND) {
-                return PASS;
+                co_return PASS;
             }
             if (s.name() == Presence::name) {
                 auto caps = s.node()->first_node("c", "http://jabber.org/protocol/caps");
-                if (!caps) return PASS;
+                if (!caps) co_return PASS;
                 auto hash = caps->first_attribute("hash");
                 if (hash) {
                     // Translate to the new caps, if available.
                     auto ver = caps->first_attribute("ver");
                     if (!ver) {
                         // s.node()->remove_node(caps); // Maybe??
-                        return PASS;
+                        co_return PASS;
                     }
                     auto it = m_caps_translation.find(std::string{ver->value(), ver->value_size()});
                     if (it == m_caps_translation.end()) {
                         // Freeze the stream (?) and do a disco query.
                         // Probably need to return false here?
-                        return PASS; // Pass it for now.
+                        co_return PASS; // Pass it for now.
                     }
                     // We cool. Replace the old caps with the new one.
                     caps->remove_attribute(ver);
@@ -70,7 +70,7 @@ namespace {
                     // For security, we'll need to back-calculate the hash.
                 }
             }
-            return PASS;
+            co_return PASS;
         }
 
     private:

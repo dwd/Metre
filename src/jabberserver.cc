@@ -91,7 +91,7 @@ namespace {
                             throw Metre::not_authorized();
                         }
                     }
-                    if (DROP == Config::config().domain(to.domain()).filter(INBOUND, *s)) {
+                    if (DROP == co_await Config::config().domain(to.domain()).filter(INBOUND, *s)) {
                         m_stream.logger().info("Stanza discarded by filters");
                         co_return true;
                     }

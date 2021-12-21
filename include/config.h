@@ -37,6 +37,8 @@ SOFTWARE.
 #include "defs.h"
 #include "dns.h"
 #include "spdlog/spdlog.h"
+#include "sigslot.h"
+#include <sigslot/tasklet.h>
 
 /**
  * OpenSSL forward declarations.
@@ -216,7 +218,7 @@ namespace Metre {
 
             ~Domain();
 
-            FILTER_RESULT filter(SESSION_DIRECTION dir, Stanza &s) const;
+            sigslot::tasklet<FILTER_RESULT> filter(SESSION_DIRECTION dir, Stanza &s) const;
 
             std::list<std::unique_ptr<Filter>> &filters() {
                 return m_filters;

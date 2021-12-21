@@ -50,9 +50,9 @@ namespace {
         DomainTranslation(BaseDescription &b, Config::Domain &, rapidxml::xml_node<> *) : Filter(b) {
         }
 
-        virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Stanza &s) override {
+        virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &s) override {
             if (dir == OUTBOUND) {
-                return PASS;
+                co_return PASS;
             }
             auto descr = dynamic_cast<DomainTranslation::Description const &>(m_description);
             // Step 1: Rewrite from.
@@ -64,7 +64,7 @@ namespace {
                 }
             }
             // Step 2: Rewrite to.
-            return PASS;
+            co_return PASS;
         }
     };
 

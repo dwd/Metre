@@ -446,16 +446,17 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
     m_logger = Config::config().logger("domain <" + m_domain + ">");
 }
 
-FILTER_RESULT Config::Domain::filter(SESSION_DIRECTION dir, Stanza &s) const {
+sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(SESSION_DIRECTION dir, Stanza &s) const {
     rapidxml::xml_node<> const *node = s.node();
     if (!node) {
         // Synthetic Stanza. Probably a bounce, or similar.
-        return PASS;
+        co_return PASS;
     }
     for (auto &filter : m_filters) {
-        if (filter->apply(dir, s) == DROP) return DROP;
+        auto filter_result = co_await filter->apply(dir, s);
+        if (filter_result == DROP) co_return DROP;
     }
-    return PASS;
+    co_return PASS;
 }
 
 
