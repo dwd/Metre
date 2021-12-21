@@ -28,6 +28,7 @@ SOFTWARE.
 #include <rapidxml.hpp>
 #include <router.h>
 #include <log.h>
+#include "cothread.h"
 
 using namespace Metre;
 using namespace rapidxml;
@@ -44,6 +45,12 @@ namespace {
         }
 
         virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &s) override {
+            auto fn = []() -> bool {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                return true;
+            };
+            CoThread<bool> cothread(fn);
+            co_await cothread.run();
             if (dir == OUTBOUND) {
                 co_return PASS;
             }
