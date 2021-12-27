@@ -292,15 +292,11 @@ namespace Metre {
                 stream.logger().debug("verify_tls: TLSA lookup for {}", rr.hostname);
                 try {
                     auto tlsa = co_await res->TlsaLookup(rr.port, rr.hostname);
-                } catch(std::exception & e) {
-                    stream.logger().debug("verify_tls: TLSA lookup exception: {}", e.what());
-                    continue;
-                }
-                stream.logger().debug("verify_tls: TLSA lookup done, error is '{}'", tlsa.error);
-                if (!tlsa.dnssec) continue;
-                if (!tlsa.error.empty()) continue;
-                dane_present = true;
-                for (auto &tlsa_rr : tlsa.rrs) {
+                    stream.logger().debug("verify_tls: TLSA lookup done, error is '{}'", tlsa.error);
+                    if (!tlsa.dnssec) continue;
+                    if (!tlsa.error.empty()) continue;
+                    dane_present = true;
+                    for (auto &tlsa_rr : tlsa.rrs) {
                     switch (tlsa_rr.certUsage) {
                         case DNS::TlsaRR::CertConstraint:
                             if (!valid) continue;
@@ -329,6 +325,10 @@ namespace Metre {
                                 if (dane_ok) goto tlsa_done;
                             }
                     }
+                }
+                } catch(std::exception & e) {
+                    stream.logger().debug("verify_tls: TLSA lookup exception: {}", e.what());
+                    continue;
                 }
             }
         }
