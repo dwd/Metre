@@ -222,7 +222,7 @@ namespace Metre {
             for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
                 auto cert = sk_X509_value(verified, certnum);
                 std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
-                        (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),
+                        (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(cert, NID_crl_distribution_points, nullptr, nullptr),
                         [](STACK_OF(DIST_POINT) *crldp) { sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
                 auto crldp = crldp_ptr.get();
                 if (crldp) {
@@ -289,18 +289,20 @@ namespace Metre {
         bool dane_present = false;
         if (srv.dnssec) {
             for (auto &rr : srv.rrs) {
+                stream.logger().debug("verify_tls: TLSA lookup for {}", rr.hostname);
                 auto tlsa = co_await
                 res->TlsaLookup(rr.port, rr.hostname);
+                stream.logger().debug("verify_tls: TLSA lookup done, error is '{}'", tlsa.error);
                 if (!tlsa.dnssec) continue;
                 if (!tlsa.error.empty()) continue;
                 dane_present = true;
-                for (auto &rr : tlsa.rrs) {
-                    switch (rr.certUsage) {
+                for (auto &tlsa_rr : tlsa.rrs) {
+                    switch (tlsa_rr.certUsage) {
                         case DNS::TlsaRR::CertConstraint:
                             if (!valid) continue;
                             // Fallthrough
                         case DNS::TlsaRR::DomainCert:
-                            if (tlsa_matches(rr, sk_X509_value(verified, 0))) {
+                            if (tlsa_matches(tlsa_rr, sk_X509_value(verified, 0))) {
                                 dane_ok = true;
                                 goto tlsa_done;
                             }
@@ -311,8 +313,8 @@ namespace Metre {
                         case DNS::TlsaRR::TrustAnchorAssertion:
                             if (sk_X509_num(verified) == 0) continue; // Problem there.
                             X509 *ta = sk_X509_value(verified, sk_X509_num(verified) - 1);
-                            if (tlsa_matches(rr, ta)) {
-                                if (rr.certUsage == DNS::TlsaRR::TrustAnchorAssertion) {
+                            if (tlsa_matches(tlsa_rr, ta)) {
+                                if (tlsa_rr.certUsage == DNS::TlsaRR::TrustAnchorAssertion) {
                                     dane_ok = (1 ==
                                                X509_check_host(cert, route.domain().c_str(), route.domain().size(),
                                                                0,
