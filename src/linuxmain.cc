@@ -32,6 +32,7 @@ SOFTWARE.
 #include <signal.h>
 #include <fstream>
 #include <router.h>
+#include <execinfo.h>
 
 namespace {
     class BootConfig {
@@ -82,11 +83,24 @@ namespace {
         METRE_LOG(Metre::Log::INFO, "Shutdown received.");
         Metre::Router::quit();
     }
+
+    void terminate_handler() {
+        const int buffer_sz = 256;
+        void * buffer[buffer_sz];
+        auto nptrs = backtrace(buffer, buffer_sz);
+        std::cerr << "Terminate called at depth " << nptrs << std::endl;
+        auto strings = backtrace_symbols(buffer, nptrs);
+        for (int i = 0; i != nptrs; ++i) {
+            std::cerr << i << " " << strings[i];
+        }
+        std::abort();
+    }
 }
 
 int main(int argc, char *argv[]) {
     try {
         // Firstly, load up the configuration.
+        std::set_terminate(terminate_handler);
         bc = std::make_unique<BootConfig>(argc, argv);
         config = std::make_unique<Metre::Config>(bc->config_file);
         if (bc->boot_method.empty()) {
