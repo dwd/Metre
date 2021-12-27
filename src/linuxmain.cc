@@ -93,6 +93,20 @@ namespace {
 
         unw_getcontext(&uc);
         unw_init_local(&cursor, &uc);
+        auto eptr = std::current_exception();
+        if (eptr) {
+            try {
+                std::rethrow_exception(eptr);
+            } catch(const std::runtime_error & e) {
+                std::cerr << "Uncaught runtime_error: " << e.what() << std::endl;
+            } catch(const std::exception & e) {
+                std::cerr << "Uncaught exception: " << e.what() << std::endl;
+            } catch(...) {
+                std::cerr << "Unknown exception caught" << std::endl;
+            }
+        } else {
+            std::cerr << "std::terminate called with no exception" << std::endl;
+        }
         while (unw_step(&cursor) > 0) {
             unw_word_t ip;
             unw_word_t sp;
