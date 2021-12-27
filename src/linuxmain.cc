@@ -32,16 +32,16 @@ SOFTWARE.
 #include <signal.h>
 #include <fstream>
 #include <router.h>
-#include <execinfo.h>
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
 
 namespace {
     class BootConfig {
     public:
-        std::string config_file;
-        std::string boot_method;
+        std::string config_file = "./metre.conf.xml";
+        std::string boot_method = "";
 
-        BootConfig(int argc, char *argv[])
-                : config_file("./metre.conf.xml"), boot_method() {
+        BootConfig(int argc, char *argv[]) {
             for (int i = 1; argv[i]; ++i) {
                 char opt;
                 switch (argv[i][0]) {
@@ -65,6 +65,9 @@ namespace {
                     case 'd':
                         boot_method = argv[i];
                         break;
+                    default:
+                        std::cerr << "Unknown switch " << opt << std::endl;
+                        exit(2);
                 }
             }
         }
@@ -73,25 +76,33 @@ namespace {
     std::unique_ptr<BootConfig> bc;
     std::unique_ptr<Metre::Config> config;
 
-    void hup_handler(int s) {
+    void hup_handler(int) {
         //config.reset(new Metre::Config(bc->config_file));
         //Metre::Router::reload();
         METRE_LOG(Metre::Log::INFO, "NOT Reloading config.");
     }
 
-    void term_handler(int s) {
+    void term_handler(int) {
         METRE_LOG(Metre::Log::INFO, "Shutdown received.");
         Metre::Router::quit();
     }
 
     void terminate_handler() {
-        const int buffer_sz = 256;
-        void * buffer[buffer_sz];
-        auto nptrs = backtrace(buffer, buffer_sz);
-        std::cerr << "Terminate called at depth " << nptrs << std::endl;
-        auto strings = backtrace_symbols(buffer, nptrs);
-        for (int i = 0; i != nptrs; ++i) {
-            std::cerr << i << " " << strings[i] << std::endl;
+        unw_cursor_t cursor;
+        unw_context_t uc;
+
+        unw_getcontext(&uc);
+        unw_init_local(&cursor, &uc);
+        while (unw_step(&cursor) > 0) {
+            unw_word_t ip;
+            unw_word_t sp;
+            unw_get_reg(&cursor, UNW_REG_IP, &ip);
+            unw_get_reg(&cursor, UNW_REG_SP, &sp);
+            std::array<char, 1024> buffer;
+            unw_word_t offset;
+            unw_get_proc_name(&cursor, buffer.data(), buffer.size(), &offset);
+            std::string proc_name(buffer.data());
+            std::cerr << "ip = " << std::ios::hex << ip << ", sp = " << sp << ", " << proc_name << "+" << offset << std::ios::dec << std::endl;
         }
         std::abort();
     }
@@ -173,8 +184,8 @@ int main(int argc, char *argv[]) {
             std::cerr << "I don't know what " << bc->boot_method << " means." << std::endl;
             return 1;
         }
-    } catch (std::runtime_error &e) {
-        std::cout << "Error while loading config: " << e.what() << std::endl;
+    } catch (std::runtime_error const &e) {
+        std::cerr << "Error while loading config: " << e.what() << std::endl;
         return 2;
     }
     config.reset(nullptr);

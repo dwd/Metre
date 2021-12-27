@@ -268,6 +268,7 @@ if (UNIX)
         ${SPIFFING_LDFLAGS}
         ${CMAKE_DL_LIBS} 
         Threads::Threads
+            -lunwind
     )
 else()
     target_link_libraries(metre PRIVATE

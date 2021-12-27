@@ -267,9 +267,9 @@ namespace {
             }
 
             for (auto auth = transport->first_node("auth"); auth; auth = auth->next_sibling("auth")) {
-                auto type_a = auth->first_attribute("type");
-                if (type_a) {
-                    std::string type = type_a->value();
+                auto auth_type_a = auth->first_attribute("type");
+                if (auth_type_a) {
+                    std::string type = auth_type_a->value();
                     if (type == "pkix") {
                         auth_pkix = true;
                         auto crl = auth->first_node("check-status");
@@ -599,7 +599,6 @@ Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(
     // Spin up a temporary error logger.
     m_root_logger = spdlog::stderr_color_st("console");
     spdlog::set_level(spdlog::level::trace);
-    //spdlog::set_sync_mode();
     load(filename);
     m_ub_ctx = ub_ctx_create();
     if (!m_ub_ctx) {
@@ -945,13 +944,13 @@ rapidxml::xml_node<> *Config::Domain::to_xml(rapidxml::xml_document<> &doc) cons
                                            "<tlsa host='nominal hostname [ignored]' port='nominal port number [ignored]' certusage='CAConstraint|CertConstraint|DomainCert|TrustAnchorAssertion' selector='FullCert|SubjectPublicKeyInfo' matchtype='Full|Sha256|Sha512'>Value</tsla>"));
         dns->append_node(doc.allocate_node(node_comment, nullptr,
                                            "Value should be hex hash for hash matchtypes, or a filename (no return character, at least one '/') or base64 DER (PEM without headers)"));
-        for (auto const &h : m_host_arecs) {
+        for (auto const & [hostname, address] : m_host_arecs) {
             auto host = doc.allocate_node(node_element, "host");
-            host->append_attribute(doc.allocate_attribute("name", h.first.c_str()));
-            char buf[32];
-            struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(h.second->addr.data());
-            inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf));
-            host->append_attribute(doc.allocate_attribute("a", doc.allocate_string(buf)));
+            host->append_attribute(doc.allocate_attribute("name", hostname.c_str()));
+            std::array<char, 32> buf{};
+            auto sin = reinterpret_cast<struct sockaddr_in *>(address->addr.data());
+            inet_ntop(AF_INET, &sin->sin_addr, buf.data(), buf.size());
+            host->append_attribute(doc.allocate_attribute("a", doc.allocate_string(buf.data())));
             dns->append_node(host);
         }
         dns->append_node(
@@ -1267,7 +1266,11 @@ namespace {
     public:
         struct ub_result *result;
 
-        UBResult(struct ub_result *r) : result(r) {}
+        explicit UBResult(struct ub_result *r) : result(r) {}
+        UBResult(UBResult const &) = delete;
+        UBResult(UBResult &&) = delete;
+        UBResult & operator=(UBResult const &) = delete;
+        UBResult & operator=(UBResult &&) = delete;
 
         ~UBResult() { ub_resolve_free(result); }
     };
@@ -1276,7 +1279,7 @@ namespace {
         UBResult r{result};
         METRE_LOG(Log::DEBUG, "DNS result for resolver " << x);
         auto resolver = reinterpret_cast<Config::Resolver *>(x);
-        if (s_resolvers.find(resolver) == s_resolvers.end()) return;
+        if (!s_resolvers.contains(resolver)) return;
         resolver->srv_lookup_done(err, result);
     }
 
@@ -1284,7 +1287,7 @@ namespace {
         UBResult r{result};
         METRE_LOG(Log::DEBUG, "DNS result for resolver " << x);
         auto resolver = reinterpret_cast<Config::Resolver *>(x);
-        if (s_resolvers.find(resolver) == s_resolvers.end()) return;
+        if (!s_resolvers.contains(resolver)) return;
         resolver->a_lookup_done(err, result);
     }
 
@@ -1292,7 +1295,7 @@ namespace {
         UBResult r{result};
         METRE_LOG(Log::DEBUG, "DNS result for resolver " << x);
         auto resolver = reinterpret_cast<Config::Resolver *>(x);
-        if (s_resolvers.find(resolver) == s_resolvers.end()) return;
+        if (!s_resolvers.contains(resolver)) return;
         resolver->tlsa_lookup_done(err, result);
     }
 }
@@ -1585,7 +1588,7 @@ void Config::Resolver::a_lookup_done(int err, struct ub_result *result) {
             m_current_arec.ipv4 = true;
             for (int i = 0; result->data[i]; ++i) {
                 auto& a = m_current_arec.addr.emplace_back();
-                struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&a);
+                auto sin = reinterpret_cast<struct sockaddr_in *>(&a);
                 sin->sin_family = AF_INET;
 #ifdef METRE_WINDOWS
                 sin->sin_addr = *reinterpret_cast<struct in_addr *>(result->data[i]);
@@ -1597,7 +1600,7 @@ void Config::Resolver::a_lookup_done(int err, struct ub_result *result) {
             m_current_arec.ipv6 = true;
             for (int i = 0; result->data[i]; ++i) {
                 auto it = m_current_arec.addr.emplace(m_current_arec.addr.begin());
-                struct sockaddr_in6 *sin = reinterpret_cast<struct sockaddr_in6 *>(&*it);
+                auto sin = reinterpret_cast<struct sockaddr_in6 *>(std::to_address(it));
                 sin->sin6_family = AF_INET6;
                 memcpy(sin->sin6_addr.s6_addr, result->data[i], 16);
             }
@@ -1636,8 +1639,8 @@ namespace {
         int retval;
         int async_id;
         if ((retval = ub_resolve_async(Config::config().ub_ctx(), const_cast<char *>(record.c_str()), rrtype, 1,
-                                       const_cast<void *>(reinterpret_cast<const void *>(resolver)), cb, &async_id)) <
-            0) {
+                                       const_cast<void *>(reinterpret_cast<const void *>(resolver)), cb, &async_id)) < //NOSONAR(cpp:S3630)
+                                                                                                                               0) {
             throw std::runtime_error(std::string("While resolving ") + record + ": " + ub_strerror(retval));
         }
         return async_id;
@@ -1647,16 +1650,16 @@ namespace {
 Config::addr_callback_t &Config::Resolver::AddressLookup(std::string const &ihostname) {
     std::string hostname = toASCII(ihostname);
     logger().info("A/AAAA lookup for {}", hostname);
-    for (Domain const *override = &m_domain; override; override = override->parent()) {
-        if (!override->address_overrides().empty()) {
-            logger().debug("Found overrides at {}", override->domain());
-            auto it = override->address_overrides().find(hostname);
-            if (it != override->address_overrides().end()) {
+    for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
+        if (!domain_override->address_overrides().empty()) {
+            logger().debug("Found overrides at {}", domain_override->domain());
+            auto it = domain_override->address_overrides().find(hostname);
+            if (it != domain_override->address_overrides().end()) {
                 auto addr = it->second.get();
                 Router::defer([addr, this]() {
                     m_a_pending[addr->hostname].emit(*addr);
                 });
-                logger().debug("Using override at {}", override->domain());
+                logger().debug("Using domain_override at {}", domain_override->domain());
                 return m_a_pending[hostname];
             }
         }
@@ -1673,13 +1676,13 @@ Config::srv_callback_t &Config::Resolver::SrvLookup(std::string const &base_doma
     std::string domain = toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = toASCII("_xmpps-server._tcp." + base_domain + ".");
     m_logger->debug("SRV lookup: domain=[{}]", base_domain);
-    for (Domain const *override = &m_domain; override; override = override->parent()) {
-        if (override->srv_override()) {
-            logger().debug("Found override at {}", override->domain());
-            Router::defer([override, this]() {
-                m_srv_pending.emit(*override->srv_override());
+    for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
+        if (domain_override->srv_override()) {
+            logger().debug("Found domain_override at {}", domain_override->domain());
+            Router::defer([domain_override, this]() {
+                m_srv_pending.emit(*domain_override->srv_override());
             });
-            logger().debug("Using override at {}", override->domain());
+            logger().debug("Using domain_override at {}", domain_override->domain());
             return m_srv_pending;
         }
     }
@@ -1711,16 +1714,16 @@ Config::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port, std::
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = toASCII(out.str());
     logger().info("TLSA lookup for domain=[{}]", domain);
-    for (Domain const *override = &m_domain; override; override = override->parent()) {
-        if (!override->tlsa_overrides().empty()) {
-            logger().debug("Found overrides at {}", override->domain());
-            auto it = override->tlsa_overrides().find(domain);
-            if (it != override->tlsa_overrides().end()) {
+    for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
+        if (!domain_override->tlsa_overrides().empty()) {
+            logger().debug("Found overrides at {}", domain_override->domain());
+            auto it = domain_override->tlsa_overrides().find(domain);
+            if (it != domain_override->tlsa_overrides().end()) {
                 auto addr = it->second.get();
                 Router::defer([addr, this]() {
                     m_tlsa_pending[addr->domain].emit(*addr);
                 });
-                logger().debug("Using override at [{}]", override->domain());
+                logger().debug("Using domain_override at [{}]", domain_override->domain());
                 return m_tlsa_pending[domain];
             }
         }

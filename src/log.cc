@@ -51,6 +51,9 @@ void Metre::Log::log(Log::LEVEL lvlm, std::string const &filename, int line, std
             break;
         case TRACE:
             lvl = spdlog::level::trace;
+            break;
+        default:
+            lvl = spdlog::level::critical;
     }
     Metre::Config::config().logger().log(lvl, "{}:{} : {}", filename, line, stuff);
 }
