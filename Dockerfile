@@ -12,6 +12,7 @@ RUN set -eux; \
        libspdlog-dev \
        libssl-dev \
        libunbound-dev \
+       libunwind-dev \
        ninja-build \
        pkg-config \
    ; \
