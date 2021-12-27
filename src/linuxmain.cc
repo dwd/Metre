@@ -120,6 +120,11 @@ namespace {
         }
         std::abort();
     }
+
+    void segv_handler(int s) {
+        METRE_LOG(Metre::Log::INFO, "Fatal signal " << s);
+        terminate_handler();
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -170,6 +175,8 @@ int main(int argc, char *argv[]) {
             signal(SIGPIPE, SIG_IGN);
             signal(SIGHUP, hup_handler);
             signal(SIGTERM, term_handler);
+            signal(SIGSEGV, segv_handler);
+            signal(SIGBUS, segv_handler);
             Metre::Router::main([]() { return false; });
         } else if (bc->boot_method == "none") {
             config->log_init(true);
@@ -178,6 +185,8 @@ int main(int argc, char *argv[]) {
             signal(SIGHUP, hup_handler);
             signal(SIGTERM, term_handler);
             signal(SIGINT, term_handler);
+            signal(SIGSEGV, segv_handler);
+            signal(SIGBUS, segv_handler);
             Metre::Router::main([]() { return false; });
         } else if (bc->boot_method == "docker") {
             config->docker_setup();
@@ -186,6 +195,8 @@ int main(int argc, char *argv[]) {
             signal(SIGHUP, hup_handler);
             signal(SIGTERM, term_handler);
             signal(SIGINT, term_handler);
+            signal(SIGSEGV, segv_handler);
+            signal(SIGBUS, segv_handler);
             Metre::Router::main([]() { return false; });
         } else if (bc->boot_method == "systemd") {
             config->log_init(true);
@@ -193,6 +204,8 @@ int main(int argc, char *argv[]) {
             signal(SIGPIPE, SIG_IGN);
             signal(SIGHUP, hup_handler);
             signal(SIGTERM, term_handler);
+            signal(SIGSEGV, segv_handler);
+            signal(SIGBUS, segv_handler);
             Metre::Router::main([]() { return false; });
         } else {
             std::cerr << "I don't know what " << bc->boot_method << " means." << std::endl;
