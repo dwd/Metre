@@ -38,7 +38,7 @@ RUN set -eux; \
     cd build; \
     cmake \
         -DCMAKE_INSTALL_PREFIX=/app/install \
-        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_BUILD_TYPE=Debug \
         -DVENDORED_DEPS=OFF \
         -GNinja \
         ../src; \

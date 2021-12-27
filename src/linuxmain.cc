@@ -91,7 +91,7 @@ namespace {
         std::cerr << "Terminate called at depth " << nptrs << std::endl;
         auto strings = backtrace_symbols(buffer, nptrs);
         for (int i = 0; i != nptrs; ++i) {
-            std::cerr << i << " " << strings[i];
+            std::cerr << i << " " << strings[i] << std::endl;
         }
         std::abort();
     }
