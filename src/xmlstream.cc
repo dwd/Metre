@@ -572,8 +572,8 @@ void XMLStream::do_restart() {
     m_stream_buf.clear();
     if (m_dir == OUTBOUND) {
         start_task("Restart outbound send_stream_open", send_stream_open(true));
+        thaw();
     }
-    thaw();
 }
 
 XMLStream::~XMLStream() {

@@ -361,6 +361,7 @@ namespace Metre {
             SSL_set_connect_state(ssl);
             SSL_set_tlsext_host_name(ssl, stream.remote_domain().c_str());
             st = BUFFEREVENT_SSL_CONNECTING;
+            stream.restart();
         }
         struct bufferevent *bev = stream.session().bufferevent();
         struct bufferevent *bev_ssl = bufferevent_openssl_filter_new(bufferevent_get_base(bev), bev, ssl, st,

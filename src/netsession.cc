@@ -208,7 +208,9 @@ void NetSession::bev_closed() {
 void NetSession::bev_connected() {
     m_logger->trace("BEV connected");
     onConnected.emit(*this);
-    m_xml_stream->restart();
+    if (m_xml_stream->direction() == OUTBOUND) {
+        m_xml_stream->restart();
+    }
 }
 
 #include <event2/bufferevent_ssl.h>
