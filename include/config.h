@@ -58,9 +58,9 @@ namespace Metre {
     class Config {
     public:
         /* DNS */
-        typedef sigslot::signal<DNS::Srv const &> srv_callback_t;
-        typedef sigslot::signal<DNS::Address const &> addr_callback_t;
-        typedef sigslot::signal<DNS::Tlsa const &> tlsa_callback_t;
+        using srv_callback_t = sigslot::signal<DNS::Srv>;
+        using addr_callback_t = sigslot::signal<DNS::Address>;
+        using tlsa_callback_t = sigslot::signal<DNS::Tlsa>;
 
         class Domain;
 
@@ -93,8 +93,8 @@ namespace Metre {
             DNS::Address m_current_arec;
             DNS::Srv m_current_srv;
             srv_callback_t m_srv_pending;
-            std::map<std::string, addr_callback_t> m_a_pending;
-            std::map<std::string, tlsa_callback_t> m_tlsa_pending;
+            std::map<std::string, addr_callback_t, std::less<>> m_a_pending;
+            std::map<std::string, tlsa_callback_t, std::less<>> m_tlsa_pending;
             std::shared_ptr<spdlog::logger> m_logger;
             std::unordered_set<int> m_queries;
         };
