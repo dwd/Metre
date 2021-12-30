@@ -44,8 +44,8 @@ SOFTWARE.
  * OpenSSL forward declarations.
 */
 
-struct ssl_ctx_st; // SSL_CTX
-struct x509_store_ctx_st; // X509_STORE_CTX;
+struct ssl_ctx_st; // This is an SSL_CTX
+struct x509_store_ctx_st; // This is a X509_STORE_CTX
 
 /**
  * Lib unbound.
@@ -66,7 +66,7 @@ namespace Metre {
 
         class Resolver {
         public:
-            Resolver(Domain const &);
+            explicit Resolver(Domain const &);
 
             ~Resolver();
 
@@ -101,35 +101,39 @@ namespace Metre {
 
         class Domain {
         public:
-            std::unique_ptr<::Metre::Config::Resolver> resolver() const {
+            [[nodiscard]] std::unique_ptr<::Metre::Config::Resolver> resolver() const {
                 return std::make_unique<Resolver>(*this);
             }
 
-            std::string const &domain() const {
+            [[nodiscard]] std::string const &domain() const {
                 return m_domain;
             }
 
-            SESSION_TYPE transport_type() const {
+            [[nodiscard]] SESSION_TYPE transport_type() const {
                 return m_type;
             }
 
-            bool forward() const {
+            [[nodiscard]] bool forward() const {
                 return m_forward;
             }
 
-            bool require_tls() const {
+            [[nodiscard]] bool require_tls() const {
                 return m_require_tls;
             }
 
-            bool block() const {
+            [[nodiscard]] bool block() const {
                 return m_block;
             }
 
-            bool auth_pkix() const {
+            [[nodiscard]] auto multiplex() const {
+                return m_multiplex;
+            }
+
+            [[nodiscard]] bool auth_pkix() const {
                 return m_auth_pkix;
             }
 
-            bool auth_pkix_status() const {
+            [[nodiscard]] bool auth_pkix_status() const {
                 return m_auth_crls;
             }
 
@@ -137,11 +141,11 @@ namespace Metre {
                 return m_auth_crls = crls;
             }
 
-            bool auth_dialback() const {
+            [[nodiscard]] bool auth_dialback() const {
                 return m_auth_dialback;
             }
 
-            unsigned stanza_timeout() const {
+            [[nodiscard]] unsigned stanza_timeout() const {
                 return m_stanza_timeout;
             }
 
@@ -149,7 +153,7 @@ namespace Metre {
                 return m_stanza_timeout = stanza_timeout;
             }
 
-            unsigned connect_timeout() const {
+            [[nodiscard]] unsigned connect_timeout() const {
                 return m_connect_timeout;
             }
 
@@ -157,7 +161,7 @@ namespace Metre {
                 return m_connect_timeout = connect_timeout;
             }
 
-            bool dnssec_required() const {
+            [[nodiscard]] bool dnssec_required() const {
                 return m_dnssec_required;
             }
 
@@ -166,7 +170,7 @@ namespace Metre {
                 return d;
             }
 
-            TLS_PREFERENCE tls_preference() const {
+            [[nodiscard]] TLS_PREFERENCE tls_preference() const {
                 return m_tls_preference;
             }
 
@@ -175,27 +179,27 @@ namespace Metre {
                 return p;
             }
 
-            std::string const &dhparam() const {
+            [[nodiscard]] std::string const &dhparam() const {
                 return m_dhparam;
             }
 
-            std::string const &dhparam(std::string const &d) {
+            std::string const &dhparam(std::string_view d) {
                 return m_dhparam = d;
             }
 
-            std::string const &cipherlist() const {
+            [[nodiscard]] std::string const &cipherlist() const {
                 return m_cipherlist;
             }
 
-            std::string const &cipherlist(std::string const &c) {
+            std::string const &cipherlist(std::string_view c) {
                 return m_cipherlist = c;
             }
 
-            std::optional<std::string> const &auth_secret() const {
+            [[nodiscard]] std::optional<std::string> const &auth_secret() const {
                 return m_auth_secret;
             }
 
-            struct ssl_ctx_st *ssl_ctx() const;
+            [[nodiscard]] struct ssl_ctx_st *ssl_ctx() const;
 
             /* Loading functions */
             void x509(std::string const &chain, std::string const &key);
@@ -207,7 +211,7 @@ namespace Metre {
             void tlsa(std::string const &hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
                       DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value);
 
-            Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block,
+            Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool multiplex,
                    bool auth_pkix, bool auth_dialback, bool auth_host, std::optional<std::string> &&m_auth_secret);
 
             Domain(Domain const &, std::string const &domain);
@@ -224,31 +228,31 @@ namespace Metre {
                 return m_filters;
             }
 
-            bool auth_endpoint(std::string const &ip, unsigned short port) const;
+            [[nodiscard]] bool auth_endpoint(std::string const &ip, unsigned short port) const;
 
-            bool auth_host() const {
+            [[nodiscard]] bool auth_host() const {
                 return m_auth_host;
             }
 
-            spdlog::logger &logger() const {
+            [[nodiscard]] spdlog::logger &logger() const {
                 return *m_logger;
             }
 
             rapidxml::xml_node<> *to_xml(rapidxml::xml_document<> &doc) const;
 
-            Domain const *parent() const {
+            [[nodiscard]] Domain const *parent() const {
                 return m_parent;
             }
 
-            auto const &address_overrides() const {
+            [[nodiscard]] auto const &address_overrides() const {
                 return m_host_arecs;
             }
 
-            auto const &tlsa_overrides() const {
+            [[nodiscard]] auto const &tlsa_overrides() const {
                 return m_tlsarecs;
             }
 
-            auto const &srv_override() const {
+            [[nodiscard]] auto const &srv_override() const {
                 return m_srvrec;
             }
 
@@ -259,6 +263,7 @@ namespace Metre {
             bool m_forward = false;
             bool m_require_tls = true;
             bool m_block = false;
+            bool m_multiplex = true;
             bool m_auth_pkix = true;
             bool m_auth_crls = true;
             bool m_auth_dialback = false;
@@ -272,31 +277,31 @@ namespace Metre {
             std::optional<std::string> m_auth_secret;
             struct ssl_ctx_st *m_ssl_ctx = nullptr;
             // DNS Overrides:
-            std::map<std::string, std::unique_ptr<DNS::Address>> m_host_arecs;
+            std::map<std::string, std::unique_ptr<DNS::Address>, std::less<>> m_host_arecs;
             std::unique_ptr<DNS::Srv> m_srvrec;
-            std::map<std::string, std::unique_ptr<DNS::Tlsa>> m_tlsarecs;
+            std::map<std::string, std::unique_ptr<DNS::Tlsa>, std::less<>> m_tlsarecs;
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;
             Domain const *m_parent = nullptr;
         };
 
-        Config(std::string const &filename);
+        explicit Config(std::string const &filename);
 
         ~Config();
 
         void write_runtime_config() const;
 
-        std::string asString() const;
+        [[nodiscard]] std::string asString() const;
 
-        std::string const &default_domain() const {
+        [[nodiscard]] auto const &default_domain() const {
             return m_default_domain;
         }
 
-        std::string const &runtime_dir() const {
+        [[nodiscard]] auto const &runtime_dir() const {
             return m_runtime_dir;
         }
 
-        std::string const &pidfile() const {
+        [[nodiscard]] auto const &pidfile() const {
             return m_pidfile;
         }
 
@@ -310,25 +315,25 @@ namespace Metre {
 
         void dns_init() const;
 
-        Domain const &domain(std::string const &domain) const;
+        [[nodiscard]] Domain const &domain(std::string const &domain) const;
 
         void load(std::string const &filename);
 
         static Config const &config();
 
-        std::string random_identifier() const;
+        [[nodiscard]] std::string random_identifier() const;
 
-        std::string const &dialback_secret() const {
+        [[nodiscard]] auto const &dialback_secret() const {
             return m_dialback_secret;
         }
 
-        std::string dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const;
+        [[nodiscard]] std::string dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const;
 
-        struct ub_ctx *ub_ctx() const {
+        [[nodiscard]] auto ub_ctx() const {
             return m_ub_ctx;
         }
 
-        bool fetch_pkix_status() const {
+        [[nodiscard]] bool fetch_pkix_status() const {
             return m_fetch_crls;
         }
 
@@ -339,11 +344,11 @@ namespace Metre {
             std::string const name;
             std::string const local_domain;
             std::string const remote_domain;
-            std::set<std::string> allowed_domains;
+            std::set<std::string, std::less<>> allowed_domains;
         private:
             struct sockaddr_storage m_sockaddr;
         public:
-            const struct sockaddr *sockaddr() const {
+            [[nodiscard]] const struct sockaddr *sockaddr() const {
                 return reinterpret_cast<const struct sockaddr *>(&m_sockaddr);
             }
 
@@ -351,21 +356,21 @@ namespace Metre {
                      const char *address, unsigned short port, TLS_MODE tls, SESSION_TYPE sess);
         };
 
-        std::list<Listener> const &listeners() const {
+        [[nodiscard]] std::list<Listener> const &listeners() const {
             return m_listeners;
         }
 
-        spdlog::logger &logger() const {
+        [[nodiscard]] spdlog::logger &logger() const {
             return *m_root_logger;
         }
 
-        std::shared_ptr<spdlog::logger> logger(std::string const &) const;
+        [[nodiscard]] std::shared_ptr<spdlog::logger> logger(std::string const &) const;
 
-        std::string const &database() const {
+        [[nodiscard]] std::string const &database() const {
             return m_database;
         }
 
-        std::string const &data_dir() const {
+        [[nodiscard]] std::string const &data_dir() const {
             return m_data_dir;
         }
 
@@ -385,7 +390,7 @@ namespace Metre {
         std::string m_logfile;
         std::string m_boot;
         std::string m_database;
-        std::map<std::string, std::unique_ptr<Domain>> m_domains;
+        std::map<std::string, std::unique_ptr<Domain>, std::less<>> m_domains;
         struct ub_ctx *m_ub_ctx = nullptr;
         std::list<Listener> m_listeners;
         std::shared_ptr<spdlog::logger> m_root_logger;

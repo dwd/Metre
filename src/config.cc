@@ -183,12 +183,13 @@ namespace {
         return attr->value();
     }
 
-    std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, xml_node<> *domain, SESSION_TYPE def) {
+    std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, xml_node<> const *domain, SESSION_TYPE def) {
         std::string name;
         bool forward = (def == INTERNAL || def == COMP);
         SESSION_TYPE sess = def;
         bool tls_required = !(def == INTERNAL || def == COMP);
         bool block = false;
+        bool multiplex = true;
         bool auth_pkix = (def == S2S) || (def == X2X);
         bool auth_dialback = false;
         bool dnssec_required = false;
@@ -246,6 +247,9 @@ namespace {
                     throw std::runtime_error("Unknown transport type");
                 }
             }
+            if (auto multiplex_a = transport->first_attribute("multiplex"); multiplex_a) {
+                multiplex = xmlbool(multiplex_a);
+            }
             auto tls_a = transport->first_attribute("sec");
             if (tls_a) {
                 tls_required = xmlbool(tls_a->value());
@@ -296,7 +300,7 @@ namespace {
                 throw std::runtime_error("Cannot authenticate domain, but not blocked.");
             }
         }
-        auto dom = std::make_unique<Config::Domain>(name, sess, forward, tls_required, block, auth_pkix, auth_dialback,
+        auto dom = std::make_unique<Config::Domain>(name, sess, forward, tls_required, block, multiplex, auth_pkix, auth_dialback,
                                                     auth_host, std::move(auth_secret));
         dom->auth_pkix_status(auth_pkix_crls);
         dom->stanza_timeout(stanza_timeout);
@@ -428,9 +432,9 @@ namespace {
 }
 
 Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls,
-                       bool block, bool auth_pkix, bool auth_dialback, bool auth_host,
+                       bool block, bool multiplex, bool auth_pkix, bool auth_dialback, bool auth_host,
                        std::optional<std::string> &&auth_secret)
-        : m_domain(domain), m_type(transport_type), m_forward(forward), m_require_tls(require_tls), m_block(block),
+        : m_domain(domain), m_type(transport_type), m_forward(forward), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
           m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(auth_secret),
           m_ssl_ctx(nullptr) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
@@ -438,7 +442,7 @@ Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, b
 
 Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
         : m_domain(domain), m_type(any.m_type), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
-          m_block(any.m_block), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
+          m_block(any.m_block), m_multiplex(any.m_multiplex), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
           m_tls_preference(any.m_tls_preference),
           m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist),
@@ -695,7 +699,7 @@ void Config::load(std::string const &filename) {
             any_domain = dom.get(); // Save this pointer.
             m_domains[dom->domain()] = std::move(dom);
         } else {
-            m_domains[""] = std::make_unique<Config::Domain>("", INTERNAL, false, true, true, true, true, false,
+            m_domains[""] = std::make_unique<Config::Domain>("", INTERNAL, false, true, true, true, true, true, false,
                                                              std::optional<std::string>());
         }
         for (auto domain = external->first_node("domain"); domain; domain = domain->next_sibling("domain")) {
@@ -783,13 +787,14 @@ rapidxml::xml_node<> *Config::Domain::to_xml(rapidxml::xml_document<> &doc) cons
     auto d = doc.allocate_node(node_element, domain().empty() ? "any" : "domain");
     if (!domain().empty()) {
         d->append_attribute(doc.allocate_attribute("name", domain().c_str()));
-        d->append_attribute(doc.allocate_attribute("forward", forward() ? "true" : "false"));
-        d->append_attribute(doc.allocate_attribute("stanza-timeout", alloc_short(stanza_timeout())));
-        d->append_node(doc.allocate_node(node_comment, nullptr,
-                                         "A remote domain. Forwarded domains are proxied through to non-forwarded domains."));
-        d->append_node(doc.allocate_node(node_comment, nullptr,
-                                         "A 'sec' attribute set to true mandates a secured connection (usually TLS)."));
     }
+    d->append_attribute(doc.allocate_attribute("forward", forward() ? "true" : "false"));
+    d->append_attribute(doc.allocate_attribute("block", block() ? "true" : "false"));
+    d->append_attribute(doc.allocate_attribute("stanza-timeout", alloc_short(stanza_timeout())));
+    d->append_node(doc.allocate_node(node_comment, nullptr,
+                                     "A remote domain. Forwarded domains are proxied through to non-forwarded domains."));
+    d->append_node(doc.allocate_node(node_comment, nullptr,
+                                     "A 'sec' attribute set to true mandates a secured connection (usually TLS)."));
     {
         auto transport = doc.allocate_node(node_element, "transport");
         const char *tt;
@@ -809,6 +814,7 @@ rapidxml::xml_node<> *Config::Domain::to_xml(rapidxml::xml_document<> &doc) cons
                 throw std::runtime_error("No idea what this transport type is");
         }
         transport->append_attribute(doc.allocate_attribute("type", tt));
+        transport->append_attribute(doc.allocate_attribute(("multiplex", multiplex() ? "true" : "false")));
         transport->append_attribute(doc.allocate_attribute("sec", require_tls() ? "true" : "false"));
         switch(tls_preference()) {
             case PREFER_IMMEDIATE:

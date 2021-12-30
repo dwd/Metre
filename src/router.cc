@@ -54,19 +54,25 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
         m_logger->warn("SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv.error);
         co_return false;
     }
-    for (auto &rr : srv.rrs) {
-        m_logger->trace("Should look for [{}:{}]", rr.hostname, rr.port);
-        auto session = Router::session_by_address(rr.hostname, rr.port);
-        if (session && !session->xml_stream().auth_ready()) {
-            m_logger->trace("Awaiting auth ready on verify session serial=[{}]", session->serial());
-            (void) co_await session->xml_stream().onAuthReady;
-            if (!session->xml_stream().auth_ready()) {
-                m_logger->trace("Auth was not ready on verify session serial=[{}]", session->serial());
+    if (Config::config().domain(m_domain.domain()).multiplex()) {
+        for (auto &rr: srv.rrs) {
+            m_logger->trace("Should look for [{}:{}]", rr.hostname, rr.port);
+            auto session = Router::session_by_address(rr.hostname, rr.port);
+            if (session && !Config::config().domain(session->xml_stream().remote_domain()).multiplex()) {
+                m_logger->trace("Session serial=[{}] found, but will not multiplex", session->serial());
                 continue;
             }
-            set_vrfy(session);
-            m_logger->trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
-            co_return true;
+            if (session && !session->xml_stream().auth_ready()) {
+                m_logger->trace("Awaiting auth ready on verify session serial=[{}]", session->serial());
+                (void) co_await session->xml_stream().onAuthReady;
+                if (!session->xml_stream().auth_ready()) {
+                    m_logger->trace("Auth was not ready on verify session serial=[{}]", session->serial());
+                    continue;
+                }
+                set_vrfy(session);
+                m_logger->trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
+                co_return true;
+            }
         }
     }
     for (auto &rr : srv.rrs) {
