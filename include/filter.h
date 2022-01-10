@@ -42,7 +42,9 @@ namespace Metre {
         protected:
             explicit BaseDescription(std::string &&aname) : name(std::move(aname)) {}
 
-            virtual void do_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) {}
+            virtual void do_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) {
+                // Default is no global config
+            }
 
         public:
             virtual void config(rapidxml::xml_node<> *config);
@@ -51,7 +53,8 @@ namespace Metre {
 
             virtual std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) = 0;
 
-        public:
+            virtual ~BaseDescription() = default;
+
             std::string const name;
         };
 
@@ -65,11 +68,10 @@ namespace Metre {
             }
         };
 
-    public:
-        static std::map<std::string, BaseDescription *> &all_filters();
+        using filter_map = std::map<std::string, Filter::BaseDescription *, std::less<>>;
+        static filter_map &all_filters();
 
-    public:
-        explicit Filter(BaseDescription &b) : m_description(b) {}
+        explicit Filter(BaseDescription const &b) : m_description(b) {}
 
         /* Interface */
         /* Actually do the filter. Tinkering with the stanza is fine. */
@@ -77,7 +79,9 @@ namespace Metre {
 
     protected:
         /* Node will be an element of the filter name. */
-        virtual void do_dump_config(rapidxml::xml_document<> &, rapidxml::xml_node<> *) {}
+        virtual void do_dump_config(rapidxml::xml_document<> &, rapidxml::xml_node<> *) {
+            // No config to write by default
+        }
 
         BaseDescription const &m_description;
 
@@ -86,8 +90,9 @@ namespace Metre {
 
         template<typename T>
         static bool declare(const char *name) {
+            // Bare pointer as this is premain and the object is never freed by design.
             BaseDescription *bd = new typename T::Description(name);
-            all_filters().insert(std::make_pair(bd->name, bd));
+            all_filters().try_emplace(bd->name, bd);
             return true;
         }
 

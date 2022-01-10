@@ -105,9 +105,9 @@ namespace {
 #else
 
     std::string toASCII(std::string const &input) {
-        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end()) {
+        if (std::ranges::find_if(input, [](const char c) { return c & (1 << 7); }) == input.end()) {
             std::string ret = input;
-            std::transform(ret.begin(), ret.end(), ret.begin(),
+            std::ranges::transform(ret, ret.begin(),
                            [](const char c) { return static_cast<char>(tolower(c)); });
             return ret;
         }
@@ -130,8 +130,10 @@ namespace {
             case 'Y':
             case '1':
                 return true;
+
+            default:
+                return false;
         }
-        return false;
     }
 
     bool xmlbool(xml_attribute<> const * attr) {
@@ -814,7 +816,7 @@ rapidxml::xml_node<> *Config::Domain::to_xml(rapidxml::xml_document<> &doc) cons
                 throw std::runtime_error("No idea what this transport type is");
         }
         transport->append_attribute(doc.allocate_attribute("type", tt));
-        transport->append_attribute(doc.allocate_attribute(("multiplex", multiplex() ? "true" : "false")));
+        transport->append_attribute(doc.allocate_attribute("multiplex", multiplex() ? "true" : "false"));
         transport->append_attribute(doc.allocate_attribute("sec", require_tls() ? "true" : "false"));
         switch(tls_preference()) {
             case PREFER_IMMEDIATE:

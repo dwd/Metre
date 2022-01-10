@@ -165,3 +165,31 @@ std::string const &Jid::bare() const {
     }
     return *m_bare;
 }
+
+Jid Jid::full_jid() const {
+    if (m_resource) {
+        if (m_local) {
+            return Jid(*m_local, m_domain, *m_resource);
+        } else {
+            return Jid(nullptr, m_domain, *m_resource);
+        }
+    } else {
+        if (m_local) {
+            return Jid(*m_local, m_domain);
+        } else {
+            return Jid(nullptr, m_domain);
+        }
+    }
+}
+
+Jid Jid::bare_jid() const {
+    if (m_local) {
+        return Jid(*m_local, m_domain);
+    } else {
+        return Jid(nullptr, m_domain);
+    }
+}
+
+Jid Jid::domain_jid() const {
+    return Jid(nullptr, m_domain);
+}

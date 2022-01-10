@@ -60,8 +60,16 @@ namespace Metre {
             return m_domain.domain();
         }
 
+        Jid const & domain_jid() const {
+            return m_domain;
+        }
+
         std::string const &local() const {
             return m_local.domain();
+        }
+
+        Jid const & local_jid() const {
+            return m_local;
         }
 
         sigslot::tasklet<bool> init_session_vrfy();
@@ -93,13 +101,14 @@ namespace Metre {
 
     class RouteTable {
     private:
-        std::map<std::string, std::shared_ptr<Route>> m_routes;
+        std::map<std::string, std::shared_ptr<Route>, std::less<>> m_routes;
         std::string m_local_domain;
 
     public:
-        RouteTable(std::string const &);
+        explicit RouteTable(std::string const &);
 
         std::shared_ptr<Route> &route(Jid const &to);
+        std::shared_ptr<Route> &route(std::string const &to);
 
         static RouteTable &routeTable(std::string const &);
 

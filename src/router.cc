@@ -35,7 +35,7 @@ SOFTWARE.
 
 using namespace Metre;
 
-Route::Route(Jid const &from, Jid const &to) : m_local(from), m_domain(to) {
+Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_domain(to.domain_jid()) {
     if (m_domain.domain().empty() || m_local.domain().empty()) throw std::runtime_error("Cannot have route to/from empty domain");
     auto sinks = Config::config().logger().sinks();
     m_logger = std::make_shared<spdlog::logger>("Route from=[" + m_local.domain() + "] to=[" + m_domain.domain() + "]", begin(sinks), end(sinks));
@@ -324,12 +324,15 @@ RouteTable &RouteTable::routeTable(Jid const &j) {
 }
 
 std::shared_ptr<Route> &RouteTable::route(Jid const &to) {
+    return route(to.domain());
+}
+
+std::shared_ptr<Route> &RouteTable::route(std::string const & to) {
     // TODO This needs to be more complex once we have clients.
-    auto it = m_routes.find(to.domain());
-    if (it != m_routes.end()) {
+    if (auto it = m_routes.find(to); it != m_routes.end()) {
         return (*it).second;
     }
-    auto itp = m_routes.emplace(to.domain(), std::make_shared<Route>(m_local_domain, to.domain()));
+    auto itp = m_routes.try_emplace(to, std::make_shared<Route>(Jid(nullptr, m_local_domain), Jid(nullptr, to)));
     return (*(itp.first)).second;
 }
 

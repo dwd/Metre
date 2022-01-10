@@ -38,7 +38,7 @@ namespace Metre {
 
             xmpp_exception(const char *w, const char *elname) : std::runtime_error(w), m_elname(elname) {}
 
-            const char *element_name() const {
+            [[nodiscard]] auto element_name() const {
                 return m_elname;
             }
         };
@@ -49,8 +49,8 @@ namespace Metre {
     class clsname : public base::xmpp_exception {  \
     public:  \
         clsname() : base::xmpp_exception(def_text, elname) {}  \
-        clsname(std::string const & w) : base::xmpp_exception(w, elname) {}  \
-        clsname(const char * w) : base::xmpp_exception(w, elname) {}  \
+        explicit clsname(std::string const & w) : base::xmpp_exception(w, elname) {}  \
+        explicit clsname(const char * w) : base::xmpp_exception(w, elname) {}  \
     }
 
     METRE_XMPP_EXCEPT(bad_format, "Sorry, I cannot process that XML", "bad-format");
@@ -82,11 +82,11 @@ namespace Metre {
                                                                                           m_elname(elname),
                                                                                           m_error_type(error_type) {}
 
-            const char *element_name() const {
+            [[nodiscard]] auto element_name() const {
                 return m_elname;
             }
 
-            const char *error_type() const {
+            [[nodiscard]] auto error_type() const {
                 return m_error_type;
             }
         };
@@ -97,9 +97,9 @@ namespace Metre {
     class stanza_##errname : public base::stanza_exception { \
     public: \
         stanza_##errname() : base::stanza_exception(def_text, elname, def_type) {} \
-        stanza_##errname(std::string const & w) : base::stanza_exception(w, elname, def_type) {} \
+        explicit stanza_##errname(std::string const & w) : base::stanza_exception(w, elname, def_type) {} \
         stanza_##errname(std::string const & w, const char * err_type) : base::stanza_exception(w, elname, err_type) {} \
-        stanza_##errname(const char * w) : base::stanza_exception(w, elname, def_type) {} \
+        explicit stanza_##errname(const char * w) : base::stanza_exception(w, elname, def_type) {} \
         stanza_##errname(const char * w, const char * err_type) : base::stanza_exception(w, elname, err_type) {} \
     }
 

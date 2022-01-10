@@ -142,7 +142,10 @@ else()
     endif()
 endif()
 
-find_package(OpenSSL 1.1.0 REQUIRED)
+find_package(OpenSSL 1.1.1 REQUIRED)
+
+#set(THIRD_PARTY_BUILD_DIR )
+#add_subdirectory(deps/core/build/linux EXCLUDE_FROM_ALL)
 
 set(FILTER_SOURCES
     src/filters/disco-cache.cc

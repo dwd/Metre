@@ -29,8 +29,9 @@ SOFTWARE.
 
 using namespace Metre;
 
-std::map<std::string, Filter::BaseDescription *> &Filter::all_filters() {
-    static std::map<std::string, Filter::BaseDescription *> s_filters;
+Filter::filter_map &Filter::all_filters() {
+    // Defined like this because it's executed pre-main.
+    static filter_map s_filters;
     return s_filters;
 }
 
@@ -41,6 +42,7 @@ rapidxml::xml_node<> *Filter::BaseDescription::config(rapidxml::xml_document<> &
 }
 
 void Filter::BaseDescription::config(rapidxml::xml_node<> *) {
+    // Default is no config.
 }
 
 rapidxml::xml_node<> *Filter::dump_config(rapidxml::xml_document<> &doc) {

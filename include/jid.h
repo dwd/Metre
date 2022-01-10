@@ -40,16 +40,24 @@ namespace Metre {
         mutable std::optional<std::string> m_full;
         mutable std::optional<std::string> m_bare;
     public:
-        Jid(std::string const &jid) {
+        explicit Jid(std::string const &jid) {
             parse(jid);
         }
 
-        Jid(std::string const &local, std::string const &domain)
+        Jid(std::string const &local, std::string const &domain, nullptr_t=nullptr)
                 : m_local(local), m_domain(domain) {
         }
 
         Jid(std::string const &local, std::string const &domain, std::string const &resource)
                 : m_local(local), m_domain(domain), m_resource(resource) {
+        }
+
+        Jid(nullptr_t, std::string const &domain, nullptr_t=nullptr)
+                : m_domain(domain) {
+        }
+
+        Jid(nullptr_t, std::string const &domain, std::string const &resource)
+                : m_domain(domain), m_resource(resource) {
         }
 
         Jid(Jid const &jid)
@@ -62,6 +70,25 @@ namespace Metre {
 
         std::string const &domain() const {
             return m_domain;
+        }
+
+        Jid full_jid() const;
+
+        Jid bare_jid() const;
+
+        Jid domain_jid() const;
+
+        std::string const &local() const {
+            return *m_local;
+        }
+        std::optional<std::string> const &local_part() const {
+            return m_local;
+        }
+        std::string const &resource() const {
+            return *m_resource;
+        }
+        std::optional<std::string> const &resource_part() const {
+            return m_resource;
         }
 
     protected:

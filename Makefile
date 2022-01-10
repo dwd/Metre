@@ -28,11 +28,8 @@ gen/dh%.cc:
 
 apt-deps:
 	apt-get install --quiet --no-install-recommends \
-		clang \
 		cmake \
 		googletest \
-		libc++-dev \
-		libc++abi-dev \
 		libevent-dev \
 		libexpat-dev \
 		libicu-dev \

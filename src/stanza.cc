@@ -30,7 +30,7 @@ SOFTWARE.
 
 using namespace Metre;
 
-Stanza::Stanza(const char *name, rapidxml::xml_node<> const *node) : m_name(name), m_node(node) {
+Stanza::Stanza(const char *name, rapidxml::xml_node<> *node) : m_name(name), m_node(node) {
     auto to = node->first_attribute("to");
     if (to) m_to = Jid(to->value());
     auto from = node->first_attribute("from");
@@ -97,7 +97,7 @@ void Stanza::render(rapidxml::xml_document<> &d) {
     d.append_node(hdr);
 }
 
-rapidxml::xml_node<> const *Stanza::node() {
+rapidxml::xml_node<> *Stanza::node() {
     if (m_node) return m_node;
     rapidxml::xml_document<> tmp_doc;
     std::string tmp{m_payload, m_payload_l}; // Copy the buffer.
@@ -196,7 +196,7 @@ std::unique_ptr<Stanza> Stanza::create_forward() const {
     return stanza;
 }
 
-Message::Message(rapidxml::xml_node<> const *node) : Stanza(Message::name, node) {
+Message::Message(rapidxml::xml_node<> *node) : Stanza(Message::name, node) {
     m_type = set_type();
 }
 
@@ -226,7 +226,7 @@ Message::Type Message::set_type() const {
 Iq::Iq(Jid const &from, Jid const &to, Type t, std::optional<std::string> const &id) : Stanza(Iq::name, from, to,
                                                                                               Iq::type_toString(t), id), m_type(t) {}
 
-Iq::Iq(rapidxml::xml_node<> const *node) : Stanza(name, node) {
+Iq::Iq(rapidxml::xml_node<> *node) : Stanza(name, node) {
     m_type = set_type();
 }
 

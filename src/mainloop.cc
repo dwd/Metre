@@ -70,6 +70,7 @@ namespace Metre {
         std::multimap<time_t, std::function<void()>> m_pending_actions;
         bool m_shutdown = false;
         bool m_shutdown_now = false;
+        std::recursive_mutex m_scheduler_mutex;
     public:
         static Mainloop *s_mainloop;
 
@@ -287,12 +288,15 @@ namespace Metre {
                 }
                 m_closed_sessions.clear();
                 time_t now = std::time(nullptr);
-                while (!m_pending_actions.empty()) {
-                    if (m_pending_actions.begin()->first <= now) {
-                        m_pending_actions.begin()->second();
-                        m_pending_actions.erase(m_pending_actions.begin());
-                    } else {
-                        break;
+                {
+                    std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
+                    while (!m_pending_actions.empty()) {
+                        if (m_pending_actions.begin()->first <= now) {
+                            m_pending_actions.begin()->second();
+                            m_pending_actions.erase(m_pending_actions.begin());
+                        } else {
+                            break;
+                        }
                     }
                 }
                 if (m_shutdown) {
@@ -310,15 +314,19 @@ namespace Metre {
                     m_shutdown_now = true;
                     event_base_loopexit(m_event_base, NULL);
                     METRE_LOG(Metre::Log::INFO, "Closed all sessions.");
-                } else if (!m_pending_actions.empty()) {
-                    struct timeval t = {0, 0};
-                    t.tv_sec = m_pending_actions.begin()->first - now;
-                    event_base_loopexit(m_event_base, &t);
+                } else {
+                    std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
+                    if (!m_pending_actions.empty()) {
+                        struct timeval t = {0, 0};
+                        t.tv_sec = m_pending_actions.begin()->first - now;
+                        event_base_loopexit(m_event_base, &t);
+                    }
                 }
             }
         }
 
         void do_later(std::function<void()> &&fn, std::size_t seconds) {
+            std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
             time_t now = time(nullptr);
             m_pending_actions.emplace(now + seconds, std::move(fn));
             struct timeval t = {0, 0};

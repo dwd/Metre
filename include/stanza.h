@@ -71,10 +71,10 @@ namespace Metre {
         mutable std::string m_payload_str;
         const char *m_payload = nullptr;
         size_t m_payload_l = 0;
-        rapidxml::xml_node<> const *m_node = nullptr;
+        rapidxml::xml_node<> *m_node = nullptr;
         std::unique_ptr<rapidxml::xml_document<>> m_doc;
     public:
-        Stanza(const char *name, rapidxml::xml_node<> const *node);
+        Stanza(const char *name, rapidxml::xml_node<> *node);
 
         explicit Stanza(const char *name);
 
@@ -111,7 +111,7 @@ namespace Metre {
             return m_id;
         }
 
-        void id(std::string const &s) {
+        void id(std::string_view s) {
             m_id = s;
         }
 
@@ -119,18 +119,21 @@ namespace Metre {
             return m_lang;
         }
 
-        rapidxml::xml_node<> const *node();
+        rapidxml::xml_node<> *node(); // If changed, call update();
         rapidxml::xml_node<> const *node() const {
             return const_cast<Stanza *>(this)->node();
         }
 
-        void payload(std::string const &p) {
+        void payload(std::string_view p) {
             m_payload_str = p;
             m_payload = m_payload_str.c_str();
             m_payload_l = m_payload_str.size();
         }
 
         void payload(rapidxml::xml_node<> *node);
+        void update() {
+            payload(node());
+        }
 
         void render(rapidxml::xml_document<> &d);
 
@@ -158,7 +161,7 @@ namespace Metre {
     private:
         Type m_type;
     public:
-        explicit Message(rapidxml::xml_node<> const *node);
+        explicit Message(rapidxml::xml_node<> *node);
 
         Type type() const {
             return m_type;
@@ -178,7 +181,7 @@ namespace Metre {
     private:
         Type m_type;
     public:
-        explicit Iq(rapidxml::xml_node<> const *node);
+        explicit Iq(rapidxml::xml_node<> *node);
 
         Iq(Jid const &from, Jid const &to, Type t, std::optional<std::string> const &id);
 
@@ -199,7 +202,7 @@ namespace Metre {
     public:
         static const char *name;
 
-        explicit Presence(rapidxml::xml_node<> const *node) : Stanza(name, node) {
+        explicit Presence(rapidxml::xml_node<> *node) : Stanza(name, node) {
         }
     };
 
@@ -216,7 +219,7 @@ namespace Metre {
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
            std::optional<std::string> const &key);
 
-        DB(const char *name, rapidxml::xml_node<> const *node) : Stanza(name, node) {
+        DB(const char *name, rapidxml::xml_node<> *node) : Stanza(name, node) {
         }
 
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t);
@@ -252,7 +255,7 @@ namespace Metre {
                                                                                                    stream_id,
                                                                                                    t) {}
 
-        explicit Verify(rapidxml::xml_node<> const *node) : DB(name, node) {
+        explicit Verify(rapidxml::xml_node<> *node) : DB(name, node) {
         }
     };
 
@@ -270,7 +273,7 @@ namespace Metre {
         Result(Jid const &to, Jid const &from, Stanza::Error t) : DB(name, to, from, "",
                                                                      t) {}
 
-        explicit Result(rapidxml::xml_node<> const *node) : DB(name, node) {
+        explicit Result(rapidxml::xml_node<> *node) : DB(name, node) {
         }
     };
 }

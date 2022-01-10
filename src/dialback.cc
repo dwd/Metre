@@ -122,13 +122,13 @@ namespace {
             result.freeze();
             // Shortcuts here.
             if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(*route))) {
-                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain(), route->local(), DB::VALID);
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain_jid(), route->local_jid(), DB::VALID);
                 m_stream.send(std::move(d));
                 m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::AUTHORIZED);
                 co_return true;
             }
             if (!from_domain.auth_dialback()) {
-                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain(), route->local(),
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain_jid(), route->local_jid(),
                                                                          Stanza::not_authorized);
                 m_stream.send(std::move(d));
                 co_return true;
@@ -136,7 +136,7 @@ namespace {
             m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::REQUESTED);
             // With syntax done, we should send the key:
             route->transmit(
-                    std::make_unique<DB::Verify>(route->domain(), route->local(), m_stream.stream_id(), result.key()));
+                    std::make_unique<DB::Verify>(route->domain_jid(), route->local_jid(), m_stream.stream_id(), result.key()));
             co_return
             true;
         }

@@ -131,7 +131,7 @@ Endpoint &Endpoint::endpoint(Jid const &jid) {
     static std::map<std::string, std::unique_ptr<Endpoint>> s_endpoints;
     auto i = s_endpoints.find(jid.domain());
     if (i == s_endpoints.end()) {
-        s_endpoints[jid.domain()] = std::make_unique<Simple>(jid.domain());
+        s_endpoints[jid.domain()] = std::make_unique<Simple>(jid.domain_jid());
         return *s_endpoints[jid.domain()];
     }
     return *((*i).second);
