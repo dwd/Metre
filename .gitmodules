@@ -6,7 +6,7 @@
 	url = https://github.com/dwd/sigslot
 [submodule "deps/spiffing"]
 	path = deps/spiffing
-	url = https://github.com/surevine/spiffing
+	url = https://github.com/dwd/spiffing
 [submodule "deps/openssl"]
 	path = deps/openssl
 	url = git://git.openssl.org/openssl.git
