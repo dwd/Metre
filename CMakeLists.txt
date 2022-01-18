@@ -10,7 +10,7 @@ set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
-option(VENDORED_DEPS "Use vendored depedencies" OFF)
+option(VENDORED_DEPS "Use vendored depedencies" ON)
 option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
 option(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
 

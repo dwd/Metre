@@ -18,7 +18,10 @@
 	url = https://github.com/gabime/spdlog
 [submodule "deps/unbound"]
 	path = deps/unbound
-	url = https://github.com/dwd/unbound
+	url = https://github.com/NLnetLabs/unbound
 [submodule "deps/googletest"]
 	path = deps/googletest
 	url = https://github.com/google/googletest
+[submodule "deps/yaml-cpp"]
+	path = deps/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp
