@@ -35,18 +35,17 @@ Filter::filter_map &Filter::all_filters() {
     return s_filters;
 }
 
-rapidxml::xml_node<> *Filter::BaseDescription::config(rapidxml::xml_document<> &doc) {
-    auto config = doc.allocate_node(rapidxml::node_element, name.c_str());
-    do_config(doc, config);
-    return config;
+YAML::Node Filter::BaseDescription::config() {
+    YAML::Node node;
+    do_config(node);
+    return node;
 }
 
-void Filter::BaseDescription::config(rapidxml::xml_node<> *) {
+void Filter::BaseDescription::config(YAML::Node const &) {
     // Default is no config.
 }
 
-rapidxml::xml_node<> *Filter::dump_config(rapidxml::xml_document<> &doc) {
-    auto config = doc.allocate_node(rapidxml::node_element, m_description.name.c_str());
-    do_dump_config(doc, config);
-    return config;
+YAML::Node Filter::dump_config() {
+    YAML::Node node;
+    return node;
 }

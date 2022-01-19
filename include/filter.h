@@ -34,6 +34,7 @@ SOFTWARE.
 #include <memory>
 #include <set>
 #include <rapidxml.hpp>
+#include <yaml-cpp/yaml.h>
 
 namespace Metre {
     class Filter {
@@ -42,16 +43,16 @@ namespace Metre {
         protected:
             explicit BaseDescription(std::string &&aname) : name(std::move(aname)) {}
 
-            virtual void do_config(rapidxml::xml_document<> &doc, rapidxml::xml_node<> *config) {
-                // Default is no global config
+            virtual void do_config(YAML::Node & config) {
+                // No config by default.
             }
 
         public:
-            virtual void config(rapidxml::xml_node<> *config);
+            virtual void config(YAML::Node const &);
 
-            rapidxml::xml_node<> *config(rapidxml::xml_document<> &doc);
+            YAML::Node config();
 
-            virtual std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) = 0;
+            virtual std::unique_ptr<Filter> create(Config::Domain &domain, YAML::Node const & config) = 0;
 
             virtual ~BaseDescription() = default;
 
@@ -63,7 +64,7 @@ namespace Metre {
         public:
             explicit Description(std::string &&name) : BaseDescription(std::move(name)) {}
 
-            std::unique_ptr<Filter> create(Config::Domain &domain, rapidxml::xml_node<> *config) override {
+            std::unique_ptr<Filter> create(Config::Domain &domain, YAML::Node const & config) override {
                 return std::unique_ptr<Filter>(new T(*this, domain, config));
             }
         };
@@ -77,9 +78,12 @@ namespace Metre {
         /* Actually do the filter. Tinkering with the stanza is fine. */
         virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &) = 0;
 
+        std::string const & name() const {
+            return m_description.name;
+        }
     protected:
         /* Node will be an element of the filter name. */
-        virtual void do_dump_config(rapidxml::xml_document<> &, rapidxml::xml_node<> *) {
+        virtual void do_dump_config(YAML::Node &) {
             // No config to write by default
         }
 
@@ -96,7 +100,7 @@ namespace Metre {
             return true;
         }
 
-        rapidxml::xml_node<> *dump_config(rapidxml::xml_document<> &doc);
+        YAML::Node dump_config();
     };
 }
 

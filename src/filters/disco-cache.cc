@@ -41,7 +41,7 @@ namespace {
             Description(std::string &&name) : Filter::Description<DiscoCache>(std::move(name)) {};
         };
 
-        DiscoCache(BaseDescription &b, Config::Domain &, rapidxml::xml_node<> *) : Filter(b) {
+        DiscoCache(BaseDescription &b, Config::Domain &, YAML::Node const &) : Filter(b) {
         }
 
         virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &s) override {

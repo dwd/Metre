@@ -1,0 +1,23 @@
+globals:
+  default-domain: jekyll.cridland.im
+  rundir: /home/dwd/metre/run
+  datadir: /home/dwd/metre/data
+  dnssec-keys: /home/dwd/metre/keys
+
+filters:
+  domain-translation:
+    foo.example: foo.test
+    bar.example: bar.other.test
+
+remote:
+  any:
+    transport:
+          type: s2s
+          prefer: direct
+          sec: true
+  "dave.cridland.net":
+    x509:
+      chain: "/home/dwd/metre/live/dave.cridland.net/fullchain.pem"
+      pkey: "/home/dwd/metre/live/dave.cridland.net/privkey.pem"
+    filter-in:
+      domain-translation: {}

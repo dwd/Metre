@@ -228,6 +228,10 @@ namespace Metre {
                 return m_filters;
             }
 
+            [[nodiscard]] std::list<std::unique_ptr<Filter>> const &filters() const {
+                return m_filters;
+            }
+
             [[nodiscard]] bool auth_endpoint(std::string const &ip, unsigned short port) const;
 
             [[nodiscard]] bool auth_host() const {
@@ -237,8 +241,6 @@ namespace Metre {
             [[nodiscard]] spdlog::logger &logger() const {
                 return *m_logger;
             }
-
-            rapidxml::xml_node<> *to_xml(rapidxml::xml_document<> &doc) const;
 
             [[nodiscard]] Domain const *parent() const {
                 return m_parent;
@@ -353,7 +355,7 @@ namespace Metre {
             }
 
             Listener(std::string const &local_domain, std::string const &remote_domain, std::string const &name,
-                     const char *address, unsigned short port, TLS_MODE tls, SESSION_TYPE sess);
+                     std::string const &address, unsigned short port, TLS_MODE tls, SESSION_TYPE sess);
         };
 
         [[nodiscard]] std::list<Listener> const &listeners() const {

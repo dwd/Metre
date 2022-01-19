@@ -39,7 +39,7 @@ namespace {
             Description(std::string &&name) : Filter::Description<Disco>(std::move(name)) {};
         };
 
-        Disco(BaseDescription &b, Config::Domain &domain, rapidxml::xml_node<> *config) : Filter(b) {
+        Disco(BaseDescription &b, Config::Domain &domain, YAML::Node const & config) : Filter(b) {
         }
 
         virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &s) override {

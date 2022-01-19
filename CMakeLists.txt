@@ -104,7 +104,7 @@ if(VENDORED_DEPS)
     add_subdirectory(deps/unbound EXCLUDE_FROM_ALL)
     add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
 
-    set(EVENT_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/libevent/include" ${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
+    set(EVENT_INCLUDE_DIRS  "${CMAKE_CURRENT_SOURCE_DIR}/deps/libevent/include" ${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
     set(EVENT_LDFLAGS event_core_static event_openssl_static event_extra_static)
     
     set(UNBOUND_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/unbound/libunbound")
@@ -146,6 +146,9 @@ find_package(OpenSSL 1.1.1 REQUIRED)
 
 #set(THIRD_PARTY_BUILD_DIR )
 #add_subdirectory(deps/core/build/linux EXCLUDE_FROM_ALL)
+add_subdirectory(deps/yaml-cpp EXCLUDE_FROM_ALL)
+
+set(YAMLCPP_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/yaml-cpp/include")
 
 set(FILTER_SOURCES
     src/filters/disco-cache.cc
@@ -243,6 +246,7 @@ target_include_directories(metre PRIVATE
     ${SIGSLOT_INCLUDE_DIRS}
     ${SPDLOG_INCLUDE_DIRS}
     ${UNBOUND_INCLUDE_DIRS}
+        ${YAMLCPP_INCLUDE_DIRS}
 )
 
 target_link_libraries(metre PRIVATE
@@ -254,6 +258,7 @@ target_link_libraries(metre PRIVATE
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
+        yaml-cpp
 )
 
 target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
