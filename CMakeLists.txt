@@ -10,7 +10,7 @@ set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
-option(VENDORED_DEPS "Use vendored depedencies" ON)
+option(VENDORED_DEPS "Use vendored dependencies" ON)
 option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
 option(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
 
@@ -144,8 +144,6 @@ endif()
 
 find_package(OpenSSL 1.1.1 REQUIRED)
 
-#set(THIRD_PARTY_BUILD_DIR )
-#add_subdirectory(deps/core/build/linux EXCLUDE_FROM_ALL)
 add_subdirectory(deps/yaml-cpp EXCLUDE_FROM_ALL)
 
 set(YAMLCPP_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/yaml-cpp/include")
@@ -318,6 +316,7 @@ target_include_directories(metre-test PRIVATE
     ${SIGSLOT_INCLUDE_DIRS}
     ${SPDLOG_INCLUDE_DIRS}
     ${UNBOUND_INCLUDE_DIRS}
+        ${YAMLCPP_INCLUDE_DIRS}
 )
 
 target_link_libraries(metre-test PRIVATE
