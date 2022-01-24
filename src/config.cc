@@ -528,7 +528,7 @@ SSL_CTX *Config::Domain::ssl_ctx() const {
     return ctx;
 }
 
-Config::Config(std::string const &filename) : m_config_str(), m_dialback_secret(random_identifier()) {
+Config::Config(std::string const &filename) : m_dialback_secret(random_identifier()) {
     s_config = this;
     // Spin up a temporary error logger.
     m_root_logger = spdlog::stderr_color_st("console");
@@ -555,7 +555,9 @@ void Config::load(std::string const &filename) {
     if (auto globals = root_node["globals"]; globals) {
         m_default_domain = globals["default-domain"].as<std::string>(m_default_domain);
         m_runtime_dir = globals["rundir"].as<std::string>(m_runtime_dir);
-        m_logfile = globals["logfile"].as<std::string>(m_logfile);
+        m_logfile = globals["log"]["file"].as<std::string>(m_logfile);
+        m_log_level = globals["log"]["level"].as<std::string>("info");
+        m_log_flush = globals["log"]["level"].as<std::string>("info");
         m_boot = globals["boot-method"].as<std::string>(m_boot);
         m_data_dir = globals["datadir"].as<std::string>(m_data_dir);
         m_dns_keys = globals["dnssec-keys"].as<std::string>(m_dns_keys);
@@ -874,7 +876,9 @@ std::string Config::asString() const {
 
     config["globals"]["rundir"] = m_runtime_dir;
     config["globals"]["datadir"] = m_data_dir;
-    config["globals"]["logfile"] = m_logfile;
+    config["globals"]["log"]["file"] = m_logfile;
+    config["globals"]["log"]["level"] = m_log_level;
+    config["globals"]["log"]["flush"] = m_log_flush;
     config["globals"]["boot-method"] = m_boot;
     config["globals"]["fetch-crls"] = m_fetch_crls;
     config["globals"]["dnssec-keys"] = m_dns_keys;
@@ -952,8 +956,8 @@ void Config::log_init(bool systemd) {
     } else {
         m_root_logger = spdlog::stderr_logger_st("global");
     }
-    m_root_logger->flush_on(spdlog::level::trace);
-    m_root_logger->set_level(spdlog::level::trace);
+    m_root_logger->flush_on(spdlog::level::from_str(m_log_flush));
+    m_root_logger->set_level(spdlog::level::from_str(m_log_level));
     m_logger = logger("config");
 }
 

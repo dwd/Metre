@@ -394,7 +394,6 @@ namespace Metre {
         void create_domain(std::string const &dom);
 
         bool m_fetch_crls = true;
-        std::string m_config_str;
         std::string m_default_domain;
         std::string m_runtime_dir;
         std::string m_data_dir;
@@ -409,6 +408,8 @@ namespace Metre {
         std::list<Listener> m_listeners;
         std::shared_ptr<spdlog::logger> m_root_logger;
         std::shared_ptr<spdlog::logger> m_logger;
+        std::string m_log_level;
+        std::string m_log_flush;
     };
 }
 
