@@ -16,8 +16,7 @@ please drop me a line, or an IM, or whatever.
 Can I get support from you?
 ----
 
-[Surevine Ltd](https://www.surevine.com/) can do support contracts, and the actual person providing
-support will often be me. Writing and deploying this kind of thing is what we do. 
+[Surevine Ltd](https://www.surevine.com/) used to (and maybe still does) do support contracts. 
 
 Is this an XMPP server?
 ----
@@ -42,22 +41,22 @@ being your XMPP Server, whereas your XMPP Server sees Metre as being, in effect,
 
 Example:
 
-```xml
-<remote>
-  <domain name='example.com' forward='true'>
-    <!-- Connect by low security: -->
-    <transport type='s2s' sec='false'>
-      <auth type='dialback'/>
-    </transport>
-    <ciphers>DEFAULT</ciphers>
-    <dhparam size='1024'/>
-    <!-- Use this X.509 identity -->
-    <x509 chain='chain-file.pem' pkey='keyfile.pem'/>
-  </domain>
-  <any>
-    <transport type='s2s'/>
-  </any>
-</remote>
+```yaml
+remote:
+  example.com:
+    transport:
+      type: s2s
+      sec: false
+    auth:
+      dialback: true
+  any:
+    transport:
+      type: s2s
+      sec: true
+    tls:
+      x509:
+        chain: chain-file.pem
+        pkey: keyfile.pem
 ```
 
 How production-ready is this?
@@ -81,7 +80,7 @@ previous configuration. For example, if it's set to fetch certificate status inf
 check a per-domain option for it. The per-domain option will default to what makes sense - if
 it's set to fetch certificate status globally, the per-domain option defaults to true.
 
-Domains should inherit defaults from the `<any/>` domain, too.
+Domains should inherit defaults from the `any` domain, too.
 
 If you're confused, check the config dump that'll be created in the data directory - it'll
 contain all the configuration, including defaults, and should be an accurate snapshot of the
@@ -106,8 +105,8 @@ Java, until recently, couldn't handle reasonable DH parameters used for Perfect
 Forward Secrecy, and would choke.
 
 Even now, you'll need to lower DH parameter sizes for that server - you can do this
-with either `<dhparam size='1024'/>` or `<dhparam size='2048'/>` (for Java7 and Java8)
-within the `<domain/>` stanza for the Java server. Metre picks the DH parameter size
+with either `dhparam: size: "1024"` or `dhparam: size: "2048"` (for Java7 and Java8)
+within the domain stanza for the Java server. Metre picks the DH parameter size
 based on the minimum of the requested, and the minimum configured size. Allowable
 sizes are 1024, 2048 and 4096 - the latter is the default.
 
@@ -115,10 +114,11 @@ It may well be that the OpenSSL API used always asks for 1024 bits, mind...
 
 Example:
 
-```xml
-  <domain name='tigase.example.com'>
-    <dhparam size='1024'/>
-  </domain>
+```yaml
+  "tigase.example.com"
+    tls:
+      dhparam:
+        size: '1024'
 ```
 
 My internal server only supports 3DES...
@@ -126,16 +126,16 @@ My internal server only supports 3DES...
 
 Just as with DH parameters, you can change the cipher suites as well for certain servers.
 
-Just change the `<ciphers/>` directive to allow the ciphers you need. It's a traditional OpenSSL cipher list.
+Just change the `ciphers` directive to allow the ciphers you need. It's a traditional OpenSSL cipher list.
 
-The default is (currently) HIGH:!3DES:!aNULL:!eNULL:@STRENGTH
+The default is (currently) `HIGH:!3DES:!aNULL:!eNULL:@STRENGTH`
 
 Example:
 
-```xml
-  <domain name='ms-dos.example.com'>
-    <ciphers>DEFAULT</ciphers><!-- Use OpenSSL defaults -->
-  </domain>
+```yaml
+  "ms-dos.example.com":
+    tls:
+        ciphers: DEFAULT
 ```
 
 I'm trying to connect to a domain hosted on Google, and ...
@@ -143,50 +143,54 @@ I'm trying to connect to a domain hosted on Google, and ...
 
 Google's broken GTalk service is largely unmaintained, and never supported any kind
 of TLS. Metre requires TLS by default, but you can change that within the transport definition
-by adding a `sec='false'` attribute to the transport. You'll almost certainly want to enable
+by adding a `sec: false` attribute to the transport. You'll almost certainly want to enable
 dialback for these.
 
 Example:
 
-```xml
-  <domain name='google.example.com'>
-    <transport type='s2s' sec='false'><!-- Don't require a secure transport -->
-     <auth type='dialback'/>
-    </transport>
-  </domain>
+```yaml
+  "google.example.com":
+     transport:
+       type: s2s
+       sec: false
+     auth:
+       dialback: true
 ```
 
 When does a config item get used?
 ----
 
-Some are inbound, some are outbound, and some are confusing.
+In general, any session is identifiable by two domains - whatever Metre is
+acting as, and the remote domain. Most configuration is about the remote domain,
+and in some cases (particularly TLS controls when handling inbound XEP-0368),
+we won't know this early enough and will have to use `any` settings.
 
-`<dhparam/>`, `<ciphers/>`, and `<transport/>` are all based on the remote server. So in the examples above,
+`dhparam`, `ciphers`, and `transport` are all based on the remote server. So in the examples above,
 google.example.com will be expected to be over S2S, with optional TLS, ms-dos.example.com will
 have basic ciphers, and so on.
 
 In particular, the authentication methods (pkix, dialback, and secret) are how Metre will
 authenticate the remote domain, and not how it will authenticate itself *to* the remote domain.
 
-Similarly, the `<dns/>` stanza controls lookups associated with the remote domain (so you can
+Similarly, the `dns` stanza controls lookups associated with the remote domain (so you can
 override host lookups for just one domain, even if the host is also used by another).
 
-However the `<x509/>` identity is how Metre will behave for the domain when it's acting as it locally, and not what it'll
+However the `x509` identity is how Metre will behave for the domain when it's acting as it locally, and not what it'll
 be expecting when connecting remotely.
 
 How are XEP-0114 components hosted?
 ----
 
 XEP-0114 components are, to Metre, just another kind of remote server, albeit one it
-cannot initiate a connection to. The difference is that you'll need to define the `<transport/>` type as "114",
-and set a secret for the authentication with a child element of `<auth type='secret'/>`, containing the authentication secret, like so:
+cannot initiate a connection to. The difference is that you'll need to define the `transport` type as "114",
+and set a secret for the authentication with a `auth: secret`, containing the authentication secret, like so:
 
-```xml
-<domain name='component.example.com'>
-  <transport type='114'>
-     <auth type='secret'>S3Kr3T!</auth>
-  </transport>
-</domain>
+```yaml
+"component.example.com":
+  transport:
+    type: "114"
+  auth:
+    secret: "S3Kr3T!"
 ```
 
 Most component libraries will not negotiate TLS, so Metre will change the default for the `sec` attribute to false here,
@@ -216,24 +220,28 @@ That's great. Metre will:
 * Use DNSSEC-signed SRV records to gather more reference identifiers for certificates.
 * You can also throw away all unsigned records for some server lookups.
 
-To do the latter, add a `<dns dnssec='true'/>` element to the domain stanza (or `<any/>`
+To do the latter, add a `dns: dnssec: true` setting to the domain stanza (or `any`
 stanza, if you're in an all-DNSSEC environment).
 
 I want to override DNS / my peer doesn't do DNS properly.
 ----
 
-You can override the SRV, A, and TLSA DNS lookups in the `<dns/>` element. Such overrides
+You can override the SRV, A, and TLSA DNS lookups in the `dns` element. Such overrides
 are treated as if they were DNSSEC signed (since we assume your config file is a secure source),
-so you can specify `dnssec='true'` if you override everything. Note that you'll need to override
+so you can specify `dnssec: true` if you override everything. Note that you'll need to override
 both SRV and A records, typically.
 
-```xml
-<domain name='no-dns.example.com'>
-  <dns dnssec="true">
-    <srv host='xmpp-server.example.com' port='5269'/>
-    <host name='xmpp-server.example.com' a='192.168.0.1'/>
-  </dns>
-</domain>
+```yaml
+"no-dns.example.com":
+  dns:
+    dnssec: true
+    srv:
+      - host: xmpp-server.example.com
+        port: 5290 # Default is 5269
+        tls: true # Specify a XEP-0368 record instead.
+    host:
+     - name: xmpp-server.example.com # Note that the name must match, sorry.
+       a: "192.168.0.1"
 ```
 
 DNS overrides only affect those lookups performed for that domain. Loosely,
@@ -252,6 +260,9 @@ supports both listening for, and connecting to, XEP-0368 services.
 
 If you want this, you'll need to publish additional SRV records.
 
+You can specify `prefer: direct` or `prefer: starttls` on a `transport` if you want Metre
+to put a thumb on the scales of SRV record selection.
+
 I hate CAs! Tell me it does DANE! Please, tell me it does DANE!
 ----
 
@@ -263,7 +274,7 @@ TrustAnchorAssertion. As a CA-hating person, therefore, you may be out of luck.
 I suspect the CAConstraint and CertConstraint ones work OK.
 
 It'll do both SubjectPublicKeyInfo and FullCert matching, but I've not tested hashes yet - though
-they should work OK. (So matchtype='Full' is tested, but Sha256 and Sha512 aren't yet).
+they should work OK. (So `matchtype: Full` is tested, but Sha256 and Sha512 aren't yet).
 
 Note that there are an almost obscene number of permutations of DANE parameters and
 potential inputs, so testing these will not be trivial.
@@ -281,12 +292,16 @@ base64 encoded data, for "Full" matchtype. The file (or data) must be a DER enco
 
 For the two hashes, you can just put the hash in hex form. Colons optional.
 
-```xml
-<domain name='shifty.example.com'>
-  <dns>
-    <tlsa hostname='shifty.example.com' port='5269' matchtype='Full' certusage='TrustAnchorAssertion' selector='FullCert'>./some-cert.der</tlsa>
-  </dns>
-</domain>
+```yaml
+"shifty.example.com"
+  dns:
+    tlsa:
+     - hostname: shifty.example.com
+       port: 5269
+       matchtype: Full # Names from RFC
+       certusage: TrustAnchorAssertion
+       selector: FullCert
+       matchdata: ./some-cert.der
 ```
 
 Note that the moment you have a TLSA override, certificates must pass it. You can have
@@ -296,9 +311,9 @@ records, only one is required to match.
 Does Metre pass through all traffic unchanged?
 ----
 
-Currently, yes - although the outer stanza element itself is re-rendered.
+By default, yes - although the outer stanza element itself is re-rendered.
 
-However, this will change - it's intended to ultimately filter traffic and even respond
+However, this can change - it's intended to ultimately filter traffic and even respond
 to some on behalf of internal servers.
 
 There is limited support for this now, see [FILTERS](FILTERS.md)

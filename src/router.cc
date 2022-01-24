@@ -37,10 +37,7 @@ using namespace Metre;
 
 Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_domain(to.domain_jid()) {
     if (m_domain.domain().empty() || m_local.domain().empty()) throw std::runtime_error("Cannot have route to/from empty domain");
-    auto sinks = Config::config().logger().sinks();
-    m_logger = std::make_shared<spdlog::logger>("Route from=[" + m_local.domain() + "] to=[" + m_domain.domain() + "]", begin(sinks), end(sinks));
-    m_logger->flush_on(spdlog::level::trace);
-    m_logger->set_level(spdlog::level::trace);
+    m_logger = Config::config().logger("Route from=[" + m_local.domain() + "] to=[" + m_domain.domain() + "]");
     m_logger->log(spdlog::level::info, "Route created");
 }
 

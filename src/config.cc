@@ -1050,8 +1050,8 @@ void Config::dns_init() const {
 std::shared_ptr<spdlog::logger> Config::logger(std::string const & logger_name) const {
     auto sinks = m_root_logger->sinks();
     auto logger = std::make_shared<spdlog::logger>(logger_name, begin(sinks), end(sinks));
-    logger->flush_on(spdlog::level::trace);
-    logger->set_level(spdlog::level::trace);
+    logger->flush_on(spdlog::level::from_str(m_log_flush));
+    logger->set_level(spdlog::level::from_str(m_log_level));
     return logger;
 }
 
