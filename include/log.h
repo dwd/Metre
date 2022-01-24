@@ -32,22 +32,20 @@ SOFTWARE.
 #include <ctime>
 #include "spdlog/spdlog.h"
 
-namespace Metre {
-    namespace Log {
-        typedef enum {
-            EMERG,
-            ALERT,
-            CRIT,
-            ERR,
-            WARNING,
-            NOTICE,
-            INFO,
-            DEBUG,
-            TRACE
-        } LEVEL;
+namespace Metre::Log {
+    typedef enum {
+        EMERG,
+        ALERT,
+        CRIT,
+        ERR,
+        WARNING,
+        NOTICE,
+        INFO,
+        DEBUG,
+        TRACE
+    } LEVEL;
 
-        void log(Log::LEVEL lvlm, std::string const &filename, int line, std::string const &stuff);
-    }
+    void log(Log::LEVEL lvlm, std::string const &filename, int line, std::string const &stuff);
 }
 
 #define METRE_LOG(l, x) {  std::ostringstream ss; ss << x; Metre::Log::log(l, __FILE__, __LINE__, ss.str()); } (void) 0

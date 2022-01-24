@@ -258,6 +258,16 @@ namespace Metre {
                 return m_srvrec;
             }
 
+            [[nodiscard]] auto min_tls_version() const {
+                return m_min_tls_version;
+            }
+            void min_tls_version(int);
+
+            [[nodiscard]] auto max_tls_version() const {
+                return m_max_tls_version;
+            }
+            void max_tls_version(int);
+
         private:
             std::shared_ptr<spdlog::logger> m_logger;
             std::string m_domain;
@@ -272,6 +282,8 @@ namespace Metre {
             bool m_auth_host = false;
             bool m_dnssec_required = false;
             TLS_PREFERENCE m_tls_preference = PREFER_ANY;
+            int m_min_tls_version = 0;
+            int m_max_tls_version = 0;
             unsigned m_stanza_timeout = 20;
             unsigned m_connect_timeout = 10;
             std::string m_dhparam;

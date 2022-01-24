@@ -30,6 +30,7 @@ SOFTWARE.
 #include "spdlog/sinks/stdout_color_sinks.h"
 
 #include <fstream>
+#include <memory>
 #include <random>
 #include <algorithm>
 
@@ -118,6 +119,30 @@ namespace {
 #endif
 #endif
 
+    int yaml_to_tls(YAML::Node const & tls_version_node) {
+        auto version_string = tls_version_node.as<std::string>();
+        int version = 0;
+        std::ranges::transform(version_string, version_string.begin(), [](unsigned char c) {
+            return static_cast<unsigned char>(std::tolower(c));
+        });
+        std::erase(version_string, 'v');
+        std::erase(version_string, '.');
+        if (version_string == "ssl2") {
+            version = SSL2_VERSION;
+        } else if (version_string == "ssl3") {
+            version = SSL3_VERSION;
+        } else if (version_string == "tls1" || version_string == "tls10") {
+            version = TLS1_VERSION;
+        } else if (version_string == "tls11") {
+            version = TLS1_1_VERSION;
+        } else if (version_string == "tls12") {
+            version = TLS1_2_VERSION;
+        } else if (version_string == "tls13") {
+            version = TLS1_3_VERSION;
+        }
+        return version;
+    }
+
     std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, std::string const & domain_name, YAML::Node const & domain, SESSION_TYPE def) {
         std::string name;
         bool forward = (def == INTERNAL || def == COMP);
@@ -136,6 +161,8 @@ namespace {
         std::string dhparam = "4096";
         std::string cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
         std::optional<std::string> auth_secret;
+        int min_tls_version = TLS1_2_VERSION;
+        int max_tls_version = 0;
         if (any) {
             auth_pkix = any->auth_pkix();
             auth_dialback = any->auth_dialback();
@@ -147,6 +174,8 @@ namespace {
             auth_pkix_crls = any->auth_pkix_status();
             stanza_timeout = any->stanza_timeout();
             connect_timeout = any->connect_timeout();
+            min_tls_version = any->min_tls_version();
+            max_tls_version = any->max_tls_version();
         }
         if (domain_name == "any") {
             name = "";
@@ -210,26 +239,34 @@ namespace {
         dom->stanza_timeout(stanza_timeout);
         dom->connect_timeout(connect_timeout);
         dom->tls_preference(tls_preference);
-        auto tls = domain["tls"];
-        if (tls) {
-            auto chain_a = tls["x509"]["chain"];
-            if (chain_a) {
-                auto chain = chain_a.as<std::string>();
-                auto pkey_a = tls["x509"]["pkey"];
-                if (pkey_a) {
-                    auto pkey = pkey_a.as<std::string>();
-                    dom->x509(chain, pkey);
+        if (auto tls = domain["tls"]; tls) {
+            if (tls["x509"]) {
+                if (auto chain_a = tls["x509"]["chain"]; chain_a) {
+                    auto chain = chain_a.as<std::string>();
+                    auto pkey_a = tls["x509"]["pkey"];
+                    if (pkey_a) {
+                        auto pkey = pkey_a.as<std::string>();
+                        dom->x509(chain, pkey);
+                    } else {
+                        throw std::runtime_error("Missing pkey for x509");
+                    }
                 } else {
-                    throw std::runtime_error("Missing pkey for x509");
+                    throw std::runtime_error("Missing chain for x509");
                 }
-            } else {
-                throw std::runtime_error("Missing chain for x509");
             }
             dhparam = tls["dhparam"]["size"].as<std::string>(dhparam);
             cipherlist = tls["ciphers"].as<std::string>(cipherlist);
+            if (tls["min_version"]) {
+                min_tls_version = yaml_to_tls(tls["min_version"]);
+            }
+            if (tls["max_version"]) {
+                max_tls_version = yaml_to_tls(tls["max_version"]);
+            }
         }
         dom->dhparam(dhparam);
         dom->cipherlist(cipherlist);
+        dom->min_tls_version(min_tls_version);
+        dom->max_tls_version(max_tls_version);
 
         if (auto dnst = domain["dns"]; dnst) {
             dnssec_required = dnst["dnssec"].as<bool>(dnssec_required);
@@ -279,7 +316,7 @@ namespace {
                 DNS::TlsaRR::MatchType matchType = DNS::TlsaRR::Full;
                 if (matchtypes == "Full") {
                     matchType = DNS::TlsaRR::Full;
-                } if (matchtypes == "Sha256") {
+                } else if (matchtypes == "Sha256") {
                     matchType = DNS::TlsaRR::Sha256;
                 } else if (matchtypes == "Sha512") {
                     matchType = DNS::TlsaRR::Sha512;
@@ -329,7 +366,7 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
         : m_domain(domain), m_type(any.m_type), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
           m_block(any.m_block), m_multiplex(any.m_multiplex), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
-          m_tls_preference(any.m_tls_preference),
+          m_tls_preference(any.m_tls_preference), m_min_tls_version(any.m_min_tls_version), m_max_tls_version(any.m_max_tls_version),
           m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist),
           m_ssl_ctx(nullptr), m_parent(&any) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
@@ -443,7 +480,7 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
         SSL_CTX_free(m_ssl_ctx);
         m_ssl_ctx = nullptr;
     }
-    m_ssl_ctx = SSL_CTX_new(SSLv23_method());
+    m_ssl_ctx = SSL_CTX_new(TLS_method());
     SSL_CTX_set_options(m_ssl_ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_ALL);
     SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_PEER, Config::verify_callback_cb);
     if (SSL_CTX_use_certificate_chain_file(m_ssl_ctx, chain.c_str()) != 1) {
@@ -470,6 +507,14 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
     std::string ctx = "Metre::" + m_domain;
     SSL_CTX_set_session_id_context(m_ssl_ctx, reinterpret_cast<const unsigned char *>(ctx.c_str()),
                                    static_cast<unsigned int>(ctx.size()));
+}
+
+void Config::Domain::max_tls_version(int ver) {
+    m_max_tls_version = ver;
+}
+
+void Config::Domain::min_tls_version(int ver) {
+    m_min_tls_version = ver;
 }
 
 SSL_CTX *Config::Domain::ssl_ctx() const {
@@ -626,6 +671,24 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
 }
 
 namespace {
+    const char * tls_version_to_string(int ver) {
+        switch (ver) {
+            case SSL2_VERSION:
+                return "SSLv2";
+            case SSL3_VERSION:
+                return "SSLv3";
+            case TLS1_VERSION:
+                return "TLSv1.0";
+            case TLS1_1_VERSION:
+                return "TLSv1.1";
+            case TLS1_2_VERSION:
+                return "TLSv1.2";
+            case TLS1_3_VERSION:
+                return "TLSv1.3";
+        }
+        return nullptr;
+    }
+
     YAML::Node domain_to_yaml(Config::Domain const &domain) {
         YAML::Node config;
         config["forward"] = domain.forward();
@@ -660,11 +723,11 @@ namespace {
                 break;
         }
         config["transport"]["connect-timeout"] = domain.connect_timeout();
-        config["transport"]["auth"]["pkix"] = domain.auth_pkix();
-        config["transport"]["auth"]["check-status"] = domain.auth_pkix_status();
-        config["transport"]["auth"]["dialback"] = domain.auth_dialback();
+        config["auth"]["pkix"] = domain.auth_pkix();
+        config["auth"]["check-status"] = domain.auth_pkix_status();
+        config["auth"]["dialback"] = domain.auth_dialback();
         if (domain.auth_secret()) {
-            config["transport"]["auth"]["secret"] = *domain.auth_secret();
+            config["auth"]["secret"] = *domain.auth_secret();
         }
         config["dns"]["dnssec_required"] = domain.dnssec_required();
         if (domain.srv_override()) {
@@ -678,9 +741,9 @@ namespace {
                 config["dns"]["srv"].push_back(srv);
             }
         }
-        for (auto const &tlsa: domain.tlsa_overrides()) {
-            for (auto &rr: tlsa.second->rrs) {
-                std::stringstream ss(tlsa.second->domain);
+        for (auto const & [name, records]: domain.tlsa_overrides()) {
+            for (auto const &rr: records->rrs) {
+                std::stringstream ss(records->domain);
                 unsigned short int port = 0;
                 std::string hostname;
                 char underscore;
@@ -689,24 +752,22 @@ namespace {
                 tlsa["hostname"] = hostname;
                 tlsa["port"] = port;
                 switch (rr.matchType) {
-                    case DNS::TlsaRR::Full:
-                    default:
-                        tlsa["matchtype"] = "Full";
-                        break;
                     case DNS::TlsaRR::Sha256:
                         tlsa["matchtype"] = "Sha256";
                         break;
                     case DNS::TlsaRR::Sha512:
                         tlsa["matchtype"] = "Sha512";
                         break;
+                    default:
+                        tlsa["matchtype"] = "Full";
+                        break;
                 }
                 switch (rr.selector) {
-                    case DNS::TlsaRR::FullCert:
-                    default:
-                        tlsa["selector"] = "FullCert";
-                        break;
                     case DNS::TlsaRR::SubjectPublicKeyInfo:
                         tlsa["selector"] = "SubjectPublicKeyInfo";
+                        break;
+                    default:
+                        tlsa["selector"] = "FullCert";
                         break;
                 }
                 switch (rr.certUsage) {
@@ -716,12 +777,11 @@ namespace {
                     case DNS::TlsaRR::CertConstraint:
                         tlsa["certusage"] = "CertConstraint";
                         break;
-                    case DNS::TlsaRR::DomainCert:
-                    default:
-                        tlsa["certusage"] = "DomainCert";
-                        break;
                     case DNS::TlsaRR::TrustAnchorAssertion:
                         tlsa["certusage"] = "TrustAnchorAssertion";
+                        break;
+                    default:
+                        tlsa["certusage"] = "DomainCert";
                         break;
                 }
                 if (rr.matchType == DNS::TlsaRR::Full) {
@@ -766,17 +826,18 @@ namespace {
                     prefix = "any_";
                 } else {
                     prefix = domain.domain() + "_";
+                    std::ranges::replace(prefix, '*', '_');
                 }
                 STACK_OF(X509) *chain = nullptr;
                 std::string chainfile = Config::config().data_dir() + "/" + prefix + "chain.pem";
-                if (0 == SSL_CTX_get0_chain_certs(ctx, &chain) && chain) {
+                if (SSL_CTX_get0_chain_certs(ctx, &chain) && chain) {
                     FILE *fp = fopen(chainfile.c_str(), "w");
                     for (int i = 0; i < sk_X509_num(chain); ++i) {
                         X509 *item = sk_X509_value(chain, i);
                         PEM_write_X509(fp, item);
                     }
                     fclose(fp);
-                    config["tls"]["chain"] = chainfile;
+                    config["tls"]["x509"]["chain"] = chainfile;
                 }
                 std::string keyfile = Config::config().data_dir() + "/" + prefix + "key.pem";
                 if (SSL_CTX_get0_privatekey(ctx)) {
@@ -785,12 +846,18 @@ namespace {
                                               nullptr,
                                               nullptr);
                     fclose(fp);
-                    config["tls"]["pkey"] = keyfile;
+                    config["tls"]["x509"]["pkey"] = keyfile;
                 }
             }
         }
         config["tls"]["dhparam"]["size"] = domain.dhparam();
         config["tls"]["ciphers"] = domain.cipherlist();
+        if (auto const * s = tls_version_to_string(domain.min_tls_version()); s) {
+            config["tls"]["min_version"] = s;
+        }
+        if (auto const * s = tls_version_to_string(domain.max_tls_version()); s) {
+            config["tls"]["max_version"] = s;
+        }
 
         for (auto const &filter: domain.filters()) {
             config["filter-in"][filter->name()] = filter->dump_config();
@@ -963,14 +1030,14 @@ void Config::dns_init() const {
     if ((retval = ub_ctx_async(m_ub_ctx, 1)) != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
-    if ((retval = ub_ctx_resolvconf(m_ub_ctx, NULL)) != 0) {
+    if ((retval = ub_ctx_resolvconf(m_ub_ctx, nullptr)) != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
-    if ((retval = ub_ctx_hosts(m_ub_ctx, NULL)) != 0) {
+    if ((retval = ub_ctx_hosts(m_ub_ctx, nullptr)) != 0) {
         throw std::runtime_error(ub_strerror(retval));
     }
     if (!m_dns_keys.empty()) {
-        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, const_cast<char *>(m_dns_keys.c_str()))) != 0) {
+        if ((retval = ub_ctx_add_ta_file(m_ub_ctx, m_dns_keys.c_str())) != 0) {
             throw std::runtime_error(ub_strerror(retval));
         }
     }
@@ -1154,7 +1221,7 @@ namespace {
                 }
             }
         }
-        std::sort(tmp.begin(), tmp.end(), [](DNS::SrvRR const &a, DNS::SrvRR const &b) {
+        std::ranges::sort(tmp, [](DNS::SrvRR const &a, DNS::SrvRR const &b) {
             return a.priority < b.priority;
         });
         srv.rrs = std::vector<DNS::SrvRR>();
@@ -1195,7 +1262,7 @@ namespace {
 void
 Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port, bool tls) {
     if (!m_srvrec) {
-        m_srvrec.reset(new DNS::Srv);
+        m_srvrec = std::make_unique<DNS::Srv>();
         std::string domain = toASCII(
                 "_xmpp-server._tcp." + m_domain + "."); // Confusing: We fake a non-tls SRV record with TLS set in RR.
         m_srvrec->dnssec = true;
@@ -1268,17 +1335,15 @@ void Config::Resolver::srv_lookup_done(int err, struct ub_result *result) {
         m_current_srv.xmpp = true;
     }
     if (m_current_srv.xmpp && m_current_srv.xmpps) {
-        if (m_current_srv.rrs.empty()) {
-            if (m_current_srv.nxdomain) {
-                // Synthesize an SRV.
-                logger().debug("Synthetic SRV for domain=[{}] error=[{}]", m_current_srv.domain, m_current_srv.error);
-                DNS::SrvRR rr;
-                rr.port = 5269;
-                rr.hostname =
-                        m_current_srv.domain.c_str() + sizeof("_xmpp-server._tcp.") - 1; // Trim "_xmpp-server._tcp."
-                m_current_srv.rrs.push_back(rr);
-                m_current_srv.error.clear();
-            }
+        if (m_current_srv.rrs.empty() && m_current_srv.nxdomain) {
+            // Synthesize an SRV.
+            logger().debug("Synthetic SRV for domain=[{}] error=[{}]", m_current_srv.domain, m_current_srv.error);
+            DNS::SrvRR rr;
+            rr.port = 5269;
+            rr.hostname =
+                    m_current_srv.domain.c_str() + sizeof("_xmpp-server._tcp.") - 1; // Trim "_xmpp-server._tcp."
+            m_current_srv.rrs.push_back(rr);
+            m_current_srv.error.clear();
         }
         if (m_current_srv.rrs.empty()) {
             DNS::Srv srv;

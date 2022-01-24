@@ -102,11 +102,11 @@ namespace {
                         route->transmit(std::move(s));
                     }
                     // Lookup endpoint.
-                } catch (Metre::base::xmpp_exception &) {
+                } catch (Metre::base::xmpp_exception const &) {
                     throw;
-                } catch (Metre::base::stanza_exception &) {
+                } catch (Metre::base::stanza_exception const &) {
                     throw;
-                } catch (std::runtime_error &e) {
+                } catch (std::runtime_error const &e) {
                     throw Metre::stanza_undefined_condition(e.what());
                 }
             } catch (Metre::base::stanza_exception const &stanza_error) {

@@ -67,6 +67,12 @@ namespace {
     void setup_session(SSL *ssl, std::string const &remote_domain) {
         Config::Domain const &domain = Config::config().domain(remote_domain);
         SSL_set_cipher_list(ssl, domain.cipherlist().c_str());
+        if (auto v = domain.min_tls_version(); v != 0) {
+            SSL_set_min_proto_version(ssl, v);
+        }
+        if (auto v = domain.max_tls_version(); v != 0) {
+            SSL_set_max_proto_version(ssl, v);
+        }
         std::string const &dhparam = domain.dhparam();
         if (dhparam == "4096") {
             SSL_set_tmp_dh_callback(ssl, dh_callback<4096>);

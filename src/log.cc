@@ -25,7 +25,6 @@ SOFTWARE.
 
 #include "log.h"
 #include "config.h"
-#include <fstream>
 #include <iostream>
 
 void Metre::Log::log(Log::LEVEL lvlm, std::string const &filename, int line, std::string const &stuff) {

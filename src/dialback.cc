@@ -44,7 +44,7 @@ namespace {
 
     class NewDialback : public Feature {
     public:
-        NewDialback(XMLStream &s) : Feature(s) {}
+        explicit NewDialback(XMLStream &s) : Feature(s) {}
 
         class Description : public Feature::Description<NewDialback> {
         public:
@@ -90,12 +90,6 @@ namespace {
             Description() : Feature::Description<Dialback>(db_ns, FEAT_AUTH) {};
         };
 
-        /*
-         * Temporary store for keys, because - bizarrely - a std::string doesn't
-         * appear to be getting captured by value.
-         */
-        std::set<std::string> m_keys;
-
         /**
          * Inbound handling.
          */
@@ -118,7 +112,7 @@ namespace {
                 co_return true;
             }
             // Need to perform name collation:
-            auto &route = RouteTable::routeTable(result.to()).route(result.from());
+            auto const &route = RouteTable::routeTable(result.to()).route(result.from());
             result.freeze();
             // Shortcuts here.
             if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(*route))) {
@@ -180,7 +174,7 @@ namespace {
             m_stream.send(std::move(d));
         }
 
-        void verify_valid(DB::Verify const &v) {
+        void verify_valid(DB::Verify const &v) const {
             if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
@@ -193,7 +187,7 @@ namespace {
             }
         }
 
-        void verify_invalid(DB::Verify const &v) {
+        void verify_invalid(DB::Verify const &v) const {
             if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
