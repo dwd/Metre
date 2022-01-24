@@ -557,7 +557,7 @@ void Config::load(std::string const &filename) {
         m_runtime_dir = globals["rundir"].as<std::string>(m_runtime_dir);
         m_logfile = globals["log"]["file"].as<std::string>(m_logfile);
         m_log_level = globals["log"]["level"].as<std::string>("info");
-        m_log_flush = globals["log"]["level"].as<std::string>("info");
+        m_log_flush = globals["log"]["flush"].as<std::string>(m_log_level);
         m_boot = globals["boot-method"].as<std::string>(m_boot);
         m_data_dir = globals["datadir"].as<std::string>(m_data_dir);
         m_dns_keys = globals["dnssec-keys"].as<std::string>(m_dns_keys);
