@@ -64,7 +64,7 @@ namespace {
         UChar *ptr = output.get();
         const char *data = input.data();
         UErrorCode error = U_ZERO_ERROR;
-        ucnv_toUnicode(utf8(), &ptr, output.get() + input.size(), &data, data + input.size(), nullptr, TRUE, &error);
+        ucnv_toUnicode(utf8(), &ptr, output.get() + input.size(), &data, data + input.size(), nullptr, true, &error);
         auto prepped = std::make_unique<UChar[]>(2 * (ptr - output.get()));
         UParseError parse_error;
         int32_t sz = usprep_prepare(p, output.get(), ptr - output.get(), prepped.get(), ptr - output.get(),
@@ -74,7 +74,7 @@ namespace {
         data = ret.data();
         const UChar *prepped_data = prepped.get();
         ucnv_fromUnicode(utf8(), const_cast<char **>(&data), ret.data() + ret.capacity(), &prepped_data,
-                         prepped.get() + sz, nullptr, TRUE, &error);
+                         prepped.get() + sz, nullptr, true, &error);
         ret.resize(data - ret.data());
         return ret;
     }
