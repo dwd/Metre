@@ -12,7 +12,8 @@ public:
     std::string msg_xml = "<message xmlns='jabber:server' from='foo@example.org/lmas' to='bar@example.net/laks' type='chat' id='1234'><body>This is the body</body></message>";
 
     void SetUp() override {
-        doc.parse<rapidxml::parse_full>(const_cast<char *>(msg_xml.c_str()));
+        doc.parse<rapidxml::parse_fastest>(const_cast<char *>(msg_xml.c_str()));
+        doc.fixup<rapidxml::parse_default>(doc.first_node(), false);
         msg = std::make_unique<Message>(doc.first_node());
     }
 };
@@ -34,7 +35,20 @@ TEST_F(MessageTest, MessageTo) {
 }
 
 TEST_F(MessageTest, MessageBody) {
-    ASSERT_EQ(msg->node()->first_node("body")->value(), std::string("This is the body"));
+    auto body = msg->node()->first_node("body");
+    std::string body_str{body->value(), body->value_size()};
+    ASSERT_EQ(body_str, std::string("This is the body"));
+}
+
+TEST_F(MessageTest, MessageReplaceBody) {
+    auto body = msg->node()->first_node("body");
+    std::string replacement("Replacement body");
+    body->value(replacement.data(), replacement.length());
+    msg->update();
+    auto body2 = msg->node()->first_node("body");
+    ASSERT_TRUE(body2);
+    std::string body_str{body2->value(), body2->value_size()};
+    ASSERT_EQ(body_str, std::string("Replacement body"));
 }
 
 class IqTest : public ::testing::Test {

@@ -65,7 +65,9 @@ void Stanza::freeze() {
 
 void Stanza::payload(rapidxml::xml_node<> *node) {
     m_payload_str.clear();
-    rapidxml::print(std::back_inserter(m_payload_str), *node, rapidxml::print_no_indenting);
+    for(rapidxml::xml_node<> *child = node->first_node(); child; child = child->next_sibling()) {
+        rapidxml::print(std::back_inserter(m_payload_str), *child, rapidxml::print_no_indenting);
+    }
     m_payload = m_payload_str.data();
     m_payload_l = m_payload_str.length();
     m_node = nullptr;
