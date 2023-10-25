@@ -229,8 +229,11 @@ namespace Metre {
             }
 
             [[nodiscard]] std::list<std::unique_ptr<Filter>> const &filters() const {
+                if (m_parent) return m_parent->filters();
                 return m_filters;
             }
+
+            [[nodiscard]] Filter * filter_by_name(std::string const & name) const;
 
             [[nodiscard]] bool auth_endpoint(std::string const &ip, unsigned short port) const;
 

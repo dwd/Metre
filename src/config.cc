@@ -509,6 +509,16 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
                                    static_cast<unsigned int>(ctx.size()));
 }
 
+Filter * Config::Domain::filter_by_name(const std::string &name) const {
+    if (m_parent) return m_parent->filter_by_name(name);
+    for (auto &f: m_filters) {
+        if (f->name() == name) {
+            return f.get();
+        }
+    }
+    return nullptr;
+}
+
 void Config::Domain::max_tls_version(int ver) {
     m_max_tls_version = ver;
 }
