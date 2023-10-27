@@ -64,12 +64,13 @@ void Stanza::freeze() {
 }
 
 void Stanza::payload(rapidxml::xml_node<> *node) {
-    m_payload_str.clear();
+    std::string tmp_buffer;
     for(rapidxml::xml_node<> *child = node->first_node(); child; child = child->next_sibling()) {
-        rapidxml::print(std::back_inserter(m_payload_str), *child, rapidxml::print_no_indenting);
+        rapidxml::print(std::back_inserter(tmp_buffer), *child, rapidxml::print_no_indenting);
     }
-    m_payload = m_payload_str.data();
-    m_payload_l = m_payload_str.length();
+    m_payload = tmp_buffer.data();
+    m_payload_l = tmp_buffer.length();
+    std::swap(m_payload_str, tmp_buffer);
     m_node = nullptr;
 }
 
@@ -106,11 +107,15 @@ rapidxml::xml_node<> *Stanza::node() {
     m_payload = tmp.data();
     m_payload_l = tmp.length(); // Reset pointers to buffer.
     render(tmp_doc);
-    m_payload_str.clear();
-    rapidxml::print(std::back_inserter(m_payload_str), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    std::string tmp_buffer;
+    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
     m_doc.reset(new rapidxml::xml_document<>);
-    m_doc->parse<rapidxml::parse_full>(const_cast<char *>(m_payload_str.c_str()));
+    m_doc->parse<rapidxml::parse_fastest>(const_cast<char *>(tmp_buffer.c_str()));
+    m_doc->fixup<rapidxml::parse_default>(m_doc->first_node(), false);
+    std::swap(m_payload_str, tmp_buffer);
     m_node = m_doc->first_node();
+    m_payload = m_node->contents();
+    m_payload_l = m_node->contents_size();
     return m_node;
 }
 

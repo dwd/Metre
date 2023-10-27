@@ -51,6 +51,59 @@ TEST_F(MessageTest, MessageReplaceBody) {
     ASSERT_EQ(body_str, std::string("Replacement body"));
 }
 
+TEST_F(MessageTest, MessageReplaceBodyDynamicDouble) {
+    Stanza * stanza = msg.get();
+    {
+        auto msg2 = dynamic_cast<Message *>(stanza);
+        auto body = msg2->node()->first_node("body");
+        std::string replacement("Replacement body");
+        body->value(replacement.data(), replacement.length());
+        msg2->update();
+        auto body2 = msg2->node()->first_node("body");
+        ASSERT_TRUE(body2);
+        std::string body_str{body2->value(), body2->value_size()};
+        ASSERT_EQ(body_str, std::string("Replacement body"));
+    }
+    {
+        auto msg3 = dynamic_cast<Message *>(stanza);
+        auto body3 = msg3->node()->first_node("body");
+        std::string body_str_orig{body3->value(), body3->value_size()};
+        ASSERT_EQ(body_str_orig, std::string("Replacement body"));
+        std::string replacement("New replacement body");
+        body3->value(replacement.data(), replacement.length());
+        msg3->update();
+        auto body4 = msg3->node()->first_node("body");
+        ASSERT_TRUE(body4);
+        std::string body_str{body4->value(), body4->value_size()};
+        ASSERT_EQ(body_str, std::string("New replacement body"));
+    }
+}
+
+TEST_F(MessageTest, MessageReplaceBodyDouble) {
+    {
+        auto body = msg->node()->first_node("body");
+        std::string replacement("Replacement body");
+        body->value(replacement.data(), replacement.length());
+        msg->update();
+        auto body2 = msg->node()->first_node("body");
+        ASSERT_TRUE(body2);
+        std::string body_str{body2->value(), body2->value_size()};
+        ASSERT_EQ(body_str, std::string("Replacement body"));
+    }
+    {
+        auto body3 = msg->node()->first_node("body");
+        std::string body_str_orig{body3->value(), body3->value_size()};
+        ASSERT_EQ(body_str_orig, std::string("Replacement body"));
+        std::string replacement("New replacement body");
+        body3->value(replacement.data(), replacement.length());
+        msg->update();
+        auto body4 = msg->node()->first_node("body");
+        ASSERT_TRUE(body4);
+        std::string body_str{body4->value(), body4->value_size()};
+        ASSERT_EQ(body_str, std::string("New replacement body"));
+    }
+}
+
 class IqTest : public ::testing::Test {
 public:
     std::unique_ptr<Iq> iq;
