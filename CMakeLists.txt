@@ -97,9 +97,8 @@ if(VENDORED_DEPS)
     endif ()
 
     set(OPENSSL_USE_STATIC_LIBS true)
-    set(OPENSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/core/third-party/openssl-1.1.1l)
+    set(OPENSSL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl)
 
-    set(EVENT__DISABLE_TESTS ON)
     set(EVENT__LIBRARY_TYPE STATIC CACHE STRING "Build libevent statically" FORCE)
     add_subdirectory(deps/libevent EXCLUDE_FROM_ALL)
     add_subdirectory(deps/unbound EXCLUDE_FROM_ALL)
@@ -162,10 +161,6 @@ endif()
 if (ICU2_INCLUDE_DIR)
     list(APPEND FILTER_SOURCES src/filters/unicode.cc)
 endif()
-
-set(ARMOURCORE_DIR "deps/libarmourcore-x86-5.1.0")
-list(APPEND FILTER_SOURCES src/filters/mgw.cc)
-set(CORE_TEST_LIBS "-lz -lpthread -lresolv -lm -lstdc++ -luuid -lconfig++")
 
 # Capabilities
 set(CAPABILITY_SOURCES
@@ -241,9 +236,6 @@ endif()
 
 add_executable(metre ${SOURCE_FILES})
 
-set(CORE_DIR ${ARMOURCORE_DIR}) # For convenience.
-set(ARMOURCORE_INCLUDE_DIRS ${CORE_DIR}/include ${CORE_DIR}/include/kms ${CORE_DIR}/include/bss ${CORE_DIR}/include/util ${CORE_DIR}/util ${CORE_DIR}/backend . ${CORE_DIR}/include/core ${CORE_DIR}/xmpp ${CORE_DIR}/core ${CORE_DIR}/jsoncpp/json)
-
 target_include_directories(metre PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     ${EVENT_INCLUDE_DIRS}
@@ -253,7 +245,6 @@ target_include_directories(metre PRIVATE
     ${SPDLOG_INCLUDE_DIRS}
     ${UNBOUND_INCLUDE_DIRS}
         ${YAMLCPP_INCLUDE_DIRS}
-        ${ARMOURCORE_INCLUDE_DIRS}
 )
 
 target_link_libraries(metre PRIVATE
@@ -266,11 +257,9 @@ target_link_libraries(metre PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
         yaml-cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/${ARMOURCORE_DIR}/lib/libarmourcore.a
-        -lz -lpthread -lresolv -lm -lstdc++ -luuid -lconfig++ -lidn2
-        )
+)
 
-target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE -DARMOUR_GATEWAY_BUILD -DEXCLUDE_XMPP)
+target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
 if (UNIX)
     target_include_directories(metre PRIVATE
@@ -310,8 +299,6 @@ add_executable(metre-test
     tests/jid.cc 
     ${CAPABILITY_SOURCES}
     tests/endpoint.cc
-        tests/cothread.cc
-        tests/testfns.h
 )
 
 target_compile_definitions(metre-test PUBLIC
@@ -329,7 +316,7 @@ target_include_directories(metre-test PRIVATE
     ${SIGSLOT_INCLUDE_DIRS}
     ${SPDLOG_INCLUDE_DIRS}
     ${UNBOUND_INCLUDE_DIRS}
-    ${YAMLCPP_INCLUDE_DIRS}
+        ${YAMLCPP_INCLUDE_DIRS}
 )
 
 target_link_libraries(metre-test PRIVATE
@@ -342,7 +329,6 @@ target_link_libraries(metre-test PRIVATE
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
-    yaml-cpp
 )
 
 if (UNIX)

@@ -2,7 +2,6 @@
 // Created by dwd on 25/05/17.
 //
 
-#include "sigslot.h"
 #include "endpoint.h"
 #include "gtest/gtest.h"
 #include <iostream>
@@ -20,7 +19,6 @@ namespace Metre {
         std::list<std::function<void()>> pending;
 
         void defer(std::function<void()> &&fn) {
-            std::cout << "Deferring call" << std::endl;
             pending.emplace_back(fn);
         }
 
@@ -32,18 +30,6 @@ namespace Metre {
                 }
             }
         }
-    }
-}
-
-namespace sigslot {
-    void resume(std::coroutine_handle<> coro) {
-        std::cout << "Deferring resumption for " << coro.address() << std::endl;
-        Metre::Router::defer([=]() {
-            std::coroutine_handle<> c = coro;
-            std::cout << "Resuming (deferred) " << c.address() << std::endl;
-            c.resume();
-            std::cout << "Resumption (deferred completed) " << c.address() << std::endl;
-        });
     }
 }
 

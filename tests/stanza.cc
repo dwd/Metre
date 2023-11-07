@@ -1,7 +1,6 @@
 #include "stanza.h"
 #include "gtest/gtest.h"
 #include <iostream>
-#include <regex>
 #include "rapidxml_print.hpp"
 
 using namespace Metre;
@@ -103,12 +102,6 @@ TEST_F(MessageTest, MessageReplaceBodyDouble) {
         std::string body_str{body4->value(), body4->value_size()};
         ASSERT_EQ(body_str, std::string("New replacement body"));
     }
-    rapidxml::xml_document<> doc;
-    msg->render(doc);
-    std::string tmp;
-    rapidxml::print(std::back_inserter(tmp), *doc.first_node(), rapidxml::print_no_indenting);
-    std::string expected(R"(<message to="bar@example.net/laks" from="foo@example.org/lmas" type="chat" id="1234"><body>New replacement body</body></message>)");
-    ASSERT_EQ(tmp, expected);
 }
 
 class IqTest : public ::testing::Test {

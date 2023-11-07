@@ -73,9 +73,6 @@ namespace Metre {
 #ifndef SIGSLOT_PURE_ISO
 #define SIGSLOT_PURE_ISO
 #endif
-#ifndef SIGSLOT_RESUME_OVERRIDE
-#define SIGSLOT_RESUME_OVERRIDE
-#endif
 #if defined(_WIN32) || defined(_WIN64)
 #define __attribute(x) /* Nothing */
 #pragma warning(disable : 4514)

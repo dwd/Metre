@@ -57,9 +57,9 @@ namespace Metre {
                 {
                     std::lock_guard l_(m_mutex);
                     m_payload.emplace(result);
-                    if (m_awaitable) {
-                        m_awaitable->resolve();
-                    }
+                }
+                if (m_awaitable) {
+                    m_awaitable->resolve();
                 }
             };
             m_thread.emplace(wrapped_fn, args...);
@@ -67,25 +67,19 @@ namespace Metre {
         }
 
         awaitable operator co_await() {
-            if (!m_thread.has_value()) throw std::logic_error("No thread started");
             return awaitable(*this);
         }
 
         bool has_payload() {
-            if (!m_thread.has_value()) throw std::logic_error("No thread started");
             std::lock_guard l_(m_mutex);
             return m_payload.has_value();
         }
 
         auto payload() {
-            if (!m_thread.has_value()) throw std::logic_error("No thread started");
-            m_thread->join();
-            m_thread.reset();
             return *m_payload;
         }
 
         void await(awaitable * a) {
-            if (!m_thread.has_value()) throw std::logic_error("No thread started");
             std::lock_guard l_(m_mutex);
             m_awaitable = a;
             if (m_payload.has_value()) {

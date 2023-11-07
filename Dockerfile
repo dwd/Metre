@@ -1,23 +1,20 @@
-FROM ubuntu:latest AS cpp-build
+FROM ubuntu:impish AS cpp-build
 
 RUN set -eux; \
    apt-get update; \
    DEBIAN_FRONTEND=noninteractive apt-get install --quiet --yes --no-install-recommends \
        build-essential \
        cmake \
+       googletest \
+       libevent-dev \
+       libexpat-dev \
        libicu-dev \
+       libspdlog-dev \
+       libssl-dev \
+       libunbound-dev \
        libunwind-dev \
        ninja-build \
        pkg-config \
-       tcl \
-        libtool \
-        libtool-bin \
-        automake \
-      zlib1g-dev \
-    doxygen \
-    uuid-dev \
-    libconfig++-dev \
-    libidn2-dev \
    ; \
    apt-get clean; \
    rm -rf /var/lib/apt/lists/* ;
@@ -36,22 +33,6 @@ COPY tests src/tests
 COPY CMakeLists.txt src/
 COPY LICENSE src/
 COPY metre.conf.xml src/
-COPY build.sh src/
-
-RUN cd src/deps && ls -l &&  find -name CMakeLists.txt
-
-RUN set -eux; \
-    cd src/deps/core/third-party/build; \
-    sed -i 's/^.*\(buildPJSIP\)$/# \1/g' setup.sh; \
-    sed -i 's/^.*\(buildGLOOX\)$/# \1/g' setup.sh; \
-    sed -i 's/^.*\(buildAWS\)$/# \1/g' setup.sh; \
-    sed -i 's/^.*\(buildJWTCPP\)$/# \1/g' setup.sh; \
-    sed -i 's/^.*\(buildGoogleTest\)$/# \1/g' setup.sh; \
-    ./setup.sh -l x86
-
-RUN  cd src/deps/core/build/linux; \
-     ./build_core.sh --no-fips --gw
-RUN cd src/deps && tar zxvf core/build/linux/libarmourcore-x86-5.1.0.tgz
 
 RUN set -eux; \
     mkdir build; \
@@ -59,11 +40,12 @@ RUN set -eux; \
     cmake \
         -DCMAKE_INSTALL_PREFIX=/app/install \
         -DCMAKE_BUILD_TYPE=Debug \
-        -DVENDORED_DEPS=ON \
+        -DVENDORED_DEPS=OFF \
         -GNinja \
         ../src; \
     export CMAKE_BUILD_PARALLEL_LEVEL=4; \
     cmake --build .; \
+    cmake --build . --target test; \
     cmake --build . --target install
 
 RUN set -eux; \
@@ -71,7 +53,7 @@ RUN set -eux; \
     ldd /app/install/bin/metre | awk '$1~/^\//{print $1}$3~/^\//{print $3}' \
         | xargs -I{} cp --parents {} '/app/deps/'
 
-RUN ./src/build.sh -c
+
 
 
 FROM scratch
