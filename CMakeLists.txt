@@ -259,7 +259,7 @@ target_link_libraries(metre PRIVATE
         yaml-cpp
 )
 
-target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
+# target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
 if (UNIX)
     target_include_directories(metre PRIVATE
