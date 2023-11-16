@@ -287,16 +287,23 @@ namespace Metre {
                     return;
                 }
                 m_closed_sessions.clear();
-                time_t now = std::time(nullptr);
-                {
-                    std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
-                    while (!m_pending_actions.empty()) {
-                        if (m_pending_actions.begin()->first <= now) {
-                            m_pending_actions.begin()->second();
-                            m_pending_actions.erase(m_pending_actions.begin());
-                        } else {
-                            break;
+                for (;;) {
+                    std::list<std::function<void()>> m_run_now;
+                    {
+                        std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
+                        time_t now = std::time(nullptr);
+                        while (!m_pending_actions.empty()) {
+                            if (m_pending_actions.begin()->first <= now) {
+                                m_run_now.emplace_back(std::move(m_pending_actions.begin()->second));
+                                m_pending_actions.erase(m_pending_actions.begin());
+                            } else {
+                                break;
+                            }
                         }
+                    }
+                    if (m_run_now.empty()) break;
+                    for (auto & fn : m_run_now) {
+                        fn();
                     }
                 }
                 if (m_shutdown) {
@@ -318,6 +325,7 @@ namespace Metre {
                     std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
                     if (!m_pending_actions.empty()) {
                         struct timeval t = {0, 0};
+                        time_t now = time(nullptr);
                         t.tv_sec = m_pending_actions.begin()->first - now;
                         event_base_loopexit(m_event_base, &t);
                     }

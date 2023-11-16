@@ -91,15 +91,17 @@ namespace {
                             throw Metre::not_authorized();
                         }
                     }
-                    m_stream.logger().info("Applying stanza filters for [{}]", to.domain());
+                    m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
                     if (DROP == co_await Config::config().domain(from.domain()).filter(FILTER_DIRECTION::FROM, *s)) {
                         m_stream.logger().info("Stanza discarded by FROM filters");
                         co_return true;
                     }
+                    m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
                     if (DROP == co_await Config::config().domain(to.domain()).filter(FILTER_DIRECTION::TO, *s)) {
                         m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }
+                    m_stream.logger().info("Applied all stanza filters");
                     if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
                         Endpoint::endpoint(to).process(std::move(s));
                     } else {
