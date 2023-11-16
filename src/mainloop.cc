@@ -324,6 +324,7 @@ namespace Metre {
                 } else {
                     std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
                     if (!m_pending_actions.empty()) {
+                        METRE_LOG(Metre::Log::INFO, "Remaining deferred functions: " << m_pending_actions.size());
                         struct timeval t = {0, 0};
                         time_t now = time(nullptr);
                         t.tv_sec = m_pending_actions.begin()->first - now;
