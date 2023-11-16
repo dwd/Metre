@@ -44,14 +44,14 @@ namespace {
         DiscoCache(BaseDescription &b, Config::Domain &, YAML::Node const &) : Filter(b) {
         }
 
-        virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &s) override {
+        virtual sigslot::tasklet<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
             auto fn = []() -> bool {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 return true;
             };
             CoThread<bool> cothread(fn);
             co_await cothread.run();
-            if (dir == OUTBOUND) {
+            if (dir == FILTER_DIRECTION::FROM) {
                 co_return PASS;
             }
             if (s.name() == Iq::name) {

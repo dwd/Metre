@@ -57,6 +57,11 @@ namespace Metre {
         DROP
     } FILTER_RESULT;
 
+    enum class FILTER_DIRECTION {
+        FROM,
+        TO
+    };
+
     class Feature;
 
     class Filter;

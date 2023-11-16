@@ -372,7 +372,7 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
     m_logger = Config::config().logger("domain <" + m_domain + ">");
 }
 
-sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(SESSION_DIRECTION dir, Stanza &s) const {
+sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(FILTER_DIRECTION dir, Stanza &s) const {
     rapidxml::xml_node<> const *node = s.node();
     if (!node) {
         // Synthetic Stanza. Probably a bounce, or similar.

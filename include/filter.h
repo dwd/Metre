@@ -76,7 +76,7 @@ namespace Metre {
 
         /* Interface */
         /* Actually do the filter. Tinkering with the stanza is fine. */
-        virtual sigslot::tasklet<FILTER_RESULT> apply(SESSION_DIRECTION dir, Stanza &) = 0;
+        virtual sigslot::tasklet<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &) = 0;
 
         std::string const & name() const {
             return m_description.name;

@@ -222,7 +222,7 @@ namespace Metre {
 
             ~Domain();
 
-            sigslot::tasklet<FILTER_RESULT> filter(SESSION_DIRECTION dir, Stanza &s) const;
+            sigslot::tasklet<FILTER_RESULT> filter(FILTER_DIRECTION dir, Stanza &s) const;
 
             std::list<std::unique_ptr<Filter>> &filters() {
                 return m_filters;

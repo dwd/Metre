@@ -117,21 +117,21 @@ namespace {
             config->append_node(b);
         }
 
-        virtual FILTER_RESULT apply(SESSION_DIRECTION dir, Stanza &s) override {
-            if (dir == OUTBOUND) {
-                return PASS;
+        virtual sigslot::tasklet<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
+            if (dir == FILTER_DIRECTION::FROM) {
+                co_return PASS;
             }
             if (s.name() == Message::name) {
                 Message &msg = dynamic_cast<Message &>(s);
                 if (msg.type() == Message::GROUPCHAT) {
-                    return PASS; // Dropping groupchat messages would lead to confusion in MUCs.
+                    co_return PASS; // Dropping groupchat messages would lead to confusion in MUCs.
                 }
                 auto bodytag = msg.node()->first_node("body");
-                if (!bodytag || !bodytag->value()) return PASS;
+                if (!bodytag || !bodytag->value()) co_return PASS;
                 std::string body{bodytag->value(), bodytag->value_size()};
                 if (std::find_if(body.begin(), body.end(), [](const char c) { return c & (1 << 7); }) == body.end()) {
                     // ASCII only.
-                    return PASS;
+                    co_return PASS;
                 }
                 // Decode from UTF-8
                 std::unique_ptr<UChar[]> output{new UChar[body.size() + 1]};
@@ -152,10 +152,10 @@ namespace {
                     }
                 }
                 if (count > m_max) {
-                    return DROP;
+                    co_return DROP;
                 }
             }
-            return PASS;
+            co_return PASS;
         }
 
     private:

@@ -91,8 +91,13 @@ namespace {
                             throw Metre::not_authorized();
                         }
                     }
-                    if (DROP == co_await Config::config().domain(to.domain()).filter(INBOUND, *s)) {
-                        m_stream.logger().info("Stanza discarded by filters");
+                    m_stream.logger().info("Applying stanza filters for [{}]", to.domain());
+                    if (DROP == co_await Config::config().domain(from.domain()).filter(FILTER_DIRECTION::FROM, *s)) {
+                        m_stream.logger().info("Stanza discarded by FROM filters");
+                        co_return true;
+                    }
+                    if (DROP == co_await Config::config().domain(to.domain()).filter(FILTER_DIRECTION::TO, *s)) {
+                        m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }
                     if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
