@@ -68,7 +68,8 @@ namespace Metre {
         std::optional<std::string> m_type_str;
         std::optional<std::string> m_id;
         std::string m_lang;
-        mutable std::string m_payload_str;
+        mutable std::string m_payload_str; // Buffer which holds payload if needed.
+        mutable std::string m_node_str; // Buffer which holds fully-parsed XML if node() has been called post-update.
         const char *m_payload = nullptr;
         size_t m_payload_l = 0;
         rapidxml::xml_node<> *m_node = nullptr;
@@ -119,9 +120,12 @@ namespace Metre {
             return m_lang;
         }
 
-        rapidxml::xml_node<> *node(); // If changed, call update();
+        rapidxml::xml_node<> *node() { // If changed, call update();
+            freeze();
+            return node_internal();
+        }
         rapidxml::xml_node<> const *node() const {
-            return const_cast<Stanza *>(this)->node();
+            return const_cast<Stanza *>(this)->node_internal();
         }
 
         void payload(std::string_view p) {
@@ -146,6 +150,7 @@ namespace Metre {
         void freeze(); // Make sure nothing is in volatile storage anymore.
 
     protected:
+        rapidxml::xml_node<> *node_internal(); // If changed, call update();
         void render_error(Stanza::Error e);
 
         void render_error(Metre::base::stanza_exception const &ex);

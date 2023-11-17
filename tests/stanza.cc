@@ -9,7 +9,7 @@ class MessageTest : public ::testing::Test {
 public:
     std::unique_ptr<Message> msg;
     rapidxml::xml_document<> doc;
-    std::string msg_xml = "<message xmlns='jabber:server' from='foo@example.org/lmas' to='bar@example.net/laks' type='chat' id='1234'><body>This is the body</body></message>";
+    std::string msg_xml = "<message xmlns='jabber:server' from='foo@example.org/lmas' to='bar@example.net/laks' type='chat' id='1234'><body>This is the body &amp; stuff</body></message>";
 
     void SetUp() override {
         doc.parse<rapidxml::parse_fastest>(const_cast<char *>(msg_xml.c_str()));
@@ -34,10 +34,24 @@ TEST_F(MessageTest, MessageTo) {
     ASSERT_EQ(msg->to().full(), "bar@example.net/laks");
 }
 
-TEST_F(MessageTest, MessageBody) {
+TEST_F(MessageTest, MessageBodyConst) {
+    const auto * msgc = msg.get();
+    auto body = msgc->node()->first_node("body");
+    std::string body_str{body->value(), body->value_size()};
+    ASSERT_EQ(body_str, std::string("This is the body &amp; stuff"));
+}
+
+TEST_F(MessageTest, MessageBodyNonConst) {
     auto body = msg->node()->first_node("body");
     std::string body_str{body->value(), body->value_size()};
-    ASSERT_EQ(body_str, std::string("This is the body"));
+    ASSERT_EQ(body_str, std::string("This is the body & stuff"));
+}
+
+TEST_F(MessageTest, MessageBodyUpdate) {
+    msg->update();
+    auto body = msg->node()->first_node("body");
+    std::string body_str{body->value(), body->value_size()};
+    ASSERT_EQ(body_str, std::string("This is the body & stuff"));
 }
 
 TEST_F(MessageTest, MessageReplaceBody) {
@@ -102,6 +116,44 @@ TEST_F(MessageTest, MessageReplaceBodyDouble) {
         std::string body_str{body4->value(), body4->value_size()};
         ASSERT_EQ(body_str, std::string("New replacement body"));
     }
+}
+
+TEST_F(MessageTest, MessageReplaceBodyDoubleQuotes) {
+    {
+        auto body = msg->node()->first_node("body");
+        std::string replacement("Replacement 'body'");
+        body->value(replacement.data(), replacement.length());
+        msg->update();
+        auto body2 = msg->node()->first_node("body");
+        ASSERT_TRUE(body2);
+        std::string body_str{body2->value(), body2->value_size()};
+        ASSERT_EQ(body_str, std::string("Replacement 'body'"));
+    }
+    {
+        msg->update();
+        auto body2 = msg->node()->first_node("body");
+        ASSERT_TRUE(body2);
+        std::string body_str{body2->value(), body2->value_size()};
+        ASSERT_EQ(body_str, std::string("Replacement 'body'"));
+    }
+    {
+        auto body3 = msg->node()->first_node("body");
+        std::string body_str_orig{body3->value(), body3->value_size()};
+        ASSERT_EQ(body_str_orig, std::string("Replacement 'body'"));
+        std::string replacement("New replacement & '\"body'");
+        body3->value(replacement.data(), replacement.length());
+        msg->update();
+        auto body4 = msg->node()->first_node("body");
+        ASSERT_TRUE(body4);
+        std::string body_str{body4->value(), body4->value_size()};
+        ASSERT_EQ(body_str, replacement);
+    }
+    rapidxml::xml_document<> tmp_doc;
+    std::string tmp_buffer;
+    msg->render(tmp_doc);
+    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    std::string expected = R"(<message to="bar@example.net/laks" from="foo@example.org/lmas" type="chat" id="1234"><body>New replacement &amp; &apos;&quot;body&apos;</body></message>)";
+    ASSERT_EQ(tmp_buffer, expected);
 }
 
 class IqTest : public ::testing::Test {

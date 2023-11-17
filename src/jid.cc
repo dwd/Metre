@@ -100,7 +100,7 @@ namespace {
 void Jid::parse(std::string const &s) {
     ssize_t at_pos{-1};
     ssize_t slash_pos{-1};
-    for (ssize_t c{0}; c != s.length(); ++c) {
+    for (ssize_t c{0}; c != static_cast<ssize_t>(s.length()); ++c) {
         switch (s[c]) {
             case '@':
                 if (at_pos < 0) {

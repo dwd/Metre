@@ -100,7 +100,7 @@ void Stanza::render(rapidxml::xml_document<> &d) {
     d.append_node(hdr);
 }
 
-rapidxml::xml_node<> *Stanza::node() {
+rapidxml::xml_node<> *Stanza::node_internal() {
     if (m_node) return m_node;
     rapidxml::xml_document<> tmp_doc;
     std::string tmp{m_payload, m_payload_l}; // Copy the buffer.
@@ -111,11 +111,12 @@ rapidxml::xml_node<> *Stanza::node() {
     rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
     m_doc.reset(new rapidxml::xml_document<>);
     m_doc->parse<rapidxml::parse_fastest>(const_cast<char *>(tmp_buffer.c_str()));
-    m_doc->fixup<rapidxml::parse_default>(m_doc->first_node(), false);
-    std::swap(m_payload_str, tmp_buffer);
+    std::swap(m_node_str, tmp_buffer);
     m_node = m_doc->first_node();
-    m_payload = m_node->contents();
-    m_payload_l = m_node->contents_size();
+    m_payload_str.assign(m_node->contents(), m_node->contents_size());
+    m_payload = m_payload_str.data();
+    m_payload_l = m_payload_str.size();
+    m_doc->fixup<rapidxml::parse_default|rapidxml::parse_no_data_nodes>(m_doc->first_node(), true);
     return m_node;
 }
 
