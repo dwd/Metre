@@ -66,11 +66,17 @@ void Stanza::freeze() {
 void Stanza::payload(rapidxml::xml_node<> *node) {
     std::string tmp_buffer;
     for(rapidxml::xml_node<> *child = node->first_node(); child; child = child->next_sibling()) {
+        std::string node_name{child->name(), child->name_size()};
+        METRE_LOG(Metre::Log::DEBUG, "XML Payload print for node name " << node_name);
+        if (child->value_size()) {
+            std::string node_value{child->value(), child->value_size()};
+            METRE_LOG(Metre::Log::DEBUG, "XML Payload print for node value " << node_value);
+        }
         rapidxml::print(std::back_inserter(tmp_buffer), *child, rapidxml::print_no_indenting);
     }
-    m_payload = tmp_buffer.data();
-    m_payload_l = tmp_buffer.length();
     std::swap(m_payload_str, tmp_buffer);
+    m_payload = m_payload_str.data();
+    m_payload_l = m_payload_str.length();
     m_node = nullptr;
 }
 

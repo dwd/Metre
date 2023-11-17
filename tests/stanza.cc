@@ -12,7 +12,7 @@ public:
     std::string msg_xml = "<message xmlns='jabber:server' from='foo@example.org/lmas' to='bar@example.net/laks' type='chat' id='1234'><body>This is the body &amp; stuff</body></message>";
 
     void SetUp() override {
-        doc.parse<rapidxml::parse_fastest>(const_cast<char *>(msg_xml.c_str()));
+        doc.parse<rapidxml::parse_fastest|rapidxml::parse_parse_one>(const_cast<char *>(msg_xml.c_str()));
         doc.fixup<rapidxml::parse_default>(doc.first_node(), false);
         msg = std::make_unique<Message>(doc.first_node());
     }
@@ -39,16 +39,30 @@ TEST_F(MessageTest, MessageBodyConst) {
     auto body = msgc->node()->first_node("body");
     std::string body_str{body->value(), body->value_size()};
     ASSERT_EQ(body_str, std::string("This is the body &amp; stuff"));
+    msg->update();
+    auto body1 = msg->node()->first_node("body");
+    std::string body_str1{body1->value(), body1->value_size()};
+    ASSERT_EQ(body_str1, std::string("This is the body & stuff"));
 }
 
 TEST_F(MessageTest, MessageBodyNonConst) {
     auto body = msg->node()->first_node("body");
     std::string body_str{body->value(), body->value_size()};
     ASSERT_EQ(body_str, std::string("This is the body & stuff"));
+    auto body1 = msg->node()->first_node("body");
+    std::string body_str1{body1->value(), body1->value_size()};
+    ASSERT_EQ(body_str1, std::string("This is the body & stuff"));
 }
 
 TEST_F(MessageTest, MessageBodyUpdate) {
     msg->update();
+    auto body = msg->node()->first_node("body");
+    std::string body_str{body->value(), body->value_size()};
+    ASSERT_EQ(body_str, std::string("This is the body & stuff"));
+}
+
+TEST_F(MessageTest, MessageBodyFreeze) {
+    msg->freeze();
     auto body = msg->node()->first_node("body");
     std::string body_str{body->value(), body->value_size()};
     ASSERT_EQ(body_str, std::string("This is the body & stuff"));
