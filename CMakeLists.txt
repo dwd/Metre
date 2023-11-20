@@ -105,7 +105,7 @@ if(VENDORED_DEPS)
     add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
 
     set(EVENT_INCLUDE_DIRS  "${CMAKE_CURRENT_SOURCE_DIR}/deps/libevent/include" ${CMAKE_CURRENT_BINARY_DIR}/deps/libevent/include)
-    set(EVENT_LDFLAGS event_core_static event_openssl_static event_extra_static)
+    set(EVENT_LDFLAGS event_core_static event_openssl_static event_extra_static event_pthreads_static)
     
     set(UNBOUND_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/unbound/libunbound")
     set(UNBOUND_LDFLAGS unbound)
