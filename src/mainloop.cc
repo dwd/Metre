@@ -52,6 +52,7 @@ SOFTWARE.
 #include "dns.h"
 #include "config.h"
 #include "log.h"
+#include "event2/thread.h"
 #include <functional>
 #include <vector>
 
@@ -94,6 +95,7 @@ namespace Metre {
 
         bool init() {
             if (m_event_base) throw std::runtime_error("I'm already initialized!");
+            evthread_use_pthreads();
             m_event_base = event_base_new();
             for (auto &listen : Config::config().listeners()) {
                 auto listener = evconnlistener_new_bind(m_event_base, new_session_cb,
@@ -288,21 +290,22 @@ namespace Metre {
                 }
                 m_closed_sessions.clear();
                 for (;;) {
-                    std::list<std::function<void()>> m_run_now;
+                    std::list<std::function<void()>> run_now;
                     {
                         std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
                         time_t now = std::time(nullptr);
                         while (!m_pending_actions.empty()) {
                             if (m_pending_actions.begin()->first <= now) {
-                                m_run_now.emplace_back(std::move(m_pending_actions.begin()->second));
+                                run_now.emplace_back(std::move(m_pending_actions.begin()->second));
                                 m_pending_actions.erase(m_pending_actions.begin());
                             } else {
                                 break;
                             }
                         }
                     }
-                    if (m_run_now.empty()) break;
-                    for (auto & fn : m_run_now) {
+                    METRE_LOG(Metre::Log::INFO, "Executing " << run_now.size() << " deferred calls.");
+                    if (run_now.empty()) break;
+                    for (auto & fn : run_now) {
                         fn();
                     }
                 }
@@ -322,11 +325,11 @@ namespace Metre {
                     event_base_loopexit(m_event_base, NULL);
                     METRE_LOG(Metre::Log::INFO, "Closed all sessions.");
                 } else {
-                    std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
+                    std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
                     if (!m_pending_actions.empty()) {
-                        METRE_LOG(Metre::Log::INFO, "Remaining deferred functions: " << m_pending_actions.size());
                         struct timeval t = {0, 0};
                         time_t now = time(nullptr);
+                        METRE_LOG(Metre::Log::INFO, "Remaining deferred functions: " << m_pending_actions.size() << " wait " << m_pending_actions.begin()->first - now);
                         t.tv_sec = m_pending_actions.begin()->first - now;
                         event_base_loopexit(m_event_base, &t);
                     }
@@ -335,12 +338,17 @@ namespace Metre {
         }
 
         void do_later(std::function<void()> &&fn, std::size_t seconds) {
-            std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
+            std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
             time_t now = time(nullptr);
             m_pending_actions.emplace(now + seconds, std::move(fn));
-            struct timeval t = {0, 0};
-            t.tv_sec = m_pending_actions.begin()->first - now;
-            event_base_loopexit(m_event_base, &t);
+            METRE_LOG(Metre::Log::INFO, "Deferred function added with delay " << seconds);
+            if (seconds == 0) {
+                event_base_loopbreak(m_event_base);
+            } else {
+                struct timeval t = {0, 0};
+                t.tv_sec = m_pending_actions.begin()->first - now;
+                event_base_loopexit(m_event_base, &t);
+            }
         }
 
         void shutdown() {
