@@ -8,6 +8,7 @@
 #include <thread>
 #include "sigslot.h"
 #include "sigslot/tasklet.h"
+#include "log.h"
 
 namespace Metre {
     template<typename Result, class... Args>
