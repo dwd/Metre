@@ -8,7 +8,6 @@
 #include <thread>
 #include "sigslot.h"
 #include "sigslot/tasklet.h"
-#include "log.h"
 
 namespace Metre {
     template<typename Result, class... Args>
@@ -38,7 +37,6 @@ namespace Metre {
             void resolve() {
                 std::coroutine_handle<> a = nullptr;
                 std::swap(a, awaiting);
-                METRE_LOG(Metre::Log::DEBUG, "Awaitable resolved, posting resumption.");
                 if (a) sigslot::resume(a);
             }
         };
@@ -59,9 +57,7 @@ namespace Metre {
                 {
                     std::lock_guard l_(m_mutex);
                     m_payload.emplace(result);
-                    METRE_LOG(Metre::Log::DEBUG, "CoThread run complete, emplaced result.");
                     if (m_awaitable) {
-                        METRE_LOG(Metre::Log::DEBUG, "CoThread run complete, resolving awaitable.");
                         m_awaitable->resolve();
                     }
                 }

@@ -303,8 +303,8 @@ namespace Metre {
                             }
                         }
                     }
-                    METRE_LOG(Metre::Log::INFO, "Executing " << run_now.size() << " deferred calls.");
                     if (run_now.empty()) break;
+//                    METRE_LOG(Metre::Log::INFO, "Executing " << run_now.size() << " deferred calls.");
                     for (auto & fn : run_now) {
                         fn();
                     }
@@ -341,7 +341,6 @@ namespace Metre {
             std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
             time_t now = time(nullptr);
             m_pending_actions.emplace(now + seconds, std::move(fn));
-            METRE_LOG(Metre::Log::INFO, "Deferred function added with delay " << seconds);
             if (seconds == 0) {
                 event_base_loopbreak(m_event_base);
             } else {
