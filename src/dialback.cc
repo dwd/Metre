@@ -105,7 +105,7 @@ namespace {
                 co_return true;
             }
             m_stream.check_domain_pair(result.from().domain(), result.to().domain());
-            if (!m_stream.secured() && Config::config().domain(result.to().domain()).require_tls()) {
+            if (!m_stream.secured() && Config::config().domain(result.from().domain()).require_tls()) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
                                                                          Stanza::policy_violation);
                 m_stream.send(std::move(d));
