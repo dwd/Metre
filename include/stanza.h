@@ -108,6 +108,10 @@ namespace Metre {
             return m_type_str;
         }
 
+        void type_str(std::optional<std::string> const & n) {
+            m_type_str = n;
+        }
+
         std::optional<std::string> const &id() const {
             return m_id;
         }
@@ -171,6 +175,7 @@ namespace Metre {
         Type type() const {
             return m_type;
         }
+        void type(Type t);
 
     protected:
         Type set_type() const;

@@ -214,6 +214,27 @@ Message::Message(rapidxml::xml_node<> *node) : Stanza(Message::name, node) {
     m_type = set_type();
 }
 
+void Message::type(Message::Type t) {
+    m_type = t;
+    switch(m_type) {
+        case NORMAL:
+            type_str(std::optional<std::string>());
+            break;
+        case CHAT:
+            type_str("chat");
+            break;
+        case HEADLINE:
+            type_str("headline");
+            break;
+        case GROUPCHAT:
+            type_str("groupchat");
+            break;
+        case STANZA_ERROR:
+            type_str("error");
+            break;
+    }
+}
+
 Message::Type Message::set_type() const {
     if (!type_str()) return NORMAL;
     std::string const &t = *type_str();
