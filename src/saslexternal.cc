@@ -52,8 +52,7 @@ namespace {
                 if (stream.remote_domain().empty()) co_return false;
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) ==
                     XMLStream::AUTHORIZED)
-                    co_return
-                    false;
+                    co_return false;
                 std::shared_ptr<Route> &route = RouteTable::routeTable(stream.local_domain()).route(
                         stream.remote_domain());
                 if (co_await *stream.start_task("SASL EXTERNAL offer tls_auth_ok", stream.tls_auth_ok(*route))) {
@@ -65,8 +64,7 @@ namespace {
                     feature->append_node(mech);
                     node->append_node(feature);
                 }
-                co_return
-                true;
+                co_return true;
             }
         };
 

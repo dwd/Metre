@@ -156,6 +156,47 @@ namespace {
     DECLARE_FEATURE(StartTls, COMP);
 }
 
+namespace {
+    std::string tlsa_selector(DNS::TlsaRR::Selector selector) {
+        switch (selector) {
+            case DNS::TlsaRR::FullCert:
+                return "FullCert";
+            case DNS::TlsaRR::SubjectPublicKeyInfo:
+                return "SubjectPublicKeyInfo";
+        }
+        return "Unknown";
+    }
+
+    std::string tlsa_matchType(DNS::TlsaRR::MatchType matchType) {
+        switch (matchType) {
+            case DNS::TlsaRR::Full:
+                return "Full";
+            case DNS::TlsaRR::Sha512:
+                return "Sha512";
+            case DNS::TlsaRR::Sha256:
+                return "Sha256";
+        }
+        return "Unknown";
+    }
+
+    std::string tlsa_certUsage(DNS::TlsaRR::CertUsage certUsage) {
+        switch (certUsage) {
+            case DNS::TlsaRR::TrustAnchorAssertion:
+                return "TrustAnchorAssertion";
+            case DNS::TlsaRR::CAConstraint:
+                return "CAConstraint";
+            case DNS::TlsaRR::CertConstraint:
+                return "CertConstraint";
+            case DNS::TlsaRR::DomainCert:
+                return "DomainCert";
+        }
+    }
+
+    void tlsa_log(DNS::TlsaRR const & rr) {
+        METRE_LOG(Metre::Log::DEBUG, "Matching " << tlsa_selector(rr.selector) << " with " << tlsa_matchType(rr.matchType) << " for " << tlsa_certUsage(rr.certUsage));
+    }
+}
+
 namespace Metre {
     bool tlsa_matches(DNS::TlsaRR const &rr, X509 *cert) {
         unsigned char *freeme = nullptr;
@@ -163,6 +204,7 @@ namespace Metre {
         unsigned char digest[SHA512_DIGEST_LENGTH];
         int len = 0;
         bool retval = false;
+        tlsa_log(rr);
         if (rr.selector == DNS::TlsaRR::FullCert) {
             len = i2d_X509(cert, &freeme);
         } else if (rr.selector == DNS::TlsaRR::SubjectPublicKeyInfo) {
@@ -188,6 +230,7 @@ namespace Metre {
             retval = true;
         match_fail:
         OPENSSL_free(freeme);
+        METRE_LOG(Metre::Log::DEBUG, "TLSA has " << (retval ? "matched" : "not matched"));
         return retval;
     }
 
@@ -330,8 +373,8 @@ namespace Metre {
                                 }
                                 if (dane_ok) goto tlsa_done;
                             }
+                        }
                     }
-                }
                 } catch(std::exception & e) {
                     stream.logger().debug("verify_tls: TLSA lookup exception: {}", e.what());
                     continue;
