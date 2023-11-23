@@ -170,6 +170,20 @@ TEST_F(MessageTest, MessageReplaceBodyDoubleQuotes) {
     ASSERT_EQ(tmp_buffer, expected);
 }
 
+TEST_F(MessageTest, ChangeType) {
+    ASSERT_EQ(msg->type(), Message::Type::CHAT);
+    ASSERT_EQ(msg->type_str(), "chat");
+    msg->type(Message::Type::NORMAL);
+    ASSERT_EQ(msg->type(), Message::Type::NORMAL);
+    ASSERT_FALSE(msg->type_str().has_value());
+    rapidxml::xml_document<> tmp_doc;
+    std::string tmp_buffer;
+    msg->render(tmp_doc);
+    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    std::string expected = R"(<message to="bar@example.net/laks" from="foo@example.org/lmas" id="1234"><body>This is the body &amp; stuff</body></message>)";
+    ASSERT_EQ(tmp_buffer, expected);
+}
+
 class IqTest : public ::testing::Test {
 public:
     std::unique_ptr<Iq> iq;
