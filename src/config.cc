@@ -1173,6 +1173,20 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
                 if (!rr.matchData.empty()) {
                     read_ok = true;
                 }
+                if (rr.selector == DNS::TlsaRR::FullCert && rr.matchType == DNS::TlsaRR::Full) {
+                    // Full cert matching, so convenient to supply a PEM file as well. Let's check:
+                    if (rr.matchData.find("-----BEGIN") == 0) {
+                        // Tempting to replace this with a base64_decode call, mind.
+                        std::string tmp = rr.matchData;
+                        BIO * b = BIO_new_mem_buf(tmp.data(), static_cast<int>(tmp.size()));
+                        auto cert = PEM_read_bio_X509(b, nullptr, nullptr, nullptr);
+                        if (!cert) throw std::runtime_error("Invalid PEM certificate");
+                        unsigned char * buf = nullptr;
+                        auto len = i2d_X509(cert, &buf);
+                        if (len < 0) throw std::runtime_error("Cannot re-encode to DER");
+                        rr.matchData.assign(reinterpret_cast<const char *>(buf), len);
+                    }
+                }
             }
             if (!read_ok) {
                 rr.matchData = base64_decode(value);
