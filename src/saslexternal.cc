@@ -158,6 +158,11 @@ namespace {
             } else if (name == "success" && m_stream.direction() == OUTBOUND) {
                 success(node);
                 co_return true;
+            } else if (name == "failure" && m_stream.direction() == OUTBOUND) {
+                m_stream.logger().warn("EXTERNAL was offered but not accepted.");
+                // Try Dialback.
+                m_stream.set_auth_ready();
+                co_return true;
             }
             throw Metre::unsupported_stanza_type("Unexpected SASL element");
             co_return false;

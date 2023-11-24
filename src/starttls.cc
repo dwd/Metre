@@ -139,15 +139,29 @@ namespace {
             co_return false;
         }
 
-        bool negotiate(rapidxml::xml_node<> *) override {
+        bool negotiate(rapidxml::xml_node<> * offer) override {
+            if (m_stream.secured()) {
+                m_stream.logger().warn("Remote is offering TLS but we already have it?");
+                return false;
+            }
             SSL_CTX *ctx = Config::config().domain(m_stream.local_domain()).ssl_ctx();
-            if (!ctx) return false;
-            xml_document<> d;
-            auto n = d.allocate_node(node_element, "starttls");
-            n->append_attribute(d.allocate_attribute("xmlns", tls_ns.c_str()));
-            d.append_node(n);
-            m_stream.send(d);
-            return true;
+            if (ctx) {
+                xml_document<> d;
+                auto n = d.allocate_node(node_element, "starttls");
+                n->append_attribute(d.allocate_attribute("xmlns", tls_ns.c_str()));
+                d.append_node(n);
+                m_stream.send(d);
+                return true;
+            } else {
+                m_stream.logger().warn("Can't negotiate TLS as have no CTX - maybe configure a chain and pkey for {}?", m_stream.local_domain());
+                if (offer->first_node("required")) {
+                    m_stream.logger().warn("Remote end requires TLS, this is likely to go wrong.");
+                }
+                if (Config::config().domain(m_stream.remote_domain()).require_tls()) {
+                    m_stream.logger().warn("We require TLS, aborting.");
+                    throw Metre::stanza_policy_violation("We require TLS but you don't offer it, boo!");
+                }
+            }
         }
     };
 
