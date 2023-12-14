@@ -53,7 +53,7 @@ namespace {
                 throw Metre::host_unknown("Not a known component domain");
             }
             if (!domain.auth_secret().has_value()) {
-                throw Metre::host_unknown("No secret for known component domain")
+                throw Metre::host_unknown("No secret for known component domain");
             }
             std::string const &key(*domain.auth_secret());
             std::string concat = m_stream.stream_id() + key;
