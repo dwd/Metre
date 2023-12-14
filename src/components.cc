@@ -46,10 +46,13 @@ namespace {
             Description() : Feature::Description<Component>(sasl_ns, FEAT_POSTAUTH) {};
         };
 
-        std::string handshake_content() const {
+        [[nodiscard]] std::string handshake_content() const {
             Config::Domain const &domain = Config::config().domain(m_stream.local_domain());
             if (domain.transport_type() != COMP) {
-                throw Metre::host_unknown("Nope.");
+                throw Metre::host_unknown("Not a known component domain");
+            }
+            if (!domain.auth_secret().has_value()) {
+                throw Metre::host_unknown("No secret for known component domain")
             }
             std::string const &key(*domain.auth_secret());
             std::string concat = m_stream.stream_id() + key;

@@ -367,7 +367,7 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
           m_block(any.m_block), m_multiplex(any.m_multiplex), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
           m_tls_preference(any.m_tls_preference), m_min_tls_version(any.m_min_tls_version), m_max_tls_version(any.m_max_tls_version),
-          m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist),
+          m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist), m_auth_secret(any.m_auth_secret),
           m_ssl_ctx(nullptr), m_parent(&any) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
 }
