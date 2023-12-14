@@ -29,6 +29,7 @@ SOFTWARE.
 #include "router.h"
 #include "log.h"
 #include "config.h"
+#include "endpoint.h"
 #include <openssl/sha.h>
 
 using namespace rapidxml;
@@ -125,10 +126,24 @@ namespace {
                     if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
                         throw not_authorized();
                     }
-                    // Forward everything.
-                    METRE_LOG(Metre::Log::DEBUG, "Component creating route: from=[" << from.domain() << "] to=[" << to.domain() << "]");
-                    std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
-                    route->transmit(std::move(s));
+                    m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
+                    if (DROP == co_await Config::config().domain(from.domain()).filter(FILTER_DIRECTION::FROM, *s)) {
+                        m_stream.logger().info("Stanza discarded by FROM filters");
+                        co_return true;
+                    }
+                    m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
+                    if (DROP == co_await Config::config().domain(to.domain()).filter(FILTER_DIRECTION::TO, *s)) {
+                        m_stream.logger().info("Stanza discarded by TO filters");
+                        co_return true;
+                    }
+                    m_stream.logger().info("Applied all stanza filters");
+                    if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
+                        Endpoint::endpoint(to).process(std::move(s));
+                    } else {
+                        METRE_LOG(Metre::Log::DEBUG, "Component creating route: from=[" << from.domain() << "] to=[" << to.domain() << "]");
+                        std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
+                        route->transmit(std::move(s));
+                    }
                 } catch (Metre::base::xmpp_exception &) {
                     throw;
                 } catch (Metre::base::stanza_exception &) {
