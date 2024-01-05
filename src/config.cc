@@ -148,6 +148,7 @@ namespace {
         bool forward = (def == INTERNAL || def == COMP);
         SESSION_TYPE sess = def;
         bool tls_required = !(def == INTERNAL || def == COMP);
+        bool xmpp_ver = true;
         bool block = false;
         bool multiplex = true;
         bool auth_pkix = (def == S2S) || (def == X2X);
@@ -168,6 +169,7 @@ namespace {
             auth_dialback = any->auth_dialback();
             tls_required = tls_required && any->require_tls();
             tls_preference = any->tls_preference();
+            xmpp_ver = any->xmpp_ver();
             dnssec_required = any->dnssec_required();
             dhparam = any->dhparam();
             cipherlist = any->cipherlist();
@@ -202,6 +204,7 @@ namespace {
             }
             multiplex = domain["transport"]["multiplex"].as<bool>(multiplex);
             tls_required = domain["transport"]["sec"].as<bool>(tls_required);
+            xmpp_ver = domain["transport"]["xmpp_ver"].as<bool>(xmpp_ver);
             if (domain["transport"]["prefer"]) {
                 std::string tls_pref_str = domain["transport"]["prefer"].as<std::string>();
                 if (tls_pref_str == "immediate" || tls_pref_str == "direct") {
@@ -233,7 +236,7 @@ namespace {
                 throw std::runtime_error("Cannot authenticate domain, but not blocked.");
             }
         }
-        auto dom = std::make_unique<Config::Domain>(name, sess, forward, tls_required, block, multiplex, auth_pkix, auth_dialback,
+        auto dom = std::make_unique<Config::Domain>(name, sess, xmpp_ver, forward, tls_required, block, multiplex, auth_pkix, auth_dialback,
                                                     auth_host, std::move(auth_secret));
         dom->auth_pkix_status(auth_pkix_crls);
         dom->stanza_timeout(stanza_timeout);
@@ -353,17 +356,17 @@ namespace {
     bool openssl_init = false;
 }
 
-Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls,
+Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls,
                        bool block, bool multiplex, bool auth_pkix, bool auth_dialback, bool auth_host,
                        std::optional<std::string> &&auth_secret)
-        : m_domain(domain), m_type(transport_type), m_forward(forward), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
+        : m_domain(domain), m_type(transport_type), m_forward(forward), m_xmpp_ver(xmpp_ver), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
           m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(auth_secret),
           m_ssl_ctx(nullptr) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
 }
 
 Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
-        : m_domain(domain), m_type(any.m_type), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
+        : m_domain(domain), m_type(any.m_type), m_xmpp_ver(any.m_xmpp_ver), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
           m_block(any.m_block), m_multiplex(any.m_multiplex), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
           m_tls_preference(any.m_tls_preference), m_min_tls_version(any.m_min_tls_version), m_max_tls_version(any.m_max_tls_version),
@@ -735,6 +738,7 @@ namespace {
                 config["transport"]["prefer"] = "any";
                 break;
         }
+        config["transport"]["xmpp_ver"] = domain.xmpp_ver();
         config["transport"]["connect-timeout"] = domain.connect_timeout();
         config["auth"]["pkix"] = domain.auth_pkix();
         config["auth"]["check-status"] = domain.auth_pkix_status();

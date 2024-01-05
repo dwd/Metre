@@ -170,6 +170,10 @@ namespace Metre {
                 return d;
             }
 
+            [[nodiscard]] bool xmpp_ver() const {
+                return m_xmpp_ver;
+            }
+
             [[nodiscard]] TLS_PREFERENCE tls_preference() const {
                 return m_tls_preference;
             }
@@ -211,7 +215,7 @@ namespace Metre {
             void tlsa(std::string const &hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
                       DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value);
 
-            Domain(std::string const &domain, SESSION_TYPE transport_type, bool forward, bool require_tls, bool block, bool multiplex,
+            Domain(std::string const &domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls, bool block, bool multiplex,
                    bool auth_pkix, bool auth_dialback, bool auth_host, std::optional<std::string> &&m_auth_secret);
 
             Domain(Domain const &, std::string const &domain);
@@ -275,6 +279,7 @@ namespace Metre {
             std::shared_ptr<spdlog::logger> m_logger;
             std::string m_domain;
             SESSION_TYPE m_type;
+            bool m_xmpp_ver;
             bool m_forward = false;
             bool m_require_tls = true;
             bool m_block = false;

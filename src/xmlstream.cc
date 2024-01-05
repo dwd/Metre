@@ -360,6 +360,10 @@ void XMLStream::stream_open() {
         ver.compare(0, 3, version->value(), version->value_size()) == 0) {
         with_ver = true;
     }
+    if (!Config::config().domain(from).xmpp_ver()) {
+        logger().debug("Suppressing the version from {} due to config", from);
+        with_ver = false;
+    }
     if (m_dir == INBOUND) {
         m_stream_local = domainname;
         if (from.empty()) {
