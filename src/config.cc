@@ -359,7 +359,7 @@ namespace {
 Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls,
                        bool block, bool multiplex, bool auth_pkix, bool auth_dialback, bool auth_host,
                        std::optional<std::string> &&auth_secret)
-        : m_domain(domain), m_type(transport_type), m_forward(forward), m_xmpp_ver(xmpp_ver), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
+        : m_domain(domain), m_type(transport_type), m_xmpp_ver(xmpp_ver), m_forward(forward), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
           m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(auth_secret),
           m_ssl_ctx(nullptr) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
@@ -605,7 +605,7 @@ void Config::load(std::string const &filename) {
             any_domain = dom.get(); // Save this pointer.
             m_domains[dom->domain()] = std::move(dom);
         } else {
-            m_domains[""] = std::make_unique<Config::Domain>("", INTERNAL, false, true, true, true, true, true, false,
+            m_domains[""] = std::make_unique<Config::Domain>("", INTERNAL, true, false, true, true, true, true, true, false,
                                                              std::optional<std::string>());
         }
         for (auto const & item : external) {
