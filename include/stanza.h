@@ -83,6 +83,7 @@ namespace Metre {
                std::optional<std::string> const &id);
 
         virtual ~Stanza() = default;
+        Stanza(Stanza const &) = delete;
 
         const char *name() const {
             return m_name;
@@ -171,11 +172,14 @@ namespace Metre {
         Type m_type;
     public:
         explicit Message(rapidxml::xml_node<> *node);
+        explicit Message();
 
         Type type() const {
             return m_type;
         }
         void type(Type t);
+
+        std::unique_ptr<Message> create_response() const;
 
     protected:
         Type set_type() const;

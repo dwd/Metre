@@ -208,9 +208,25 @@ std::unique_ptr<Stanza> Stanza::create_forward() const {
     return stanza;
 }
 
+Message::Message() : Stanza(Message::name) {
+    m_type = set_type();
+}
+
 Message::Message(rapidxml::xml_node<> *node) : Stanza(Message::name, node) {
     m_type = set_type();
 }
+
+std::unique_ptr<Message> Message::create_response() const {
+    auto stanza = std::make_unique<Message>();
+    stanza->m_from = m_to;
+    stanza->m_to = m_from;
+    stanza->m_id = m_id;
+    stanza->m_type_str = m_type_str;
+    stanza->m_type = m_type;
+    return stanza;
+}
+
+
 
 void Message::type(Message::Type t) {
     m_type = t;
