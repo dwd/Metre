@@ -184,6 +184,27 @@ TEST_F(MessageTest, ChangeType) {
     ASSERT_EQ(tmp_buffer, expected);
 }
 
+TEST_F(MessageTest, Receipt) {
+    auto receipt = msg->create_response();
+    receipt->update();
+    ASSERT_STREQ(receipt->node()->name(), "message");
+    rapidxml::xml_document<> doc;
+    auto tmp = doc.allocate_node(rapidxml::node_element, "tmp");
+    auto receipt_el = doc.allocate_node(rapidxml::node_element, "receipt");
+    receipt_el->append_attribute(doc.allocate_attribute("xmlns", "urn:xmpp:receipts"));
+    tmp->append_node(receipt_el);
+    receipt->payload(tmp);
+    receipt->update();
+    ASSERT_NE(receipt->node()->first_node(), nullptr);
+    receipt->update();
+    rapidxml::xml_document<> tmp_doc;
+    std::string tmp_buffer;
+    receipt->render(tmp_doc);
+    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    std::string expected = R"(<message to="bar@example.net/laks" from="foo@example.org/lmas" id="1234"><body>This is the body &amp; stuff</body></message>)";
+    ASSERT_EQ(tmp_buffer, expected);
+}
+
 class IqTest : public ::testing::Test {
 public:
     std::unique_ptr<Iq> iq;
