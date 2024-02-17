@@ -109,7 +109,7 @@ namespace {
         TLS_PREFERENCE tls_preference = PREFER_ANY;
         unsigned int stanza_timeout = 20;
         unsigned int connect_timeout = 10;
-        std::string dhparam = "4096";
+        std::string dhparam = "auto";
         std::string cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
         std::optional<std::string> auth_secret;
         int min_tls_version = TLS1_2_VERSION;
@@ -207,7 +207,7 @@ namespace {
                     throw std::runtime_error("Missing chain for x509");
                 }
             }
-            dhparam = tls["dhparam"]["size"].as<std::string>(dhparam);
+            dhparam = tls["dhparam"].as<std::string>(dhparam);
             cipherlist = tls["ciphers"].as<std::string>(cipherlist);
             if (tls["min_version"]) {
                 min_tls_version = yaml_to_tls(tls["min_version"]);
