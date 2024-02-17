@@ -61,7 +61,7 @@ public:
     template<typename S>
     std::unique_ptr<Stanza> parse_stanza(std::string &s) {
         doc.clear();
-        doc.parse<rapidxml::parse_fastest>(const_cast<char *>(s.c_str()));
+        doc.parse<rapidxml::parse_fastest|rapidxml::parse_parse_one>(const_cast<char *>(s.c_str()));
         doc.fixup<rapidxml::parse_full>(doc.first_node(), false);
         return std::make_unique<S>(doc.first_node());
     }

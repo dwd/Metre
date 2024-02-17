@@ -75,8 +75,13 @@ namespace Metre {
 
             tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname);
 
+            spdlog::logger & logger() const {
+                return *m_logger;
+            }
+
         private:
             Domain const &m_domain;
+            std::shared_ptr<spdlog::logger> m_logger;
         };
 
         class Domain {

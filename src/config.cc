@@ -1088,7 +1088,9 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
     tlsa->rrs.push_back(rr);
 }
 
-Config::Resolver::Resolver(Domain const &d) : Metre::DNS::Resolver(d.domain(), d.dnssec_required(), d.tls_preference()), m_domain(d) {}
+Config::Resolver::Resolver(Domain const &d) : Metre::DNS::Resolver(d.domain(), d.dnssec_required(), d.tls_preference()), m_domain(d) {
+    m_logger = Config::config().logger("Resolver <" + m_domain.domain() + ">");
+}
 
 Config::Resolver::~Resolver() = default;
 

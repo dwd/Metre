@@ -36,7 +36,9 @@ namespace {
                 m_endpoint.send(std::move(bounce));
             } else {
                 rapidxml::xml_document<> doc;
+                auto container = doc.allocate_node(rapidxml::node_element, "root");
                 auto response = doc.allocate_node(rapidxml::node_element, "query");
+                container->append_node(response);
                 response->append_attribute(doc.allocate_attribute("xmlns", "http://jabber.org/protocol/disco#items"));
                 for (auto const &node : m_endpoint.nodes()) {
                     auto item = doc.allocate_node(rapidxml::node_element, "item");
@@ -46,7 +48,7 @@ namespace {
                     response->append_node(item);
                 }
                 std::unique_ptr<Iq> result{new Iq(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id())};
-                result->payload(response);
+                result->payload(container);
                 m_endpoint.send(std::move(result));
             }
             co_return;
@@ -62,7 +64,9 @@ namespace {
                 m_endpoint.send(std::move(bounce));
             } else {
                 rapidxml::xml_document<> doc;
+                auto container = doc.allocate_node(rapidxml::node_element, "root");
                 auto response = doc.allocate_node(rapidxml::node_element, "query");
+                container->append_node(response);
                 response->append_attribute(doc.allocate_attribute("xmlns", "http://jabber.org/protocol/disco#info"));
                 for (auto const &cap : m_endpoint.capabilities()) {
                     for (auto const &feature : cap->description().disco()) {
@@ -72,7 +76,7 @@ namespace {
                     }
                 }
                 std::unique_ptr<Iq> result{new Iq(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id())};
-                result->payload(response);
+                result->payload(container);
                 m_endpoint.send(std::move(result));
             }
             co_return;

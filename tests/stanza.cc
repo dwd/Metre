@@ -201,7 +201,7 @@ TEST_F(MessageTest, Receipt) {
     std::string tmp_buffer;
     receipt->render(tmp_doc);
     rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
-    std::string expected = R"(<message to="bar@example.net/laks" from="foo@example.org/lmas" id="1234"><body>This is the body &amp; stuff</body></message>)";
+    std::string expected = R"(<message to="foo@example.org/lmas" from="bar@example.net/laks" type="chat" id="1234"><receipt xmlns="urn:xmpp:receipts"/></message>)";
     ASSERT_EQ(tmp_buffer, expected);
 }
 
@@ -212,7 +212,8 @@ public:
     std::string iq_xml = "<iq xmlns='jabber:server' from='foo@example.org/lmas' to='bar@example.net/laks' type='get' id='1234'><query xmlns='urn:xmpp:ping'/></iq>";
 
     void SetUp() override {
-        doc.parse<rapidxml::parse_full>(const_cast<char *>(iq_xml.c_str()));
+        doc.parse<rapidxml::parse_fastest|rapidxml::parse_parse_one>(const_cast<char *>(iq_xml.c_str()));
+        doc.fixup<rapidxml::parse_default>(doc.first_node(), false);
         iq = std::make_unique<Iq>(doc.first_node());
     }
 };
@@ -234,11 +235,11 @@ TEST_F(IqTest, To) {
 }
 
 TEST_F(IqTest, Name) {
-    ASSERT_EQ(iq->node()->first_node()->name(), std::string("query"));
+    ASSERT_STREQ(iq->node()->first_node()->name(), "query");
 }
 
 TEST_F(IqTest, Namespace) {
-    ASSERT_EQ(iq->node()->first_node()->xmlns(), std::string("urn:xmpp:ping"));
+    ASSERT_STREQ(iq->node()->first_node()->xmlns(), "urn:xmpp:ping");
 }
 
 #if 0

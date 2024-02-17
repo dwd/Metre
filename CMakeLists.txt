@@ -187,9 +187,6 @@ endif()
 set(SOURCE_FILES
     ${FILTER_SOURCES}
     ${CAPABILITY_SOURCES}
-    gen/dh1024.cc
-    gen/dh2048.cc
-    gen/dh4096.cc
     include/base64.h
     include/config.h
     include/core.h
