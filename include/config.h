@@ -36,6 +36,7 @@ SOFTWARE.
 
 #include "defs.h"
 #include "dns.h"
+#include <fmt/chrono.h>
 #include "spdlog/spdlog.h"
 #include "sigslot.h"
 #include <sigslot/tasklet.h>
@@ -57,46 +58,25 @@ struct ub_result;
 namespace Metre {
     class Config {
     public:
-        /* DNS */
-        using srv_callback_t = sigslot::signal<DNS::Srv>;
-        using addr_callback_t = sigslot::signal<DNS::Address>;
-        using tlsa_callback_t = sigslot::signal<DNS::Tlsa>;
-
         class Domain;
 
-        class Resolver {
+        class Resolver : public Metre::DNS::Resolver{
         public:
             explicit Resolver(Domain const &);
 
-            ~Resolver();
+            ~Resolver() override;
 
             /* DNS */
             srv_callback_t &SrvLookup(std::string const &domain);
+
+            svcb_callback_t &SvcbLookup(std::string const &domain);
 
             addr_callback_t &AddressLookup(std::string const &hostname);
 
             tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname);
 
-            /* DNS callbacks */
-            void a_lookup_done(int err, struct ub_result *result);
-
-            void srv_lookup_done(int err, struct ub_result *result);
-
-            void tlsa_lookup_done(int err, struct ub_result *result);
-
-            spdlog::logger &logger() const {
-                return *m_logger;
-            }
-
         private:
             Domain const &m_domain;
-            DNS::Address m_current_arec;
-            DNS::Srv m_current_srv;
-            srv_callback_t m_srv_pending;
-            std::map<std::string, addr_callback_t, std::less<>> m_a_pending;
-            std::map<std::string, tlsa_callback_t, std::less<>> m_tlsa_pending;
-            std::shared_ptr<spdlog::logger> m_logger;
-            std::unordered_set<int> m_queries;
         };
 
         class Domain {
@@ -265,6 +245,10 @@ namespace Metre {
                 return m_srvrec;
             }
 
+            [[nodiscard]] auto const &svcb_override() const {
+                return m_svcbrec;
+            }
+
             [[nodiscard]] auto min_tls_version() const {
                 return m_min_tls_version;
             }
@@ -301,6 +285,7 @@ namespace Metre {
             // DNS Overrides:
             std::map<std::string, std::unique_ptr<DNS::Address>, std::less<>> m_host_arecs;
             std::unique_ptr<DNS::Srv> m_srvrec;
+            std::unique_ptr<DNS::Svcb> m_svcbrec;
             std::map<std::string, std::unique_ptr<DNS::Tlsa>, std::less<>> m_tlsarecs;
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;

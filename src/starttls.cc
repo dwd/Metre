@@ -161,6 +161,7 @@ namespace {
                     m_stream.logger().warn("We require TLS, aborting.");
                     throw Metre::stanza_policy_violation("We require TLS but you don't offer it, boo!");
                 }
+                return false;
             }
         }
     };
@@ -204,6 +205,7 @@ namespace {
             case DNS::TlsaRR::DomainCert:
                 return "DomainCert";
         }
+        return "Unknown";
     }
 
     void tlsa_log(DNS::TlsaRR const & rr) {

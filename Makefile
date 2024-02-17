@@ -24,7 +24,8 @@ package: all
 dhparams: gen/dh1024.cc gen/dh2048.cc gen/dh4096.cc
 
 gen/dh%.cc:
-	./deps/openssl/apps/openssl dhparam -C -noout $* >$@
+	test -f ./deps/openssl/apps/openssl && ./deps/openssl/apps/openssl dhparam -C -noout $* >$@ || true
+	test -f ./deps/openssl/apps/openssl || openssl dhparam -C -noout $* >$@
 
 apt-deps:
 	apt-get install --quiet --no-install-recommends \

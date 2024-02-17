@@ -10,7 +10,7 @@ set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 
-option(VENDORED_DEPS "Use vendored dependencies" ON)
+option(VENDORED_DEPS "Use vendored dependencies" OFF)
 option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
 option(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
 
@@ -138,7 +138,7 @@ else()
     if(APPLE)
         set(SPDLOG_INCLUDE_DIRS "/usr/local/include/") # Busted pkg-config for SPDLOG
     elseif(UNIX)
-        set(SPDLOG_INCLUDE_DIRS "/usr/include/spdlog/") # Busted pkg-config for SPDLOG
+        set(SPDLOG_INCLUDE_DIRS "/usr/include/") # Busted pkg-config for SPDLOG
     endif()
 endif()
 
@@ -226,6 +226,7 @@ set(SOURCE_FILES
     src/stanza.cc
     src/starttls.cc
     src/xmlstream.cc
+        src/dns.cc
 )
 
 if(UNIX)
@@ -299,6 +300,9 @@ add_executable(metre-test
     tests/jid.cc 
     ${CAPABILITY_SOURCES}
     tests/endpoint.cc
+        src/dns.cc
+        tests/cothread.cc
+        tests/dns.cc
 )
 
 target_compile_definitions(metre-test PUBLIC
