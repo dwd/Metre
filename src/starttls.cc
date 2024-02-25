@@ -283,8 +283,8 @@ namespace Metre {
             std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
                     (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(current_cert, NID_crl_distribution_points, nullptr, nullptr),
                     [](STACK_OF(DIST_POINT) *crldp) { sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
-            auto crldp = crldp_ptr.get();
-            if (crldp) {
+            if (crldp_ptr) {
+                auto crldp = crldp_ptr.get();
                 for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
                     DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
                     if (dp->distpoint->type == 0) { // Full Name
