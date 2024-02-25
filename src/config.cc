@@ -817,7 +817,7 @@ namespace {
                 }
             }
         }
-        config["tls"]["dhparam"]["size"] = domain.dhparam();
+        config["tls"]["dhparam"] = domain.dhparam();
         config["tls"]["ciphers"] = domain.cipherlist();
         if (auto const * s = tls_version_to_string(domain.min_tls_version()); s) {
             config["tls"]["min_version"] = s;
@@ -1112,6 +1112,84 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     if (rr.hostname[rr.hostname.length() - 1] != '.') rr.hostname += '.';
     rr.tls = tls;
     m_srvrec->rrs.push_back(rr);
+}
+
+sigslot::tasklet<void> Config::Domain::gather_host(Resolver & r, GatheredData & g, std::string const & host, uint16_t port, DNS::ConnectInfo::Method method) const {
+    auto addr_recs = co_await r.AddressLookup(host);
+    if (!addr_recs.error.empty()) co_return; // Interesting case: a DNSSEC-signed SVCB/SRV record pointing to a non-existent host still adds that host to the X.509-acceptable names.
+    if (!addr_recs.dnssec && m_dnssec_required) co_return;
+    for (auto const & arr : addr_recs.addr) {
+        DNS::ConnectInfo conn_info;
+        conn_info.method = method;
+        conn_info.port = port;
+        conn_info.sockaddr = arr;
+        conn_info.hostname = host;
+        if (conn_info.sockaddr.ss_family == AF_INET) {
+            reinterpret_cast<sockaddr_in *>(&conn_info.sockaddr)->sin_port = port;
+        } else if (conn_info.sockaddr.ss_family == AF_INET6) {
+            reinterpret_cast<sockaddr_in6 *>(&conn_info.sockaddr)->sin6_port = port;
+        }
+        g.gathered_connect.push_back(conn_info);
+    }
+}
+
+sigslot::tasklet<void> Config::Domain::gather_tlsa(Resolver & r, GatheredData & g, std::string const & host, uint16_t port) const {
+    auto recs = co_await r.TlsaLookup(port, host);
+    if (!recs.error.empty()) co_return;
+    if (!recs.dnssec) co_return;
+    for (auto const & tlsa_rr : recs.rrs) {
+        g.gathered_tlsa.push_back(tlsa_rr);
+    }
+}
+
+sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather() const {
+    auto r = resolver();
+    std::string domain = m_domain;
+    GatheredData g;
+aname_restart:
+    g.gathered_connect.clear();
+    auto svcb = co_await r->SvcbLookup(domain);
+    if (svcb.error.empty()) {
+        // SVCB pathway
+        for (auto const & rr : svcb.rrs) {
+            if (svcb.dnssec) {
+                g.gathered_hosts.insert(rr.hostname);
+            } else if (m_dnssec_required) {
+                continue;
+            }
+            if (rr.priority == 0) {
+                domain = rr.hostname;
+                goto aname_restart;
+            }
+            uint16_t  default_port = 443; // Anticipation of WebSocket/WebTransport/BOSH.
+            auto method = DNS::ConnectInfo::Method::StartTLS;
+            if (rr.alpn.empty()) {
+                method = DNS::ConnectInfo::Method::StartTLS;;
+                default_port = 5269;
+            } else if (rr.alpn.contains("xmpp-server")) {
+                method = DNS::ConnectInfo::Method::DirectTLS;
+                default_port = 5270;
+            }
+            co_await gather_host(*r, g, rr.hostname, rr.port ? rr.port : default_port, method);
+            co_await gather_tlsa(*r, g, rr.hostname, rr.port ? rr.port : default_port);
+        }
+    } else {
+        // SRV path
+        auto srv = co_await r->SrvLookup(domain); // Interesting case: An SVCB looking resulting in the ANAME case might follow to an SRV lookup.
+        if (srv.error.empty()) {
+            for (auto const & rr : srv.rrs) {
+                if (srv.dnssec) {
+                    g.gathered_hosts.insert(rr.hostname);
+                }
+                co_await gather_host(*r, g, rr.hostname, rr.port, (rr.tls ? DNS::ConnectInfo::Method::DirectTLS : DNS::ConnectInfo::Method::StartTLS));
+                co_await gather_tlsa(*r, g, rr.hostname, rr.port);
+            }
+        } else {
+            co_await gather_host(*r, g, domain, 5269, DNS::ConnectInfo::Method::StartTLS);
+            co_await gather_tlsa(*r, g, domain, 5269);
+        }
+    }
+    co_return g;
 }
 
 DNS::Resolver::addr_callback_t &Config::Resolver::AddressLookup(std::string const &ihostname) {

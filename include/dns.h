@@ -174,6 +174,19 @@ namespace Metre {
             std::vector<TlsaRR> rrs;
         };
 
+        class ConnectInfo {
+        public:
+            enum class  Method {
+                StartTLS,
+                DirectTLS,
+                Websocket
+            };
+            Method method;
+            std::string hostname;
+            struct sockaddr_storage sockaddr;
+            uint16_t port;
+        };
+
         class Resolver {
         public:
             /* DNS */

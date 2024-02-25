@@ -264,6 +264,18 @@ namespace Metre {
             }
             void max_tls_version(int);
 
+            class GatheredData {
+            public:
+                std::set<std::string> gathered_hosts; // verified possible hostnames.
+                std::list<DNS::ConnectInfo> gathered_connect; // Connection options, preference order.
+                std::list<DNS::TlsaRR> gathered_tlsa; // Verified TLSA records as gathered.
+            };
+
+            // Do DNS discovery:
+            [[nodiscard]] sigslot::tasklet<GatheredData> gather() const;
+            [[nodiscard]] sigslot::tasklet<void> gather_host(Resolver &, GatheredData &, std::string const &, uint16_t, DNS::ConnectInfo::Method) const;
+            [[nodiscard]] sigslot::tasklet<void> gather_tlsa(Resolver &, GatheredData &, std::string const &, uint16_t) const;
+
         private:
             std::shared_ptr<spdlog::logger> m_logger;
             std::string m_domain;

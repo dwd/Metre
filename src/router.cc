@@ -43,16 +43,14 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_dom
 
 sigslot::tasklet<bool> Route::init_session_vrfy() {
     m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
-    auto res = Config::config().domain(m_domain.domain()).resolver();
-    auto srv = co_await res->SrvLookup(m_domain.domain());
-    m_logger->trace("Verify session completed SRV lookup: domain=[{}]", m_domain);
+    auto gathered = co_await Config::config().domain(m_domain.domain()).gather();
 
-    if (!srv.error.empty()) {
-        m_logger->warn("SRV Lookup for [{}] failed: [{}]", m_domain.domain(), srv.error);
+    if (gathered.gathered_connect.empty()) {
+        m_logger->warn("DNS Lookup for [{}] failed", m_domain.domain());
         co_return false;
     }
     if (Config::config().domain(m_domain.domain()).multiplex()) {
-        for (auto &rr: srv.rrs) {
+        for (auto &rr: gathered.gathered_connect) {
             m_logger->trace("Should look for [{}:{}]", rr.hostname, rr.port);
             auto session = Router::session_by_address(rr.hostname, rr.port);
             if (session && !Config::config().domain(session->xml_stream().remote_domain()).multiplex()) {
@@ -72,34 +70,27 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
             }
         }
     }
-    for (auto &rr : srv.rrs) {
-        m_logger->trace("Awaiting address lookup for verify session: hostname=[{}]", rr.hostname);
-        auto addr = co_await res->AddressLookup(rr.hostname);
-        if (!addr.error.empty()) {
-            m_logger->warn("A/AAAA Lookup for [{}] failed: [{}]", rr.hostname, addr.error);
-            continue;
-        }
-        for (auto &arr : addr.addr) {
-            try {
-                m_logger->trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
-                auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
-                                       const_cast<struct sockaddr *>(reinterpret_cast<const struct sockaddr *>(&arr)),
-                                       rr.port, Config::config().domain(m_domain.domain()).transport_type(),
-                                       rr.tls ? IMMEDIATE : STARTTLS);
-                m_logger->trace("Connected verify session: address=[{}:{}] serial=[{}]", rr.hostname, rr.port, session->serial());
+    for (auto &rr : gathered.gathered_connect) {
+        try {
+            m_logger->trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
+            auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
+                                           reinterpret_cast<sockaddr *>(&rr.sockaddr),
+                                           rr.port, Config::config().domain(m_domain.domain()).transport_type(),
+                                           rr.method == DNS::ConnectInfo::Method::DirectTLS ? IMMEDIATE : STARTTLS);
+            m_logger->trace("Connected verify session: address=[{}:{}] serial=[{}]", rr.hostname, rr.port,
+                            session->serial());
 
-                m_logger->trace("Awaiting auth ready on verify session: serial=[{}]", session->serial());
-                (void) co_await session->xml_stream().onAuthReady;
-                if (!session->xml_stream().auth_ready()) {
-                    m_logger->trace("Auth was not ready on verify session: serial=[{}]", session->serial());
-                    continue;
-                }
-                set_vrfy(session);
-                m_logger->debug("New outgoing verify session: address=[{}:{}]", rr.hostname, rr.port);
-                co_return true;
-            } catch (std::runtime_error &e) {
-                m_logger->error("Verify session connection failed, reloop: error=[{}]", e.what());
+            m_logger->trace("Awaiting auth ready on verify session: serial=[{}]", session->serial());
+            (void) co_await session->xml_stream().onAuthReady;
+            if (!session->xml_stream().auth_ready()) {
+                m_logger->trace("Auth was not ready on verify session: serial=[{}]", session->serial());
+                continue;
             }
+            set_vrfy(session);
+            m_logger->debug("New outgoing verify session: address=[{}:{}]", rr.hostname, rr.port);
+            co_return true;
+        } catch (std::runtime_error &e) {
+            m_logger->error("Verify session connection failed, reloop: error=[{}]", e.what());
         }
     }
     m_logger->error("New outgoing verify session failed: domain=[{}]", m_domain);
