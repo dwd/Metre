@@ -111,13 +111,9 @@ if(VENDORED_DEPS)
     set(UNBOUND_LDFLAGS unbound)
 
     set(SPDLOG_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/spdlog/include")
-
-    set(GOOGLETEST_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/googletest")
-    find_package(GMock REQUIRED)
 else()
     if(APPLE)
         set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/usr/local/opt/openssl@1.1/lib/pkgconfig:/usr/local/opt/icu4c/lib/pkgconfig/")
-        set(GOOGLETEST_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/googletest")
     elseif(UNIX)
         # Nothing to do for Linux
     else()
@@ -132,8 +128,6 @@ else()
     pkg_check_modules(ICU icu-uc REQUIRED)
     add_definitions(-DHAVE_ICU)
     set(UNBOUND_LDFLAGS unbound)
-
-    find_package(GMock REQUIRED)
 
     if(APPLE)
         set(SPDLOG_INCLUDE_DIRS "/usr/local/include/") # Busted pkg-config for SPDLOG
@@ -284,8 +278,14 @@ endif()
 
 install(TARGETS metre RUNTIME DESTINATION bin COMPONENT application)
 
+# Tests
 
-
+include(FetchContent)
+FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+)
+FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
@@ -310,8 +310,8 @@ target_compile_definitions(metre-test PUBLIC
 
 target_include_directories(metre-test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${EVENT_INCLUDE_DIRS}
-    ${GTEST_INCLUDE_DIRS}
     ${ICU_INCLUDE_DIRS}
     ${RAPIDXML_INCLUDE_DIRS}
     ${SIGSLOT_INCLUDE_DIRS}
@@ -321,7 +321,6 @@ target_include_directories(metre-test PRIVATE
 )
 
 target_link_libraries(metre-test PRIVATE
-    ${GTEST_BOTH_LIBRARIES}
     ${EVENT_LDFLAGS}
     ${ICU_LDFLAGS}
     ${RAPIDXML_LDFLAGS}
@@ -330,6 +329,7 @@ target_link_libraries(metre-test PRIVATE
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
+        GTest::gtest_main
 )
 
 if (UNIX)
@@ -355,8 +355,8 @@ else()
     )
 endif()
 
-add_test(metre-test metre-test)
-
+include(GoogleTest)
+gtest_discover_tests(metre-test)
 
 ## These install into stupid places:
 ##
