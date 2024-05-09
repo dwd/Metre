@@ -28,6 +28,7 @@ SOFTWARE.
 
 #include "defs.h"
 #include "sigslot.h"
+#include <sstream>
 #include <string>
 #include <vector>
 #include <map>

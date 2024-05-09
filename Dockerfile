@@ -1,11 +1,10 @@
-FROM ubuntu:impish AS cpp-build
+FROM ubuntu:latest AS cpp-build
 
 RUN set -eux; \
    apt-get update; \
    DEBIAN_FRONTEND=noninteractive apt-get install --quiet --yes --no-install-recommends \
        build-essential \
        cmake \
-       googletest \
        libevent-dev \
        libexpat-dev \
        libicu-dev \
@@ -26,7 +25,6 @@ WORKDIR /app/
 COPY deps src/deps
 
 COPY cmake src/cmake
-COPY gen src/gen
 COPY include src/include
 COPY src src/src
 COPY tests src/tests
@@ -34,19 +32,17 @@ COPY CMakeLists.txt src/
 COPY LICENSE src/
 COPY metre.conf.xml src/
 
-RUN set -eux; \
-    mkdir build; \
-    cd build; \
-    cmake \
+WORKDIR /app/build
+
+RUN cmake \
         -DCMAKE_INSTALL_PREFIX=/app/install \
         -DCMAKE_BUILD_TYPE=Debug \
         -DVENDORED_DEPS=OFF \
         -GNinja \
-        ../src; \
-    export CMAKE_BUILD_PARALLEL_LEVEL=4; \
-    cmake --build .; \
-    cmake --build . --target test; \
-    cmake --build . --target install
+        ../src
+RUN export CMAKE_BUILD_PARALLEL_LEVEL=4; \
+    cmake --build . --target metre
+RUN cmake --build . --target install
 
 RUN set -eux; \
     mkdir -p /app/deps/; \
