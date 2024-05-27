@@ -41,7 +41,7 @@ namespace {
         std::string boot_method;
 
         BootConfig(int argc, char *argv[])
-                : config_file("./metre.conf.xml"), boot_method() {
+                : config_file("./metre.conf.yml"), boot_method() {
             for (int i = 1; argv[i]; ++i) {
                 char opt;
                 switch (argv[i][0]) {
