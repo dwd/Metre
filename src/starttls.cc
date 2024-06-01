@@ -155,6 +155,7 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
 
     void setup_session(SSL *ssl, std::string const &remote_domain) {
         Config::Domain const &domain = Config::config().domain(remote_domain);
+        SSL_dane_enable(ssl, domain.domain().c_str());
         // Cipherlist
         SSL_set_cipher_list(ssl, domain.cipherlist().c_str());
         // Min / max TLS versions.
@@ -354,13 +355,14 @@ namespace Metre {
         // Add RFC 6125 additional names.
         auto gathered = co_await domain.gather();
         for (auto const &host : gathered.gathered_hosts) {
+            stream.logger().debug("Adding gathered hostname {}", host);
             X509_VERIFY_PARAM_add1_host(vpm, host.c_str(), host.size());
         }
         X509_STORE_CTX *st = X509_STORE_CTX_new();
         X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
         // Fun fact: We can only add these to SSL_DANE via the connection.
-        SSL_dane_enable(ssl, domain.domain().c_str());
         for (auto const & rr : gathered.gathered_tlsa) {
+            stream.logger().debug("Adding TLSA {} / {} / {} with {} bytes of match data", rr.certUsage, rr.selector, rr.matchType, rr.matchData.length());
             SSL_dane_tlsa_add(ssl, rr.certUsage, rr.selector, rr.matchType,
                               reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length());
         }

@@ -435,23 +435,25 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
         m_ssl_ctx = nullptr;
     }
     m_ssl_ctx = SSL_CTX_new(TLS_method());
+    SSL_CTX_dane_enable(m_ssl_ctx);
+    SSL_CTX_dane_set_flags(m_ssl_ctx, DANE_FLAG_NO_DANE_EE_NAMECHECKS);
     SSL_CTX_set_options(m_ssl_ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_ALL);
     SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_PEER, Config::verify_callback_cb);
     if (SSL_CTX_use_certificate_chain_file(m_ssl_ctx, chain.c_str()) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-            Config::config().logger().error("OpenSSL Error: {}", ERR_reason_error_string(e));
+            Config::config().logger().error("OpenSSL Error (chain): {}", ERR_reason_error_string(e));
         }
-        throw std::runtime_error("Couldn't load chain file");
+        throw std::runtime_error("Couldn't load chain file: " + chain);
     }
     if (SSL_CTX_use_PrivateKey_file(m_ssl_ctx, pkey.c_str(), SSL_FILETYPE_PEM) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-            Config::config().logger().error("OpenSSL Error: {}", ERR_reason_error_string(e));
+            Config::config().logger().error("OpenSSL Error (pkey): {}", ERR_reason_error_string(e));
         }
-        throw std::runtime_error("Couldn't load keyfile");
+        throw std::runtime_error("Couldn't load keyfile: " + pkey);
     }
     if (SSL_CTX_check_private_key(m_ssl_ctx) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-            Config::config().logger().error("OpenSSL Error: {}", ERR_reason_error_string(e));
+            Config::config().logger().error("OpenSSL Error (check): {}", ERR_reason_error_string(e));
         }
         throw std::runtime_error("Private key mismatch");
     }
