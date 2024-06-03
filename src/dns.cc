@@ -2,9 +2,11 @@
 
 #include <random>
 #include <sstream>
+#include <ranges>
+#include <algorithm>
 #include <unbound.h>
+#include <unicode/uidna.h>
 
-#include "config.h"
 #include "log.h"
 
 using namespace Metre;

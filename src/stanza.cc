@@ -208,6 +208,34 @@ std::unique_ptr<Stanza> Stanza::create_forward() const {
     return stanza;
 }
 
+const char *Stanza::error_name(Stanza::Error err) {
+    std::vector<const char *> names{
+            "bad-request",
+            "conflict",
+            "feature-not-implemented",
+            "forbidden",
+            "gone",
+            "internal-server-error",
+            "item-not-found",
+            "jid-malformed",
+            "not-acceptable",
+            "not-allowed",
+            "not-authorized",
+            "policy-violation",
+            "recipient-unavailable",
+            "redirect",
+            "registration-required",
+            "remote-server-not-found",
+            "remote-server-timeout",
+            "resource-constraint",
+            "service-unavailable",
+            "subscription-required",
+            "undefined-condition",
+            "unexpected-request"
+    };
+    return names.at(static_cast<std::vector<const char *>::size_type>(err));
+}
+
 Message::Message() : Stanza(Message::name) {
     m_type = set_type();
 }

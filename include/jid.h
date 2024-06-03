@@ -95,11 +95,14 @@ namespace Metre {
         void parse(std::string const &s);
     };
 
-    inline spdlog::string_view_t to_string_view(const Jid &jid) {
-        auto const& full = jid.full();
-        return {full.data(), full.length()};
-    }
-
 }
+
+template <>
+struct fmt::formatter<Metre::Jid> : fmt::formatter<std::string> {
+    auto format(const Metre::Jid& c, fmt::format_context& ctx) {
+        return fmt::formatter<std::string>::format(c.full(), ctx);
+    }
+};
+
 
 #endif

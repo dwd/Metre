@@ -46,7 +46,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
     auto gathered = co_await Config::config().domain(m_domain.domain()).gather();
 
     if (gathered.gathered_connect.empty()) {
-        m_logger->warn("DNS Lookup for [{}] failed", m_domain.domain());
+        m_logger->warn("DNS Lookup for [{}] failed", m_domain);
         co_return false;
     }
     if (Config::config().domain(m_domain.domain()).multiplex()) {
@@ -239,7 +239,7 @@ void Route::bounce_stanzas(Stanza::Error e) {
     if (m_stanzas.empty()) {
         return;
     }
-    m_logger->warn("Timeout on stanzas error=[{}]", e);
+    m_logger->warn("Timeout on stanzas error=[{}]", Stanza::error_name(e));
     for (auto &stanza : m_stanzas) {
         if (stanza->type_str() && *stanza->type_str() == "error") continue;
         auto bounce = stanza->create_bounce(e);

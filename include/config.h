@@ -36,7 +36,7 @@ SOFTWARE.
 
 #include "defs.h"
 #include "dns.h"
-#include <fmt/chrono.h>
+//#include <fmt/chrono.h>
 #include "spdlog/spdlog.h"
 #include "sigslot.h"
 #include <sigslot/tasklet.h>

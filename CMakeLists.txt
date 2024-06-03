@@ -122,21 +122,23 @@ else()
 
     # Find libs with pkg-config
     find_package(PkgConfig)
-    pkg_check_modules(SPDLOG spdlog>=1.0.0 REQUIRED)
+    #pkg_check_modules(SPDLOG spdlog>=1.0.0 REQUIRED)
+    add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
+    set(SPDLOG_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/spdlog/include")
     pkg_check_modules(EVENT libevent libevent_openssl libevent_pthreads REQUIRED)
 #    pkg_check_modules(UNBOUND libunbound REQUIRED)
     pkg_check_modules(ICU icu-uc REQUIRED)
-    add_definitions(-DHAVE_ICU)
+    add_definitions(-DHAVE_ICU2)
     set(UNBOUND_LDFLAGS unbound)
 
-    if(APPLE)
-        set(SPDLOG_INCLUDE_DIRS "/usr/local/include/") # Busted pkg-config for SPDLOG
-    elseif(UNIX)
-        set(SPDLOG_INCLUDE_DIRS "/usr/include/") # Busted pkg-config for SPDLOG
-    endif()
+#    if(APPLE)
+#        set(SPDLOG_INCLUDE_DIRS "/usr/local/include/") # Busted pkg-config for SPDLOG
+#    elseif(UNIX)
+#        set(SPDLOG_INCLUDE_DIRS "/usr/include/") # Busted pkg-config for SPDLOG
+#    endif()
 endif()
 
-find_package(OpenSSL 1.1.1 REQUIRED)
+find_package(OpenSSL 3.0.0 REQUIRED)
 
 add_subdirectory(deps/yaml-cpp EXCLUDE_FROM_ALL)
 
@@ -244,7 +246,6 @@ target_link_libraries(metre PRIVATE
     ${ICU_LDFLAGS}
     ${RAPIDXML_LDFLAGS}
     ${SIGSLOT_LDFLAGS}
-    ${SPDLOG_LDFLAGS}
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
@@ -283,7 +284,9 @@ install(TARGETS metre RUNTIME DESTINATION bin COMPONENT application)
 include(FetchContent)
 FetchContent_Declare(
         googletest
-        URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+        URL https://github.com/google/googletest/archive/main.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP ON
+        EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(googletest)
 
@@ -325,7 +328,6 @@ target_link_libraries(metre-test PRIVATE
     ${ICU_LDFLAGS}
     ${RAPIDXML_LDFLAGS}
     ${SIGSLOT_LDFLAGS}
-    ${SPDLOG_LDFLAGS}
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto

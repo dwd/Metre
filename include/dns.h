@@ -235,4 +235,54 @@ namespace Metre {
     }
 }
 
+
+template <>
+struct fmt::formatter<Metre::DNS::TlsaRR::CertUsage> : fmt::formatter<std::string> {
+    auto format(const Metre::DNS::TlsaRR::CertUsage c, fmt::format_context& ctx) {
+        switch (c) {
+            case Metre::DNS::TlsaRR::CertConstraint:
+                return fmt::formatter<std::string>::format("CertConstraint (PKIX-EE)", ctx);
+            case Metre::DNS::TlsaRR::CAConstraint:
+                return fmt::formatter<std::string>::format("CAConstraint (PKIX-CA)", ctx);
+            case Metre::DNS::TlsaRR::DomainCert:
+                return fmt::formatter<std::string>::format("DomainCert (DANE-EE)", ctx);
+            case Metre::DNS::TlsaRR::TrustAnchorAssertion:
+                return fmt::formatter<std::string>::format("TrustAnchorAssertion (DANE-TA)", ctx);
+            default:
+                return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
+        }
+    }
+};
+
+template <>
+struct fmt::formatter<Metre::DNS::TlsaRR::Selector> : fmt::formatter<std::string> {
+    auto format(const Metre::DNS::TlsaRR::Selector c, fmt::format_context& ctx) {
+        switch (c) {
+            case Metre::DNS::TlsaRR::SubjectPublicKeyInfo:
+                return fmt::formatter<std::string>::format("SubjectPublicKeyInfo", ctx);
+            case Metre::DNS::TlsaRR::FullCert:
+                return fmt::formatter<std::string>::format("FullCert", ctx);
+            default:
+                return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
+        }
+    }
+};
+
+template <>
+struct fmt::formatter<Metre::DNS::TlsaRR::MatchType> : fmt::formatter<std::string> {
+    auto format(const Metre::DNS::TlsaRR::MatchType c, fmt::format_context& ctx) {
+        switch (c) {
+            case Metre::DNS::TlsaRR::Sha256:
+                return fmt::formatter<std::string>::format("SHA-256", ctx);
+            case Metre::DNS::TlsaRR::Sha512:
+                return fmt::formatter<std::string>::format("SHA-512", ctx);
+            case Metre::DNS::TlsaRR::Full:
+                return fmt::formatter<std::string>::format("Full", ctx);
+            default:
+                return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
+        }
+    }
+};
+
+
 #endif

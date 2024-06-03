@@ -61,6 +61,8 @@ namespace Metre {
             undefined_condition,
             unexpected_request
         } Error;
+
+        static const char *error_name(Error err);
     protected:
         const char *m_name;
         std::optional<Jid> m_from;
@@ -159,7 +161,7 @@ namespace Metre {
         void render_error(Stanza::Error e);
 
         void render_error(Metre::base::stanza_exception const &ex);
-    };
+   };
 
 
     class Message : public Stanza {
