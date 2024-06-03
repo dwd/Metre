@@ -38,7 +38,7 @@ SOFTWARE.
 namespace {
     class BootConfig {
     public:
-        std::string config_file = "./metre.conf.xml";
+        std::string config_file = "./metre.conf.yml";
         std::string boot_method = "";
 
         BootConfig(int argc, char *argv[]) {

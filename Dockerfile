@@ -18,8 +18,6 @@ RUN set -eux; \
    apt-get clean; \
    rm -rf /var/lib/apt/lists/* ;
 
-RUN adduser --system --home /var/cache/metre --shell /sbin/nologin metre
-
 WORKDIR /app/
 
 COPY deps src/deps
@@ -30,7 +28,7 @@ COPY src src/src
 COPY tests src/tests
 COPY CMakeLists.txt src/
 COPY LICENSE src/
-COPY metre.conf.xml src/
+COPY metre.conf.yml src/
 
 WORKDIR /app/build
 
@@ -62,7 +60,6 @@ COPY --from=cpp-build /app/deps/ /
 WORKDIR /app
 COPY --from=cpp-build /app/install/bin/metre .
 
-USER metre
 ENTRYPOINT ["/app/metre", "-d", "docker"]
 
 EXPOSE 5269 5222 5275 5276
