@@ -94,7 +94,7 @@ TEST(DNS_Utils, read_hostname_root) {
 }
 
 TEST(DNS_Utils, parse_svcb_2) {
-    std::string data("\x00\x00\x{03}foo\x{07}example\x{03}com\x00", 19);
+    std::string data("\x00\x00\003foo\007example\003com\x00", 19);
     auto rr = Metre::DNS::SvcbRR::parse(data);
     ASSERT_EQ(rr.priority, 0);
     ASSERT_EQ(rr.hostname, "foo.example.com.");
@@ -108,7 +108,7 @@ TEST(DNS_Utils, parse_svcb_3) {
 }
 
 TEST(DNS_Utils, parse_svcb_4) {
-    std::string data("\x00\x10\x{03}foo\x{07}example\x{03}com\x00\x00\x03\x00\x02\x00\x35", 25);
+    std::string data("\x00\x10\003foo\007example\003com\x00\x00\x03\x00\x02\x00\x35", 25);
     auto rr = Metre::DNS::SvcbRR::parse(data);
     ASSERT_EQ(rr.priority, 0x10);
     ASSERT_EQ(rr.hostname, "foo.example.com.");
@@ -116,7 +116,7 @@ TEST(DNS_Utils, parse_svcb_4) {
 }
 
 TEST(DNS_Utils, parse_svcb_5) {
-    std::string data("\x00\x01\x{03}foo\x{07}example\x{03}com\x00\x02\x9b\x00\x05hello", 28);
+    std::string data("\x00\x01\003foo\007example\003com\x00\x02\x9b\x00\x05hello", 28);
     auto rr = Metre::DNS::SvcbRR::parse(data);
     ASSERT_EQ(rr.priority, 1);
     ASSERT_EQ(rr.hostname, "foo.example.com.");
@@ -126,7 +126,7 @@ TEST(DNS_Utils, parse_svcb_5) {
 }
 
 TEST(DNS_Utils, parse_svcb_9) {
-    std::string data("\x00\x10\x{03}foo\x{07}example\x{03}com\x00\x00\x00\x00\x04\x00\x01\x00\x04\x00\x01\x00\x09\x02h2\x05h3-19\x00\x04\x00\x04\xc0\x00\x02\x01", 48);
+    std::string data("\x00\x10\003foo\007example\003com\x00\x00\x00\x00\x04\x00\x01\x00\x04\x00\x01\x00\x09\x02h2\x05h3-19\x00\x04\x00\x04\xc0\x00\x02\x01", 48);
     auto rr = Metre::DNS::SvcbRR::parse(data);
     ASSERT_EQ(rr.priority, 16);
     ASSERT_EQ(rr.hostname, "foo.example.com.");
@@ -137,7 +137,7 @@ TEST(DNS_Utils, parse_svcb_9) {
 }
 
 TEST(DNS_Utils, parse_srv_1) {
-    std::string data("\x00\x10\x00\x01\x00\x80\x{03}foo\x{07}example\x{03}com\x00", 23);
+    std::string data("\x00\x10\x00\x01\x00\x80\003foo\007example\003com\x00", 23);
     auto rr = Metre::DNS::SrvRR::parse(data);
     ASSERT_EQ(rr.hostname, "foo.example.com.");
 }
