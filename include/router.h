@@ -85,6 +85,9 @@ namespace Metre {
         // Slots
         void SessionClosed(NetSession &);
 
+        // Risky : Only used internally and by components.
+        void set_to(std::shared_ptr<NetSession> & to);
+
     protected:
         void bounce_stanzas(Stanza::Error);
 
@@ -93,8 +96,6 @@ namespace Metre {
         void queue(std::unique_ptr<Stanza> &&);
 
         void queue(std::unique_ptr<DB::Verify> &&);
-
-        void set_to(std::shared_ptr<NetSession> & to);
 
         void set_vrfy(std::shared_ptr<NetSession> & vrfy);
     };

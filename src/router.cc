@@ -43,6 +43,16 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_dom
 
 sigslot::tasklet<bool> Route::init_session_vrfy() {
     m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
+    switch(Config::config().domain(m_domain.domain()).transport_type()) {
+    case INTERNAL:
+        m_logger->debug("Internal domain; won't connect to that.");
+        co_return false;
+    case COMP:
+        m_logger->debug("XEP-0114 hosted domain; won't connect to that.");
+        co_return false;
+    default:
+        break;
+    }
     auto gathered = co_await Config::config().domain(m_domain.domain()).gather();
 
     if (gathered.gathered_connect.empty()) {
@@ -320,8 +330,13 @@ std::shared_ptr<Route> &RouteTable::route(std::string const & to) {
     if (auto it = m_routes.find(to); it != m_routes.end()) {
         return (*it).second;
     }
-    auto itp = m_routes.try_emplace(to, std::make_shared<Route>(Jid(nullptr, m_local_domain), Jid(nullptr, to)));
-    return (*(itp.first)).second;
+    // No route: For components, see if there's a route against the component domain.
+    if (m_local_domain != to && Config::config().domain(to).transport_type() == COMP) {
+        auto [ it, success ] = m_routes.try_emplace(to, RouteTable::routeTable(to).route(to));
+        return it->second;
+    }
+    auto [ it, success] = m_routes.try_emplace(to, std::make_shared<Route>(Jid(nullptr, m_local_domain), Jid(nullptr, to)));
+    return it->second;
 }
 
 RouteTable::RouteTable(std::string const &d) : m_routes(), m_local_domain(d) {

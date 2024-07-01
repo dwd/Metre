@@ -107,13 +107,18 @@ namespace {
                     throw not_authorized("Component handshake failure");
                 }
 
-                m_stream.user(m_stream.local_domain());
-                METRE_LOG(Metre::Log::DEBUG, "Component registering session domain: domain=[" << m_stream.local_domain() << "] session=[" << m_stream.session().serial() << "]");
-                Router::register_session_domain(m_stream.local_domain(), m_stream.session());
-                xml_document<> d;
-                auto handshake = d.allocate_node(node_element, "handshake");
-                d.append_node(handshake);
-                m_stream.send(d);
+                std::string const & domain = m_stream.local_domain();
+                m_stream.user(domain);
+                METRE_LOG(Metre::Log::DEBUG, "Component registering session domain: domain=[" << domain << "] session=[" << m_stream.session().serial() << "]");
+                Router::register_session_domain(domain, m_stream.session());
+                auto session_ptr = Router::session_by_domain(m_stream.local_domain());
+                RouteTable::routeTable(domain).route(domain)->set_to(session_ptr);
+                {
+                    xml_document<> doc;
+                    auto handshake = doc.allocate_node(node_element, "handshake");
+                    doc.append_node(handshake);
+                    m_stream.send(doc);
+                }
                 co_return true;
             } else {
                 throw Metre::unsupported_stanza_type(stanza);
