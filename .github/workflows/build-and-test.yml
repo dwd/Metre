@@ -1,0 +1,13 @@
+name: Build and Test
+on: [push]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CMake Prep
+        run: mkdir build && cd build && cmake ..
+      - name: CMake Build
+        run: cd build && cmake --build .
+      - name: CMake Tests
+        run: cd build && ctest
