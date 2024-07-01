@@ -47,7 +47,6 @@ SOFTWARE.
 #include <WS2tcpip.h>
 #endif
 #include <dns.h>
-#include <dhparams.h>
 #include <router.h>
 #include <unbound.h>
 #include <sstream>

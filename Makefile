@@ -21,22 +21,14 @@ metre:
 package: all
 	make -C build package
 
-dhparams: gen/dh1024.cc gen/dh2048.cc gen/dh4096.cc
-
-gen/dh%.cc:
-	test -f ./deps/openssl/apps/openssl && ./deps/openssl/apps/openssl dhparam -C -noout $* >$@ || true
-	test -f ./deps/openssl/apps/openssl || openssl dhparam -C -noout $* >$@
-
 apt-deps:
 	apt-get install --quiet --no-install-recommends \
 		cmake \
-		googletest \
 		libevent-dev \
-		libexpat-dev \
 		libicu-dev \
-		libspdlog-dev \
 		libssl-dev \
 		libunbound-dev \
+		libunwind-dev \
 		ninja-build \
 		pkg-config
 
@@ -46,7 +38,6 @@ brew-deps:
 		libevent \
 		ninja \
 		openssl@1.1 \
-		spdlog \
 		unbound
 
 eclipse:

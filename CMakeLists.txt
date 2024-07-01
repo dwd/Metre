@@ -187,8 +187,7 @@ set(SOURCE_FILES
     include/config.h
     include/core.h
     include/defs.h
-    include/dhparams.h
-    include/dns.h
+        include/dns.h
     include/feature.h
     include/filter.h
     include/http.h
