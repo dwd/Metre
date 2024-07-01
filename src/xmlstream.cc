@@ -459,6 +459,7 @@ void XMLStream::send(std::unique_ptr<Stanza> s) {
     rapidxml::xml_document<> d;
     s->render(d);
     m_session->send(d);
+    s->sent(*s, true);
 }
 
 void XMLStream::handle(rapidxml::xml_node<> *element) {

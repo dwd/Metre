@@ -251,6 +251,7 @@ void Route::bounce_stanzas(Stanza::Error e) {
     }
     m_logger->warn("Timeout on stanzas error=[{}]", Stanza::error_name(e));
     for (auto &stanza : m_stanzas) {
+        stanza->sent(*stanza, false);
         if (stanza->type_str() && *stanza->type_str() == "error") continue;
         auto bounce = stanza->create_bounce(e);
         RouteTable::routeTable(bounce->from()).route(bounce->to())->transmit(std::move(bounce));

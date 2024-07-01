@@ -29,6 +29,7 @@ SOFTWARE.
 #include "jid.h"
 #include "xmppexcept.h"
 #include "rapidxml.hpp"
+#include "sigslot.h"
 
 #include <memory>
 
@@ -77,6 +78,9 @@ namespace Metre {
         rapidxml::xml_node<> *m_node = nullptr;
         std::unique_ptr<rapidxml::xml_document<>> m_doc;
     public:
+        // Signals:
+        sigslot::signal<Stanza &, bool> sent;
+
         Stanza(const char *name, rapidxml::xml_node<> *node);
 
         explicit Stanza(const char *name);
