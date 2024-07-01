@@ -145,6 +145,12 @@ namespace Metre {
         void update() {
             payload(node());
         }
+        void append_node(rapidxml::xml_node<> * node);
+        void remove_node(rapidxml::xml_node<> * node);
+        rapidxml::xml_node<> * allocate_element(std::string const & element, std::optional<std::string> const & xmlns);
+        rapidxml::xml_node<> * allocate_element(std::string const & element);
+        rapidxml::xml_node<> * find_node(std::string const & element, std::optional<std::string> const & xmlns);
+        rapidxml::xml_node<> * find_node(std::string const & element);
 
         void render(rapidxml::xml_document<> &d);
 

@@ -78,6 +78,43 @@ void Stanza::payload(rapidxml::xml_node<> *node) {
     m_node = nullptr;
 }
 
+void Stanza::append_node(rapidxml::xml_node<>* new_node) {
+    auto orig = node();
+    orig->append_node(new_node);
+    payload(orig);
+}
+
+void Stanza::remove_node(rapidxml::xml_node<>* new_node) {
+    auto orig = node();
+    orig->remove_node(new_node);
+    payload(orig);
+}
+
+rapidxml::xml_node<>* Stanza::allocate_element(std::string const& element) {
+    return node()->document()->allocate_node(rapidxml::node_element, element.data(), 0, element.size());
+}
+
+rapidxml::xml_node<>* Stanza::allocate_element(std::string const& element, std::optional<std::string> const& xmlns) {
+    auto n = allocate_element(element);
+    if (xmlns.has_value()) {
+        n->append_attribute(node()->document()->allocate_attribute("xmlns", xmlns.value().data(), 5, xmlns.value().size()));
+    }
+    return n;
+}
+
+rapidxml::xml_node<>* Stanza::find_node(std::string const& element, std::optional<std::string> const& xmlns) {
+    return node()->first_node(
+        element.data(),
+        xmlns.has_value() ? xmlns.value().data() : nullptr,
+        element.size(),
+        xmlns.has_value() ? xmlns.value().size() : 0
+        );
+}
+
+rapidxml::xml_node<>* Stanza::find_node(std::string const & element) {
+    return find_node(element, std::optional<std::string>{});
+}
+
 void Stanza::render(rapidxml::xml_document<> &d) {
     auto hdr = d.allocate_node(rapidxml::node_element, m_name);
     if (m_to) {

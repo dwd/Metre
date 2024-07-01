@@ -16,6 +16,14 @@ public:
         doc.fixup<rapidxml::parse_default>(doc.first_node(), false);
         msg = std::make_unique<Message>(doc.first_node());
     }
+
+    static std::string print(Stanza & s) {
+        rapidxml::xml_document<> tmp_doc;
+        std::string tmp_buffer;
+        s.render(tmp_doc);
+        rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+        return tmp_buffer;
+    }
 };
 
 TEST_F(MessageTest, IdMatches) {
@@ -162,10 +170,7 @@ TEST_F(MessageTest, MessageReplaceBodyDoubleQuotes) {
         std::string body_str{body4->value(), body4->value_size()};
         ASSERT_EQ(body_str, replacement);
     }
-    rapidxml::xml_document<> tmp_doc;
-    std::string tmp_buffer;
-    msg->render(tmp_doc);
-    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    std::string tmp_buffer = print(*msg);;
     std::string expected = R"(<message to="bar@example.net/laks" from="foo@example.org/lmas" type="chat" id="1234"><body>New replacement &amp; &apos;&quot;body&apos;</body></message>)";
     ASSERT_EQ(tmp_buffer, expected);
 }
@@ -176,10 +181,7 @@ TEST_F(MessageTest, ChangeType) {
     msg->type(Message::Type::NORMAL);
     ASSERT_EQ(msg->type(), Message::Type::NORMAL);
     ASSERT_FALSE(msg->type_str().has_value());
-    rapidxml::xml_document<> tmp_doc;
-    std::string tmp_buffer;
-    msg->render(tmp_doc);
-    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    std::string tmp_buffer = print(*msg);
     std::string expected = R"(<message to="bar@example.net/laks" from="foo@example.org/lmas" id="1234"><body>This is the body &amp; stuff</body></message>)";
     ASSERT_EQ(tmp_buffer, expected);
 }
@@ -197,12 +199,41 @@ TEST_F(MessageTest, Receipt) {
     receipt->update();
     ASSERT_NE(receipt->node()->first_node(), nullptr);
     receipt->update();
-    rapidxml::xml_document<> tmp_doc;
-    std::string tmp_buffer;
-    receipt->render(tmp_doc);
-    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+    std::string tmp_buffer = print(*receipt);
     std::string expected = R"(<message to="foo@example.org/lmas" from="bar@example.net/laks" type="chat" id="1234"><receipt xmlns="urn:xmpp:receipts"/></message>)";
     ASSERT_EQ(tmp_buffer, expected);
+}
+
+TEST_F(MessageTest, Create)
+{
+    auto s = std::make_unique<Stanza>(Message::name, Jid{"from@example.org"}, Jid{"to@example.org"}, "chat", std::optional<std::string>());
+    auto doc = s->node()->document();
+    s->append_node(doc->allocate_node(rapidxml::node_element, "hello"));
+
+    std::string tmp_buffer = print(*s);
+    std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat"><hello/></message>)";
+    ASSERT_EQ(tmp_buffer, expected);
+}
+
+TEST_F(MessageTest, Create2)
+{
+    auto s = std::make_unique<Stanza>(Message::name, Jid{"from@example.org"}, Jid{"to@example.org"}, "chat", std::optional<std::string>());
+    s->append_node(s->allocate_element("hello", "urn:xmpp:hello"));
+
+    {
+        std::string tmp_buffer = print(*s);
+        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat"><hello xmlns="urn:xmpp:hello"/></message>)";
+        ASSERT_EQ(tmp_buffer, expected);
+    }
+
+    auto el = s->find_node("hello", "urn:xmpp:hello");
+
+    s->remove_node(el);
+    {
+        std::string tmp_buffer = print(*s);
+        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat"/>)";
+        ASSERT_EQ(tmp_buffer, expected);
+    }
 }
 
 class IqTest : public ::testing::Test {
