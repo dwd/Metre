@@ -217,12 +217,12 @@ TEST_F(MessageTest, Create)
 
 TEST_F(MessageTest, Create2)
 {
-    auto s = std::make_unique<Stanza>(Message::name, Jid{"from@example.org"}, Jid{"to@example.org"}, "chat", std::optional<std::string>());
+    auto s = std::make_unique<Stanza>(Message::name, Jid{"from@example.org"}, Jid{"to@example.org"}, "chat", "fish");
     s->append_node(s->allocate_element("hello", "urn:xmpp:hello"));
 
     {
         std::string tmp_buffer = print(*s);
-        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat"><hello xmlns="urn:xmpp:hello"/></message>)";
+        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat" id="fish"><hello xmlns="urn:xmpp:hello"/></message>)";
         ASSERT_EQ(tmp_buffer, expected);
     }
 
@@ -231,7 +231,30 @@ TEST_F(MessageTest, Create2)
     s->remove_node(el);
     {
         std::string tmp_buffer = print(*s);
-        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat"/>)";
+        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat" id="fish"/>)";
+        ASSERT_EQ(tmp_buffer, expected);
+    }
+}
+
+TEST_F(MessageTest, Create3)
+{
+    auto s = std::make_unique<Stanza>(Message::name, Jid{"from@example.org"}, Jid{"to@example.org"}, "chat", "fish");
+    auto el = s->allocate_element("hello", "urn:xmpp:hello");
+    el->append_node(s->allocate_element("furry"));
+    s->append_node(el);
+
+    {
+        std::string tmp_buffer = print(*s);
+        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat" id="fish"><hello xmlns="urn:xmpp:hello"><furry/></hello></message>)";
+        ASSERT_EQ(tmp_buffer, expected);
+    }
+
+    auto el2 = s->find_node("hello", "urn:xmpp:hello");
+
+    s->remove_node(el2);
+    {
+        std::string tmp_buffer = print(*s);
+        std::string expected = R"(<message to="to@example.org" from="from@example.org" type="chat" id="fish"/>)";
         ASSERT_EQ(tmp_buffer, expected);
     }
 }

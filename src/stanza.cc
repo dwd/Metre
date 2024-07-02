@@ -79,31 +79,33 @@ void Stanza::payload(rapidxml::xml_node<> *node) {
 }
 
 void Stanza::append_node(rapidxml::xml_node<>* new_node) {
-    auto orig = node();
+    auto orig = node_internal();
     orig->append_node(new_node);
     payload(orig);
 }
 
 void Stanza::remove_node(rapidxml::xml_node<>* new_node) {
-    auto orig = node();
+    auto orig = node_internal();
     orig->remove_node(new_node);
     payload(orig);
 }
 
 rapidxml::xml_node<>* Stanza::allocate_element(std::string const& element) {
-    return node()->document()->allocate_node(rapidxml::node_element, element.data(), 0, element.size());
+    auto tmp = node_internal()->document()->allocate_string(element.data(), element.size());
+    return node_internal()->document()->allocate_node(rapidxml::node_element, tmp, 0, element.size());
 }
 
 rapidxml::xml_node<>* Stanza::allocate_element(std::string const& element, std::optional<std::string> const& xmlns) {
     auto n = allocate_element(element);
     if (xmlns.has_value()) {
-        n->append_attribute(node()->document()->allocate_attribute("xmlns", xmlns.value().data(), 5, xmlns.value().size()));
+        auto tmp = node_internal()->document()->allocate_string(xmlns.value().data(), xmlns.value().size());
+        n->append_attribute(node_internal()->document()->allocate_attribute("xmlns", tmp, 5, xmlns.value().size()));
     }
     return n;
 }
 
 rapidxml::xml_node<>* Stanza::find_node(std::string const& element, std::optional<std::string> const& xmlns) {
-    return node()->first_node(
+    return node_internal()->first_node(
         element.data(),
         xmlns.has_value() ? xmlns.value().data() : nullptr,
         element.size(),
