@@ -13,17 +13,19 @@ Metre (check that spelling) is an XMPP Server, of sorts. Unlike traditional XMPP
 which host services internally, Metre is specifically designed to connect between servers,
 mediating connections and traffic.
 
-It's written in C++11 (ie, modern C++), and aims to provide a semantically-aware filter
+It's written in C++23 (ie, modern C++), and aims to provide a semantically-aware filter
 between domains, to avoid exposing your internal XMPP fully to the world.
 
 You'll probably want to read the [FAQ](FAQ.md), and you may wish to find some
 [BUILD](BUILD.md) instructions. There is also a documentation file on [FILTERS](FILTERS.md)
 
+Finally, there's a detailed guide to all the configuration parameters [CONFIGURING](CONFIGURING.md).
+
 The [LICENCE](LICENSE) is MIT, and the copyright
 rests (mostly - see the [Base 64 code](src/base64.cc)) jointly with Surevine Ltd and
 Dave Cridland.
 
-In particular, this is not (yet) finished.
+Metre has been deployed in several cases in production, and has even worked.
 
 Currently working:
 * Component hosting [XEP-0114](https://xmpp.org/extensions/xep-0114.html)
@@ -39,9 +41,9 @@ Currently working:
 * Basic Filtering
 * Daemonizing
 * IPv6
+* Direct TLS [XEP-0368](https://xmpp.org/extensions/xep-0368.html)
 
 Currently poorly tested:
-* [XEP-0368](https://xmpp.org/extensions/xep-0368.html)
 * [XEP-0361](https://xmpp.org/extensions/xep-0361.html)
 
 Currently unimplemented but planned:
