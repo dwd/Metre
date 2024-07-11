@@ -62,10 +62,7 @@ remote:
 How production-ready is this?
 ----
 
-I would describe this as:
-
-* MVP - it's not doing as much as I'd like, but it's essentially useful in its current form.
-* Alpha - while it seems to work well enough for non-critical test deployments, production operational experience is lacking.
+It has been used in production for years. However, I would recommend you grab hold of me.
 
 Does it score OK on the IM Observatory?
 ----
@@ -98,6 +95,8 @@ state is safe to maintain, and therefore which sessions are safe to persist acro
 is fraught with danger of getting things wrong. So I've elected not to try - if you change the
 configuration file, just restart - it really is much safer that way.
 
+You will not disrupt connected clients - those connect to your real XMPP Server, not this one.
+
 I'm connecting a Java server and...
 ----
 
@@ -105,12 +104,9 @@ Java, until recently, couldn't handle reasonable DH parameters used for Perfect
 Forward Secrecy, and would choke.
 
 Even now, you'll need to lower DH parameter sizes for that server - you can do this
-with either `dhparam: size: "1024"` or `dhparam: size: "2048"` (for Java7 and Java8)
+with either `dhparam: "1024"` or `dhparam: "2048"` (for Java7 and Java8)
 within the domain stanza for the Java server. Metre picks the DH parameter size
-based on the minimum of the requested, and the minimum configured size. Allowable
-sizes are 1024, 2048 and 4096 - the latter is the default.
-
-It may well be that the OpenSSL API used always asks for 1024 bits, mind...
+based on the minimum of the requested, and the minimum configured size.
 
 Example:
 
@@ -266,18 +262,7 @@ to put a thumb on the scales of SRV record selection.
 I hate CAs! Tell me it does DANE! Please, tell me it does DANE!
 ----
 
-OK, then. It does DANE.
-
-No, really, it does, but it's poorly tested, particularly for the DomainCert and
-TrustAnchorAssertion. As a CA-hating person, therefore, you may be out of luck.
-
-I suspect the CAConstraint and CertConstraint ones work OK.
-
-It'll do both SubjectPublicKeyInfo and FullCert matching, but I've not tested hashes yet - though
-they should work OK. (So `matchtype: Full` is tested, but Sha256 and Sha512 aren't yet).
-
-Note that there are an almost obscene number of permutations of DANE parameters and
-potential inputs, so testing these will not be trivial.
+OK, then. It does DANE, using the (undocumented) offline OpenSSL DANE implementation.
 
 I run a private CA internally and/or my partner organisation doesn't use a CA I recognise.
 ----
