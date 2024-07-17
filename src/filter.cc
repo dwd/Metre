@@ -47,5 +47,6 @@ void Filter::BaseDescription::config(YAML::Node const &) {
 
 YAML::Node Filter::dump_config() {
     YAML::Node node;
+    do_dump_config(node);
     return node;
 }
