@@ -26,11 +26,12 @@ SOFTWARE.
 #include "stanza.h"
 #include "xmlstream.h"
 #include "rapidxml_print.hpp"
+#include "rapidxml_iterators.hpp"
 #include "log.h"
 
 using namespace Metre;
 
-Stanza::Stanza(const char *name, rapidxml::xml_node<> *node) : m_name(name), m_node(node) {
+Stanza::Stanza(const char *name, rapidxml::optional_ptr<rapidxml::xml_node<>> node) : m_name(name), m_node(node) {
     auto to = node->first_attribute("to");
     if (to) m_to = Jid(to->value());
     auto from = node->first_attribute("from");
@@ -39,159 +40,79 @@ Stanza::Stanza(const char *name, rapidxml::xml_node<> *node) : m_name(name), m_n
     if (typestr) m_type_str = typestr->value();
     auto id = node->first_attribute("id");
     if (id) m_id = id->value();
-    m_payload = node->contents();
-    m_payload_l = node->contents_size();
 }
 
 Stanza::Stanza(const char *name) : m_name(name) {
 }
 
-Stanza::Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type_str,
+Stanza::Stanza(const char *name, std::optional<Jid> const &from, std::optional<Jid> const &to, std::optional<std::string> const &type_str,
                std::optional<std::string> const &id)
         : m_name(name), m_from(from), m_to(to), m_type_str(type_str),
           m_id(id) {
+    m_doc = std::make_unique<rapidxml::xml_document<>>();
+    m_node = m_doc->append_element(m_name);
+    if (m_from) m_node->append_attribute(m_doc->allocate_attribute("from", m_from->full()));
+    if (m_to) m_node->append_attribute(m_doc->allocate_attribute("to", m_to->full()));
+    if (m_type_str) m_node->append_attribute(m_doc->allocate_attribute("type", m_type_str.value()));
+    if (m_id) m_node->append_attribute(m_doc->allocate_attribute("id", m_id.value()));
 }
 
 void Stanza::freeze() {
-    if (!m_payload_str.empty()) return;
-    if (!m_payload) {
-        m_node = nullptr;
-        return;
-    }
-    m_payload_str.assign(m_payload, m_payload_l);
-    m_payload = m_payload_str.data();
-    m_node = nullptr;
-}
-
-void Stanza::payload(rapidxml::xml_node<> *node) {
-    std::string tmp_buffer;
-    for(rapidxml::xml_node<> *child = node->first_node(); child; child = child->next_sibling()) {
-        std::string node_name{child->name(), child->name_size()};
-        if (child->value_size()) {
-            std::string node_value{child->value(), child->value_size()};
+    auto doc = std::make_unique<rapidxml::xml_document<>>();
+    auto node = doc->append_element(m_name);
+    if (m_from) node->append_attribute(doc->allocate_attribute("from", m_from->full()));
+    if (m_to) node->append_attribute(doc->allocate_attribute("to", m_to->full()));
+    if (m_type_str) node->append_attribute(doc->allocate_attribute("type", m_type_str.value()));
+    if (m_id) node->append_attribute(doc->allocate_attribute("id", m_id.value()));
+    if (m_node) {
+        for (auto & child : rapidxml::children(m_node)) {
+            node->append_node(doc->clone_node(&child, true));
         }
-        rapidxml::print(std::back_inserter(tmp_buffer), *child, rapidxml::print_no_indenting);
     }
-    std::swap(m_payload_str, tmp_buffer);
-    m_payload = m_payload_str.data();
-    m_payload_l = m_payload_str.length();
-    m_node = nullptr;
+    m_doc = std::move(doc);
+    m_node = node;
 }
 
-void Stanza::append_node(rapidxml::xml_node<>* new_node) {
-    auto orig = node_internal();
-    orig->append_node(new_node);
-    payload(orig);
-}
-
-void Stanza::remove_node(rapidxml::xml_node<>* new_node) {
-    auto orig = node_internal();
-    orig->remove_node(new_node);
-    payload(orig);
-}
-
-rapidxml::xml_node<>* Stanza::allocate_element(std::string const& element) {
-    auto tmp = node_internal()->document()->allocate_string(element.data(), element.size());
-    return node_internal()->document()->allocate_node(rapidxml::node_element, tmp, 0, element.size());
-}
-
-rapidxml::xml_node<>* Stanza::allocate_element(std::string const& element, std::optional<std::string> const& xmlns) {
-    auto n = allocate_element(element);
+void Stanza::render(rapidxml::xml_document<> &d, std::optional<std::string> const & xmlns) const {
+    rapidxml::optional_ptr<rapidxml::xml_node<>> root;
     if (xmlns.has_value()) {
-        auto tmp = node_internal()->document()->allocate_string(xmlns.value().data(), xmlns.value().size());
-        n->append_attribute(node_internal()->document()->allocate_attribute("xmlns", tmp, 5, xmlns.value().size()));
+        root = d.append_element({xmlns.value(), m_name});
+    } else {
+        root = d.append_element(m_name);
     }
-    return n;
+    if (m_to) root->append_attribute(d.allocate_attribute("to", m_to->full()));
+    if (m_from) root->append_attribute(d.allocate_attribute("from", m_from->full()));
+    if (m_type_str) root->append_attribute(d.allocate_attribute("type", m_type_str.value()));
+    if (m_id) root->append_attribute(d.allocate_attribute("id", m_id.value()));
+    for (auto & child : rapidxml::children(m_node)) {
+        root->append_node(d.clone_node(&child));
+    }
 }
 
-rapidxml::xml_node<>* Stanza::find_node(std::string const& element, std::optional<std::string> const& xmlns) {
-    return node_internal()->first_node(
-        element.data(),
-        xmlns.has_value() ? xmlns.value().data() : nullptr,
-        element.size(),
-        xmlns.has_value() ? xmlns.value().size() : 0
-        );
+void Stanza::render(rapidxml::xml_document<> &d) const {
+    render(d, std::optional<std::string>{});
 }
 
-rapidxml::xml_node<>* Stanza::find_node(std::string const & element) {
-    return find_node(element, std::optional<std::string>{});
-}
-
-void Stanza::render(rapidxml::xml_document<> &d) {
-    auto hdr = d.allocate_node(rapidxml::node_element, m_name);
-    if (m_to) {
-        auto att = d.allocate_attribute("to", m_to->full().c_str());
-        hdr->append_attribute(att);
-    }
-    if (m_from) {
-        auto att = d.allocate_attribute("from", m_from->full().c_str());
-        hdr->append_attribute(att);
-    }
-    if (m_type_str) {
-        auto att = d.allocate_attribute("type", m_type_str->c_str());
-        hdr->append_attribute(att);
-    }
-    if (m_id) {
-        auto att = d.allocate_attribute("id", m_id->c_str());
-        hdr->append_attribute(att);
-    }
-    if (m_payload && m_payload_l) {
-        auto lit = d.allocate_node(rapidxml::node_literal);
-        lit->value(m_payload, m_payload_l);
-        hdr->append_node(lit);
-    }
-    d.append_node(hdr);
-}
-
-rapidxml::xml_node<> *Stanza::node_internal() {
+rapidxml::optional_ptr<rapidxml::xml_node<>> Stanza::node_internal() {
     if (m_node) return m_node;
-    rapidxml::xml_document<> tmp_doc;
-    std::string tmp{m_payload, m_payload_l}; // Copy the buffer.
-    m_payload = tmp.data();
-    m_payload_l = tmp.length(); // Reset pointers to buffer.
-    render(tmp_doc);
-    std::string tmp_buffer;
-    rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
-    m_doc.reset(new rapidxml::xml_document<>);
-    m_doc->parse<rapidxml::parse_fastest>(const_cast<char *>(tmp_buffer.c_str()));
-    std::swap(m_node_str, tmp_buffer);
-    m_node = m_doc->first_node();
-    m_payload_str.assign(m_node->contents(), m_node->contents_size());
-    m_payload = m_payload_str.data();
-    m_payload_l = m_payload_str.size();
-    m_doc->fixup<rapidxml::parse_default|rapidxml::parse_no_data_nodes>(m_doc->first_node(), true);
+    freeze();
     return m_node;
 }
 
 std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) const {
-    std::unique_ptr<Stanza> stanza{new Stanza(m_name)};
-    stanza->m_from = m_to;
-    stanza->m_to = m_from;
-    stanza->m_id = m_id;
-    stanza->m_type_str = "error";
+    auto stanza = std::make_unique<Stanza>(m_name, m_to, m_from, "error", m_id);
     stanza->render_error(ex);
-    if (m_payload && m_payload_l) {
-        stanza->m_payload_str.append(m_payload, m_payload_l);
-        stanza->m_payload = stanza->m_payload_str.c_str();
-        stanza->m_payload_l = stanza->m_payload_str.length();
+    for (auto & child : rapidxml::children(m_node)) {
+        stanza->m_node->append_node(stanza->m_doc->clone_node(&child));
     }
     return stanza;
 }
 
 void Stanza::render_error(Metre::base::stanza_exception const &ex) {
-    // Render the error
-    rapidxml::xml_document<> d;
-    auto error = d.allocate_node(rapidxml::node_element, "error");
-    error->append_attribute(d.allocate_attribute("type", ex.error_type()));
-    d.append_node(error);
-    auto condition = d.allocate_node(rapidxml::node_element, ex.element_name());
-    condition->append_attribute(d.allocate_attribute("xmlns", "urn:ietf:params:xml:ns:xmpp-stanzas"));
-    error->append_node(condition);
-    auto text = d.allocate_node(rapidxml::node_element, "text");
-    text->append_attribute(d.allocate_attribute("xmlns", "urn:ietf:params:xml:ns:xmpp-stanzas"));
-    text->value(ex.what());
-    error->append_node(text);
-    rapidxml::print(std::back_inserter(m_payload_str), d, rapidxml::print_no_indenting);
+    auto error = m_node->append_element("error");
+    error->append_attribute(m_doc->allocate_attribute("type", ex.error_type()));
+    error->append_element({"urn:ietf:params:xml:ns:xmpp-stanzas", ex.element_name()});
+    error->append_element({"urn:ietf:params:xml:ns:xmpp-stanzas", "text"}, ex.what());
 }
 
 void Stanza::render_error(Stanza::Error e) {
@@ -239,10 +160,8 @@ std::unique_ptr<Stanza> Stanza::create_forward() const {
     stanza->m_to = m_to;
     stanza->m_id = m_id;
     stanza->m_type_str = m_type_str;
-    if (m_payload && m_payload_l) {
-        stanza->m_payload_str.append(m_payload, m_payload_l);
-        stanza->m_payload = stanza->m_payload_str.c_str();
-        stanza->m_payload_l = stanza->m_payload_str.length();
+    for (auto & child : rapidxml::children(m_node)) {
+        stanza->m_node->append_node(stanza->m_doc->clone_node(&child));
     }
     return stanza;
 }
@@ -279,7 +198,7 @@ Message::Message() : Stanza(Message::name) {
     m_type = set_type();
 }
 
-Message::Message(rapidxml::xml_node<> *node) : Stanza(Message::name, node) {
+Message::Message(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : Stanza(Message::name, node) {
     m_type = set_type();
 }
 
@@ -342,7 +261,7 @@ Message::Type Message::set_type() const {
 Iq::Iq(Jid const &from, Jid const &to, Type t, std::optional<std::string> const &id) : Stanza(Iq::name, from, to,
                                                                                               Iq::type_toString(t), id), m_type(t) {}
 
-Iq::Iq(rapidxml::xml_node<> *node) : Stanza(name, node) {
+Iq::Iq(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : Stanza(name, node) {
     m_type = set_type();
 }
 
@@ -396,13 +315,8 @@ const char *DB::Result::name = "db:result";
 
 DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
        std::optional<std::string> const &key)
-        : Stanza(name) {
-    m_to = to;
-    m_from = from;
-    m_id = stream_id;
-    m_payload_str = *key;
-    m_payload = m_payload_str.data();
-    m_payload_l = m_payload_str.length();
+        : Stanza(name, to, from, std::optional<std::string>{}, stream_id) {
+    if (key) m_node->value(key.value());
 }
 
 DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t) : Stanza(name) {
@@ -428,6 +342,4 @@ DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stre
     m_id = stream_id;
     m_type_str = "error";
     render_error(e);
-    m_payload = m_payload_str.data();
-    m_payload_l = m_payload_str.size();
 }

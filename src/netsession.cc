@@ -147,7 +147,7 @@ void NetSession::used(size_t n) {
     evbuffer_drain(buf, n);
 }
 
-void NetSession::send(rapidxml::xml_document<> &d) {
+void NetSession::send(rapidxml::xml_node<> &d) {
     if (!m_bev) {
         return;
     }

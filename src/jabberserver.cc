@@ -47,20 +47,17 @@ namespace {
             Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
         };
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle JabberServer");
-            xml_document<> *d = node->document();
-            d->fixup<parse_default>(node, false); // Just terminate the header.
-            std::string stanza = node->name();
             std::unique_ptr<Stanza> s;
-            if (stanza == "message") {
+            if (node->name() == "message") {
                 s = std::make_unique<Message>(node);
-            } else if (stanza == "iq") {
+            } else if (node->name() == "iq") {
                 s = std::make_unique<Iq>(node);
-            } else if (stanza == "presence") {
+            } else if (node->name() == "presence") {
                 s = std::make_unique<Presence>(node);
             } else {
-                throw Metre::unsupported_stanza_type(stanza);
+                throw Metre::unsupported_stanza_type(std::string(node->name()));
             }
             auto task = m_stream.start_task("jabber::server handle(Stanza)", handle(s));
             co_await *task;

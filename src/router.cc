@@ -146,7 +146,7 @@ sigslot::tasklet<bool> Route::init_session_to() {
                 auto dbr = d.allocate_node(rapidxml::node_element, "db:result");
                 dbr->append_attribute(d.allocate_attribute("to", m_domain.domain().c_str()));
                 dbr->append_attribute(d.allocate_attribute("from", m_local.domain().c_str()));
-                dbr->value(key.c_str(), key.length());
+                dbr->value(key);
                 d.append_node(dbr);
                 session->xml_stream().send(d);
                 session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND,

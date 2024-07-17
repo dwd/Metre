@@ -134,7 +134,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
     }
     if (spaces) m_session->used(spaces);
     if (len == 0) return spaces;
-    std::string buf{reinterpret_cast<char *>(p + spaces), len};
+    std::string_view buf{reinterpret_cast<char *>(p + spaces), len};
     logger().debug("Got [{}]: {}", len, buf);
     try {
         try {
@@ -144,12 +144,12 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                  * finishes, and copy that segment over to another buffer. Then reparse, this time properly.
                  */
                 logger().debug("Parsing stream open");
-                char *end = m_stream.parse<parse_open_only | parse_fastest>(const_cast<char *>(buf.c_str()));
+                auto end = m_stream.parse<parse_open_only | parse_fastest>(buf);
                 auto test = m_stream.first_node();
-                if (test && test->name()) {
-                    m_stream_buf.assign(buf.data(), end - buf.data());
-                    m_session->used(end - buf.data());
-                    buf.erase(0, end - buf.data());
+                if (test && !test->name().empty()) {
+                    m_stream_buf.assign(buf.data(), end.ptr());
+                    m_session->used(end.ptr() - buf.data());
+                    buf.remove_prefix(end.ptr() - buf.data());
                     m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
                     stream_open();
                 } else {
@@ -157,13 +157,12 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 }
             }
             while (!buf.empty()) {
-                char *end = m_stanza.parse<parse_fastest | parse_parse_one>(const_cast<char *>(buf.c_str()), m_stream);
+                auto end = m_stanza.parse<parse_fastest | parse_parse_one>(buf, &m_stream);
                 auto element = m_stanza.first_node();
-                if (!element || !element->name()) return len - buf.length();
-                //std::cout << "TLE {" << element->xmlns() << "}" << element->name() << std::endl;
-                m_session->used(end - buf.data());
+                if (!element || element->name().empty()) return len - buf.length();
                 handle(element);
-                buf.erase(0, end - buf.data());
+                m_session->used(end.ptr() - buf.data());
+                buf.remove_prefix(end.ptr() - buf.data());
                 m_stanza.clear();
                 if (frozen()) return spaces + len - buf.length();
             }
@@ -176,7 +175,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 m_session->send("</stream:stream>");
                 m_closed = true;
                 m_session->used(buf.size());
-                buf.clear();
+                buf.remove_prefix(buf.size());
             } else {
                 throw Metre::not_well_formed(e.what());
             }
@@ -305,15 +304,14 @@ void XMLStream::stream_open() {
      */
     auto stream = m_stream.first_node();
     auto xmlns = stream->first_attribute("xmlns");
-    if (xmlns && xmlns->value()) {
-        std::string default_xmlns(xmlns->value(), xmlns->value_size());
-        if (default_xmlns == "jabber:client") {
+    if (xmlns && !xmlns->value().empty()) {
+        if (xmlns->value() == "jabber:client") {
             logger().debug("C2S stream detected.");
             m_type = C2S;
-        } else if (default_xmlns == "jabber:server") {
+        } else if (xmlns->value() == "jabber:server") {
             logger().debug("S2S stream detected.");
             m_type = S2S;
-        } else if (default_xmlns == "jabber:component:accept") {
+        } else if (xmlns->value() == "jabber:component:accept") {
             logger().debug("114 (component) stream detected.");
             m_type = COMP;
         } else {
@@ -322,8 +320,8 @@ void XMLStream::stream_open() {
     }
     auto domainat = stream->first_attribute("to");
     std::string domainname;
-    if (domainat && domainat->value()) {
-        domainname.assign(domainat->value(), domainat->value_size());
+    if (domainat && !domainat->value().empty()) {
+        domainname.assign(domainat->value());
         logger().debug("Requested contact domain [{}]", domainname);
     } else if (m_dir == OUTBOUND) {
         domainname = Jid(m_stream_local).domain();
@@ -332,7 +330,7 @@ void XMLStream::stream_open() {
     }
     std::string from;
     if (auto fromat = stream->first_attribute("from")) {
-        from = Jid(std::string(fromat->value(), fromat->value_size())).domain();
+        from = Jid(fromat->value()).domain();
         if (m_dir == OUTBOUND) {
             if (from != m_stream_remote) {
                 // throw Metre::host_unknown("You're not who I was expecting.");
@@ -343,7 +341,7 @@ void XMLStream::stream_open() {
         logger().debug("Requesting domain is {}", from);
         check_domain_pair(from, domainname);
     }
-    if (!stream->xmlns()) {
+    if (stream->xmlns().empty()) {
         throw Metre::bad_format("Missing namespace for stream");
     }
     if (stream->name() != std::string("stream") ||
@@ -352,12 +350,8 @@ void XMLStream::stream_open() {
     }
     // Assume we're good here.
     auto version = stream->first_attribute("version");
-    std::string ver = "1.0";
     bool with_ver = false;
-    if (version &&
-        version->value() &&
-        version->value_size() == 3 &&
-        ver.compare(0, 3, version->value(), version->value_size()) == 0) {
+    if (version && version->value() == "1.0") {
         with_ver = true;
     }
     if (with_ver) {
@@ -456,26 +450,21 @@ void XMLStream::send(rapidxml::xml_document<> &d) {
 }
 
 void XMLStream::send(std::unique_ptr<Stanza> s) {
-    rapidxml::xml_document<> d;
-    s->render(d);
-    m_session->send(d);
+    m_session->send(*s->node());
     s->sent(*s, true);
 }
 
-void XMLStream::handle(rapidxml::xml_node<> *element) {
-    std::string xmlns(element->xmlns(), element->xmlns_size());
-    if (xmlns == "http://etherx.jabber.org/streams") {
-        std::string elname(element->name(), element->name_size());
-        m_logger->trace("handle element=[{}]", elname);
-        if (elname == "features") {
+void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
+    if (element->xmlns() == "http://etherx.jabber.org/streams") {
+        m_logger->trace("handle element=[{}]", element->name());
+        if (element->name() == "features") {
             for (;;) {
-                rapidxml::xml_node<> *feature_offer = nullptr;
+                rapidxml::optional_ptr<rapidxml::xml_node<>> feature_offer = nullptr;
                 Feature::Type feature_type = Feature::Type::FEAT_NONE;
                 std::string feature_xmlns;
                 for (auto feat_ad = element->first_node(); feat_ad; feat_ad = feat_ad->next_sibling()) {
-                    std::string offer_name(feat_ad->name(), feat_ad->name_size());
-                    std::string offer_ns(feat_ad->xmlns(), feat_ad->xmlns_size());
-                    logger().debug("Got feature offer: [{}:{}]", offer_ns, offer_name);
+                    std::string offer_ns(feat_ad->xmlns());
+                    logger().debug("Got feature offer: [{}:{}]", feat_ad->xmlns(), feat_ad->name());
                     if (m_features.find(offer_ns) != m_features.end()) continue; // Already negotiated.
                     Feature::Type offer_type = Feature::type(offer_ns, *this);
                     logger().debug("Offer type seems to be [{}]", static_cast<int>(offer_type));
@@ -492,7 +481,7 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                             /* pass */;
                     }
                     if (feature_type < offer_type) {
-                        logger().debug("Feature [{}:{}] supersedes [{}]", offer_ns, offer_name, feature_xmlns);
+                        logger().debug("Feature [{}:{}] supersedes [{}]", feat_ad->xmlns(), feat_ad->name(), feature_xmlns);
                         feature_offer = feat_ad;
                         feature_xmlns = offer_ns;
                         feature_type = offer_type;
@@ -521,12 +510,13 @@ void XMLStream::handle(rapidxml::xml_node<> *element) {
                 m_logger->debug("Feature negotiated, stream restart is [{}]", escape);
                 if (escape) return; // We've done a stream restart or something.
             }
-        } else if (elname == "error") {
+        } else if (element->name() == "error") {
             throw std::runtime_error("Received an unknown XMPP XML error");
         } else {
             throw Metre::unsupported_stanza_type("Unknown stream element");
         }
     } else {
+        std::string xmlns{element->xmlns()};
         auto fit = m_features.find(xmlns);
         Feature *f = nullptr;
         m_logger->debug("Hunting handling feature for [{}]", xmlns);

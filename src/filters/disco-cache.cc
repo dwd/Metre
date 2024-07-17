@@ -61,10 +61,11 @@ namespace {
                     if (disco) { // It's a disco#info request.
                         auto node = disco->first_attribute("node");
                         if (!node) co_return PASS;
-                        auto it = caps_cache().find(std::string{node->value(), node->value_size()});
+                        auto it = caps_cache().find(std::string{node->value()});
                         if (it != caps_cache().end()) {
                             std::unique_ptr<Stanza> response(new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id()));
-                            response->payload((*it).second);
+                            auto & [ key, doc ] = *it;
+                            response->node()->append_node(response->node()->document()->clone_node(doc.first_node()));
                             auto route = RouteTable::routeTable(iq.from()).route(iq.to());
                             route->transmit(std::move(response));
                             co_return DROP;
@@ -72,23 +73,23 @@ namespace {
                     }
                 } else if (iq.type() == Iq::RESULT) {
                     auto disco = iq.node()->first_node("query", "http://jabber.org/protocol/disco#info");
-                    if (disco) { // It's a disco#info request.
+                    if (disco) { // It's a disco#info response.
                         auto node = disco->first_attribute("node");
                         if (!node) co_return PASS;
                         bool client = false;
                         for (auto identity = disco->first_node("identity"); identity; identity = identity->next_sibling(
                                 "identity")) {
                             auto category = identity->first_attribute("category");
-                            if (category && category->value() &&
-                                std::string{category->value(), category->value_size()} == "client") {
+                            if (category && category->value() == "client") {
                                 client = true;
                                 break;
                             }
                         }
                         if (client) {
-                            std::string nodestr{node->value(), node->value_size()};
-                            caps_cache()[nodestr] = std::string{disco->contents(), disco->contents_size()};
-                            METRE_LOG(Log::INFO, "Cached disco#info for " << nodestr);
+                            std::string key{node->value()};
+                            auto & doc = caps_cache()[key];
+                            doc.append_node(doc.clone_node(disco, true));
+                            METRE_LOG(Log::INFO, "Cached disco#info for " << node->value());
                         }
                     }
                 }
@@ -97,8 +98,8 @@ namespace {
         }
 
     private:
-        static std::map<std::string /*node*/, std::string /*disco#info xml*/> &caps_cache() {
-            static std::map<std::string, std::string> s_caps;
+        static std::map<std::string /*node*/, xml_document<> /*disco#info xml*/> &caps_cache() {
+            static std::map<std::string, xml_document<>> s_caps;
             return s_caps;
         }  // For responding to disco requests.
     };

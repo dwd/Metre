@@ -29,7 +29,7 @@ using namespace Metre;
 
 Feature::Feature(XMLStream &s) : m_stream(s) {}
 
-Feature::~Feature() {}
+Feature::~Feature() = default;
 
 Feature::BaseDescription::BaseDescription(std::string const &ns, Feature::Type type) : m_xmlns(ns), m_type(type) {}
 

@@ -53,9 +53,9 @@ namespace {
         return c;
     }
 
-    std::string stringprep(UStringPrepProfile *p, std::string const &input) {
+    std::string stringprep(UStringPrepProfile *p, std::string_view const &input) {
         if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end()) {
-            std::string ret = input;
+            std::string ret{input};
             std::transform(ret.begin(), ret.end(), ret.begin(),
                            [](const char c) { return static_cast<char>(tolower(c)); });
             return ret;
@@ -97,7 +97,7 @@ namespace {
 #endif
 }
 
-void Jid::parse(std::string const &s) {
+void Jid::parse(std::string_view const &s) {
     ssize_t at_pos{-1};
     ssize_t slash_pos{-1};
     for (ssize_t c{0}; c != static_cast<ssize_t>(s.length()); ++c) {

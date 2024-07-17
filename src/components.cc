@@ -76,34 +76,27 @@ namespace {
         void send_handshake(XMLStream &s) {
             std::string hexoutput(handshake_content());
             xml_document<> d;
-            auto node = d.allocate_node(node_element, "handshake");
-            node->value(hexoutput.c_str(), hexoutput.length());
-            d.append_node(node);
+            d.append_element("handshake", hexoutput);
             m_stream.send(d);
         }
 
-        bool negotiate(rapidxml::xml_node<> *) override {
+        bool negotiate(optional_ptr<rapidxml::xml_node<>>) override {
             m_stream.onAuthReady.connect(this, &Component::send_handshake);
             return false;
         }
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle component");
 
-            xml_document<> *d = node->document();
-            d->fixup<parse_default>(node, false); // Just terminate the header.
-            std::string stanza = node->name();
             std::unique_ptr<Stanza> s;
-            if (stanza == "message") {
+            if (node->name() == "message") {
                 s = std::make_unique<Message>(node);
-            } else if (stanza == "iq") {
+            } else if (node->name() == "iq") {
                 s = std::make_unique<Iq>(node);
-            } else if (stanza == "presence") {
+            } else if (node->name() == "presence") {
                 s = std::make_unique<Presence>(node);
-            } else if (stanza == "handshake") {
-                std::string const handshake_offered{node->value(), node->value_size()};
-                std::string const handshake_expected = handshake_content();
-                if (handshake_offered != handshake_expected) {
+            } else if (node->name() == "handshake") {
+                if (node->value() != handshake_content()) {
                     throw not_authorized("Component handshake failure");
                 }
 
@@ -115,13 +108,12 @@ namespace {
                 RouteTable::routeTable(domain).route(domain)->set_to(session_ptr);
                 {
                     xml_document<> doc;
-                    auto handshake = doc.allocate_node(node_element, "handshake");
-                    doc.append_node(handshake);
+                    doc.append_element("handshake");
                     m_stream.send(doc);
                 }
                 co_return true;
             } else {
-                throw Metre::unsupported_stanza_type(stanza);
+                throw Metre::unsupported_stanza_type(std::string(node->name()));
             }
             try {
                 try {

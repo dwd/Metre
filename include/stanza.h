@@ -71,21 +71,17 @@ namespace Metre {
         std::optional<std::string> m_type_str;
         std::optional<std::string> m_id;
         std::string m_lang;
-        mutable std::string m_payload_str; // Buffer which holds payload if needed.
-        mutable std::string m_node_str; // Buffer which holds fully-parsed XML if node() has been called post-update.
-        const char *m_payload = nullptr;
-        size_t m_payload_l = 0;
-        rapidxml::xml_node<> *m_node = nullptr;
+        rapidxml::optional_ptr<rapidxml::xml_node<>> m_node = nullptr;
         std::unique_ptr<rapidxml::xml_document<>> m_doc;
     public:
         // Signals:
         sigslot::signal<Stanza &, bool> sent;
 
-        Stanza(const char *name, rapidxml::xml_node<> *node);
+        Stanza(const char *name, rapidxml::optional_ptr<rapidxml::xml_node<>> node);
 
         explicit Stanza(const char *name);
 
-        Stanza(const char *name, Jid const &from, Jid const &to, std::string const &type,
+        Stanza(const char *name, std::optional<Jid> const &from, std::optional<Jid> const &to, std::optional<std::string> const &type,
                std::optional<std::string> const &id);
 
         virtual ~Stanza() = default;
@@ -131,32 +127,21 @@ namespace Metre {
             return m_lang;
         }
 
-        rapidxml::xml_node<> *node() { // If changed, call update();
-            freeze();
+        //! If you change anything, in particular if you set names or values
+        //! using locally-scoped strings, you must call freeze() before the scope ends.
+        //! This is because rapidxml uses string_views rather than copying the data
+        //!  by default.
+        //! You can avoid this by calling node()->document())->allocate_string(), which
+        //! is more efficient but clumsier.
+        rapidxml::optional_ptr<rapidxml::xml_node<>> node() {
             return node_internal();
         }
-        rapidxml::xml_node<> const *node() const {
+        rapidxml::optional_ptr<rapidxml::xml_node<>> const node() const {
             return const_cast<Stanza *>(this)->node_internal();
         }
 
-        void payload(std::string_view p) {
-            m_payload_str = p;
-            m_payload = m_payload_str.c_str();
-            m_payload_l = m_payload_str.size();
-        }
-
-        void payload(rapidxml::xml_node<> *node);
-        void update() {
-            payload(node());
-        }
-        void append_node(rapidxml::xml_node<> * node);
-        void remove_node(rapidxml::xml_node<> * node);
-        rapidxml::xml_node<> * allocate_element(std::string const & element, std::optional<std::string> const & xmlns);
-        rapidxml::xml_node<> * allocate_element(std::string const & element);
-        rapidxml::xml_node<> * find_node(std::string const & element, std::optional<std::string> const & xmlns);
-        rapidxml::xml_node<> * find_node(std::string const & element);
-
-        void render(rapidxml::xml_document<> &d);
+        void render(rapidxml::xml_document<> &d) const;
+        void render(rapidxml::xml_document<> &d, std::optional<std::string> const &xmlns) const;
 
         std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e) const;
 
@@ -167,7 +152,7 @@ namespace Metre {
         void freeze(); // Make sure nothing is in volatile storage anymore.
 
     protected:
-        rapidxml::xml_node<> *node_internal(); // If changed, call update();
+        rapidxml::optional_ptr<rapidxml::xml_node<>> node_internal(); // If changed, call update();
         void render_error(Stanza::Error e);
 
         void render_error(Metre::base::stanza_exception const &ex);
@@ -183,7 +168,7 @@ namespace Metre {
     private:
         Type m_type;
     public:
-        explicit Message(rapidxml::xml_node<> *node);
+        explicit Message(rapidxml::optional_ptr<rapidxml::xml_node<>> node);
         explicit Message();
 
         Type type() const {
@@ -207,7 +192,7 @@ namespace Metre {
     private:
         Type m_type;
     public:
-        explicit Iq(rapidxml::xml_node<> *node);
+        explicit Iq(rapidxml::optional_ptr<rapidxml::xml_node<>> node);
 
         Iq(Jid const &from, Jid const &to, Type t, std::optional<std::string> const &id);
 
@@ -228,7 +213,7 @@ namespace Metre {
     public:
         static const char *name;
 
-        explicit Presence(rapidxml::xml_node<> *node) : Stanza(name, node) {
+        explicit Presence(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : Stanza(name, node) {
         }
     };
 
@@ -245,17 +230,17 @@ namespace Metre {
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
            std::optional<std::string> const &key);
 
-        DB(const char *name, rapidxml::xml_node<> *node) : Stanza(name, node) {
+        DB(const char *name, rapidxml::optional_ptr<rapidxml::xml_node<>> node) : Stanza(name, node) {
         }
 
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t);
 
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Stanza::Error e);
 
-        std::string const &key() const {
+        std::string_view const &key() const {
             if (!m_type_str) {
                 const_cast<DB *>(this)->freeze();
-                return m_payload_str;
+                return m_node->value();
             } else {
                 throw std::runtime_error("Keys not present in typed dialback element.");
             }
@@ -270,7 +255,7 @@ namespace Metre {
     public:
         static const char *name;
 
-        Verify(Jid const &to, Jid const &from, std::string const &stream_id, std::string const &key)
+        Verify(Jid const &to, Jid const &from, std::string const &stream_id, std::basic_string<char> key)
                 : DB(name, to, from, stream_id, key) {
         }
 
@@ -281,7 +266,7 @@ namespace Metre {
                                                                                                    stream_id,
                                                                                                    t) {}
 
-        explicit Verify(rapidxml::xml_node<> *node) : DB(name, node) {
+        explicit Verify(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : DB(name, node) {
         }
     };
 
@@ -299,7 +284,7 @@ namespace Metre {
         Result(Jid const &to, Jid const &from, Stanza::Error t) : DB(name, to, from, "",
                                                                      t) {}
 
-        explicit Result(rapidxml::xml_node<> *node) : DB(name, node) {
+        explicit Result(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : DB(name, node) {
         }
     };
 }
