@@ -81,11 +81,11 @@ std::string base64_encode(unsigned char const* bytes_to_encode, std::size_t in_l
 
 }
 
-std::string base64_encode(std::string const & s) {
+std::string base64_encode(std::string_view const & s) {
     return base64_encode(reinterpret_cast<const unsigned char *>(s.data()), s.size());
 }
 
-std::string base64_decode(std::string const& encoded_string) {
+std::string base64_decode(std::string_view const& encoded_string) {
     std::size_t in_len = encoded_string.size();
     int i = 0;
     int j = 0;
