@@ -160,9 +160,20 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                 auto end = m_stanza.parse<parse_fastest | parse_parse_one>(buf, &m_stream);
                 auto element = m_stanza.first_node();
                 if (!element || element->name().empty()) return len - buf.length();
+                bool tls_nego = element->xmlns() == "urn:ietf:params:xml:ns:xmpp-tls";
+                // For TLS negotiation elements, we need to special-case to avoid
+                // the data still being in the buffer when the TLS handshake occurs.
+                if (tls_nego) {
+                    // Clone it then discard the buffer.
+                    element = m_stanza.clone_node(element, true);
+                    m_session->used(end.ptr() - buf.data());
+                    buf.remove_prefix(end.ptr() - buf.data());
+                }
                 handle(element);
-                m_session->used(end.ptr() - buf.data());
-                buf.remove_prefix(end.ptr() - buf.data());
+                if (!tls_nego) {
+                    m_session->used(end.ptr() - buf.data());
+                    buf.remove_prefix(end.ptr() - buf.data());
+                }
                 m_stanza.clear();
                 if (frozen()) return spaces + len - buf.length();
             }
