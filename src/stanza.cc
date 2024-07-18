@@ -43,6 +43,8 @@ Stanza::Stanza(const char *name, rapidxml::optional_ptr<rapidxml::xml_node<>> no
 }
 
 Stanza::Stanza(const char *name) : m_name(name) {
+    m_doc = std::make_unique<rapidxml::xml_document<>>();
+    m_node = m_doc->append_element(m_name);
 }
 
 Stanza::Stanza(const char *name, std::optional<Jid> const &from, std::optional<Jid> const &to, std::optional<std::string> const &type_str,
