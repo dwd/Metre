@@ -36,6 +36,7 @@ RUN cmake \
         -DCMAKE_INSTALL_PREFIX=/app/install \
         -DCMAKE_BUILD_TYPE=Debug \
         -DVENDORED_DEPS=OFF \
+        -DMETRE_BUILD_TESTS=OFF \
         -GNinja \
         ../src
 RUN export CMAKE_BUILD_PARALLEL_LEVEL=4; \

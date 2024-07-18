@@ -13,6 +13,7 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Dave Cridland <dave@cridland.net>")
 option(VENDORED_DEPS "Use vendored dependencies" OFF)
 option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
 option(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
+option(METRE_BUILD_TESTS "Build the tests for Metre" ON)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
@@ -279,7 +280,7 @@ endif()
 install(TARGETS metre RUNTIME DESTINATION bin COMPONENT application)
 
 # Tests
-
+if(METRE_BUILD_TESTS)
 include(FetchContent)
 FetchContent_Declare(
         googletest
@@ -358,6 +359,7 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(metre-test)
+endif(METRE_BUILD_TESTS)
 
 ## These install into stupid places:
 ##
