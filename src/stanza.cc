@@ -110,9 +110,10 @@ std::unique_ptr<Stanza> Stanza::create_bounce(base::stanza_exception const &ex) 
 
 void Stanza::render_error(Metre::base::stanza_exception const &ex) {
     auto error = m_node->append_element("error");
-    error->append_attribute(m_doc->allocate_attribute("type", ex.error_type()));
-    error->append_element({"urn:ietf:params:xml:ns:xmpp-stanzas", ex.element_name()});
-    error->append_element({"urn:ietf:params:xml:ns:xmpp-stanzas", "text"}, ex.what());
+    auto doc = m_node->document();
+    error->append_attribute(m_doc->allocate_attribute("type", doc->allocate_string(ex.error_type())));
+    error->append_element({"urn:ietf:params:xml:ns:xmpp-stanzas", doc->allocate_string(ex.element_name())});
+    error->append_element({"urn:ietf:params:xml:ns:xmpp-stanzas", "text"}, doc->allocate_string(ex.what()));
 }
 
 void Stanza::render_error(Stanza::Error e) {
