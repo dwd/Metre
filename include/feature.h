@@ -46,7 +46,7 @@ namespace Metre {
         public:
             BaseDescription(std::string const &, Feature::Type);
 
-            virtual sigslot::tasklet<bool> offer(rapidxml::xml_node<> *node, XMLStream &s) {
+            virtual sigslot::tasklet<bool> offer(rapidxml::optional_ptr<rapidxml::xml_node<>> node, XMLStream &s) {
                 co_return false;
             }
 
@@ -81,9 +81,9 @@ namespace Metre {
         };
 
 
-        virtual sigslot::tasklet<bool> handle(rapidxml::xml_node<> *) = 0;
+        virtual sigslot::tasklet<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>>) = 0;
 
-        virtual bool negotiate(rapidxml::xml_node<> *) { return false; }
+        virtual bool negotiate(rapidxml::optional_ptr<rapidxml::xml_node<>>) { return false; }
 
         static Feature *feature(std::string const &xmlns, XMLStream &);
 

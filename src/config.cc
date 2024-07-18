@@ -326,11 +326,6 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
 
 sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(FILTER_DIRECTION dir, Stanza &s) const {
     if (m_parent) co_return co_await m_parent->filter(dir, s);
-    rapidxml::xml_node<> const *node = const_cast<const Stanza &>(s).node();
-    if (!node) {
-        // Synthetic Stanza. Probably a bounce, or similar.
-        co_return PASS;
-    }
     for (auto &filter : m_filters) {
         auto filter_result = co_await filter->apply(dir, s);
         if (filter_result == DROP) co_return DROP;

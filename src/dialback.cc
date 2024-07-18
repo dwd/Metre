@@ -31,8 +31,6 @@ SOFTWARE.
 #include <memory>
 #include "config.h"
 
-#include <openssl/sha.h>
-#include <openssl/sha.h>
 #include <log.h>
 
 using namespace Metre;
@@ -50,22 +48,18 @@ namespace {
         public:
             Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH_FALLBACK) {};
 
-            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
+            sigslot::tasklet<bool> offer(optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (!s.secured() && (Config::config().domain(s.local_domain()).require_tls() ||
                                      Config::config().domain(s.remote_domain()).require_tls())) {
                     co_return false;
                 }
-                xml_document<> *d = node->document();
-                auto feature = d->allocate_node(node_element, "dialback");
-                feature->append_attribute(d->allocate_attribute("xmlns", db_feat_ns.c_str()));
-                auto errors = d->allocate_node(node_element, "errors");
-                feature->append_node(errors);
-                node->append_node(feature);
+                auto feature = node->append_element({db_feat_ns, "dialback"});
+                feature->append_element("errors");
                 co_return true;
             }
         };
 
-        bool negotiate(rapidxml::xml_node<> *) override { // Note that this offer, unusually, can be nullptr.
+        bool negotiate(optional_ptr<rapidxml::xml_node<>>) override { // Note that this offer, unusually, can be nullptr.
             if (!m_stream.secured() && (Config::config().domain(m_stream.remote_domain()).require_tls())) {
                 m_stream.logger().info("Supressed dialback due to missing required TLS");
                 return false;
@@ -74,7 +68,7 @@ namespace {
             return false;
         }
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *) override {
+        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>>) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             throw Metre::unsupported_stanza_type("Wrong namespace for dialback.");
         }
@@ -129,7 +123,7 @@ namespace {
             m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::REQUESTED);
             // With syntax done, we should send the key:
             route->transmit(
-                    std::make_unique<DB::Verify>(route->domain_jid(), route->local_jid(), m_stream.stream_id(), result.key()));
+                    std::make_unique<DB::Verify>(route->domain_jid(), route->local_jid(), m_stream.stream_id(), std::string(result.key())));
             co_return
             true;
         }
@@ -199,12 +193,9 @@ namespace {
             }
         }
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
-            xml_document<> *d = node->document();
-            d->fixup<parse_default>(node, true);
-            std::string stanza = node->name();
-            if (stanza == "result") {
+            if (node->name() == "result") {
                 auto p = std::make_unique<DB::Result>(node);
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {
@@ -220,7 +211,7 @@ namespace {
                     auto task = m_stream.start_task("Dialback calling result", result(*p));
                     co_return co_await *task;
                 }
-            } else if (stanza == "verify") {
+            } else if (node->name() == "verify") {
                 auto p = std::make_unique<DB::Verify>(node);
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {

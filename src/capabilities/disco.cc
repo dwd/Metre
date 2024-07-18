@@ -35,20 +35,15 @@ namespace {
                 auto bounce = iq.create_bounce(Stanza::Error::service_unavailable);
                 m_endpoint.send(std::move(bounce));
             } else {
-                rapidxml::xml_document<> doc;
-                auto container = doc.allocate_node(rapidxml::node_element, "root");
-                auto response = doc.allocate_node(rapidxml::node_element, "query");
-                container->append_node(response);
-                response->append_attribute(doc.allocate_attribute("xmlns", "http://jabber.org/protocol/disco#items"));
+                auto result = std::make_unique<Iq>(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id());
+                auto response = result->node()->append_element({"http://jabber.org/protocol/disco#items", "query"});
+                auto doc = result->node()->document();
                 for (auto const &node : m_endpoint.nodes()) {
-                    auto item = doc.allocate_node(rapidxml::node_element, "item");
-                    item->append_attribute(doc.allocate_attribute("jid", m_endpoint.jid().full().c_str()));
-                    item->append_attribute(doc.allocate_attribute("node", node.second->name().c_str()));
-                    item->append_attribute(doc.allocate_attribute("name", node.second->title().c_str()));
-                    response->append_node(item);
+                    auto item = response->append_element("item");
+                    item->append_attribute(doc->allocate_attribute("jid", m_endpoint.jid().full().c_str()));
+                    item->append_attribute(doc->allocate_attribute("node", node.second->name().c_str()));
+                    item->append_attribute(doc->allocate_attribute("name", node.second->title().c_str()));
                 }
-                std::unique_ptr<Iq> result{new Iq(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id())};
-                result->payload(container);
                 m_endpoint.send(std::move(result));
             }
             co_return;
@@ -63,20 +58,15 @@ namespace {
                 auto bounce = iq.create_bounce(Stanza::Error::service_unavailable);
                 m_endpoint.send(std::move(bounce));
             } else {
-                rapidxml::xml_document<> doc;
-                auto container = doc.allocate_node(rapidxml::node_element, "root");
-                auto response = doc.allocate_node(rapidxml::node_element, "query");
-                container->append_node(response);
-                response->append_attribute(doc.allocate_attribute("xmlns", "http://jabber.org/protocol/disco#info"));
+                auto result = std::make_unique<Iq>(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id());
+                auto response = result->node()->append_element({"http://jabber.org/protocol/disco#info", "query"});
+                auto doc = result->node()->document();
                 for (auto const &cap : m_endpoint.capabilities()) {
                     for (auto const &feature : cap->description().disco()) {
-                        auto feat = doc.allocate_node(rapidxml::node_element, "feature");
-                        feat->append_attribute(doc.allocate_attribute("var", feature.c_str()));
-                        response->append_node(feat);
+                        auto feat = response->append_element("feature");
+                        feat->append_attribute(doc->allocate_attribute("var", feature.c_str()));
                     }
                 }
-                std::unique_ptr<Iq> result{new Iq(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id())};
-                result->payload(container);
                 m_endpoint.send(std::move(result));
             }
             co_return;

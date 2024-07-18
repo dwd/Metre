@@ -47,29 +47,24 @@ namespace {
         public:
             Description() : Feature::Description<Bidi>(bidi_feat_ns, FEAT_PREAUTH) {};
 
-            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
+            sigslot::tasklet<bool> offer(optional_ptr<xml_node<>>node, XMLStream &s) override {
                 if (s.bidi()) co_return false;
-                xml_document<> *d = node->document();
-                auto feature = d->allocate_node(node_element, "bidi");
-                feature->append_attribute(d->allocate_attribute("xmlns", bidi_feat_ns.c_str()));
-                node->append_node(feature);
+                node->append_element({bidi_feat_ns, "bidi"});
                 co_return
                 true;
             }
         };
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle BIDI");
             // We don't really handle it here, since we picked a different Namespace.
             // That was silly of us.
             co_return false;
         }
 
-        bool negotiate(rapidxml::xml_node<> *) override {
+        bool negotiate(optional_ptr<rapidxml::xml_node<>>) override {
             xml_document<> d;
-            auto n = d.allocate_node(node_element, "bidi");
-            n->append_attribute(d.allocate_attribute("xmlns", bidi_ns.c_str()));
-            d.append_node(n);
+            d.append_element({bidi_ns, "bidi"});
             m_stream.send(d);
             m_stream.bidi(true);
             return false;
@@ -89,13 +84,13 @@ namespace {
             Description() : Feature::Description<BidiInbound>(bidi_ns, FEAT_PREAUTH) {};
         };
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle BIDI Inbound");
             m_stream.bidi(true);
             co_return true;
         }
 
-        bool negotiate(rapidxml::xml_node<> *) override {
+        bool negotiate(optional_ptr<rapidxml::xml_node<>>) override {
             return false;
         }
     };

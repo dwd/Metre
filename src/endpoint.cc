@@ -69,8 +69,8 @@ sigslot::tasklet<void> Endpoint::process(Iq const & iq) {
         case Iq::SET: {
             auto payload = iq.node()->first_node();
             if (payload != nullptr) {
-                std::string xmlns{payload->xmlns(), payload->xmlns_size()};
-                std::string local{payload->name(), payload->name_size()};
+                std::string xmlns{payload->xmlns()};
+                std::string local{payload->name()};
                 auto i = m_handlers.find(std::make_pair(xmlns, local));
                 if (i != m_handlers.end()) {
                     co_await (*i).second(iq);

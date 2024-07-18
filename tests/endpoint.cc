@@ -59,10 +59,9 @@ public:
 
     // Utility function
     template<typename S>
-    std::unique_ptr<Stanza> parse_stanza(std::string &s) {
+    std::unique_ptr<Stanza> parse_stanza(std::string const &s) {
         doc.clear();
-        doc.parse<rapidxml::parse_fastest|rapidxml::parse_parse_one>(const_cast<char *>(s.c_str()));
-        doc.fixup<rapidxml::parse_full>(doc.first_node(), false);
+        doc.parse<rapidxml::parse_fastest|rapidxml::parse_parse_one>(s);
         return std::make_unique<S>(doc.first_node());
     }
 
@@ -83,9 +82,9 @@ public:
         }
         rapidxml::xml_document<> doc;
         doc.parse<rapidxml::parse_full>(const_cast<char *>(xml.c_str()));
-        auto * msg = doc.first_node("message");
+        auto msg = doc.first_node("message");
         ASSERT_TRUE(msg);
-        auto * err = msg->first_node("error");
+        auto err = msg->first_node("error");
         ASSERT_TRUE(err);
         ASSERT_EQ(err->first_attribute("type")->value(), std::string("cancel"));
         ASSERT_TRUE(err->first_node("service-unavailable", "urn:ietf:params:xml:ns:xmpp-stanzas"));
@@ -125,7 +124,7 @@ public:
             ASSERT_EQ(feature->name(), std::string("feature"));
             ASSERT_EQ(feature->xmlns(), std::string("http://jabber.org/protocol/disco#info"));
             auto var = feature->first_attribute("var");
-            m_features.emplace(var->value(), var->value_size());
+            m_features.emplace(var->value());
         }
         ASSERT_EQ(m_features.size(), 5u);
     }
@@ -159,10 +158,9 @@ public:
             auto node = feature->first_attribute("node");
             ASSERT_FALSE(jid == nullptr) << "JID missing from item";
             ASSERT_FALSE(node == nullptr) << "Node missing from item";
-            Jid item_jid(std::string(jid->value(), jid->value_size()));
-            std::string node_id(node->value(), node->value_size());
+            Jid item_jid(jid->value());
             ASSERT_EQ(item_jid.full(), endpoint_jid.bare());
-            ASSERT_EQ(node_id, "pubsub_node");
+            ASSERT_EQ(node->value(), "pubsub_node");
             ++features;
         }
         ASSERT_EQ(features, added ? 1u : 0u) << "Correct number of nodes";

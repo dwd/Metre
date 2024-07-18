@@ -212,7 +212,7 @@ namespace Metre {
         sigslot::signal<XMLStream &> onAuthenticated;
 
     private:
-        void handle(rapidxml::xml_node<> *);
+        void handle(rapidxml::optional_ptr<rapidxml::xml_node<>>);
 
         void do_restart();
 

@@ -129,8 +129,8 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
         if (s_cache.contains(actual_keylen)) {
             return s_cache[actual_keylen];
         }
-        EVP_PKEY * evp = NULL;
-        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", NULL, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, NULL, NULL);
+        EVP_PKEY * evp = nullptr;
+        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", nullptr, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, NULL, NULL);
         if(OSSL_DECODER_from_data(dctx, reinterpret_cast<const unsigned char **>(&keydata), &keylen)) {
             EVP_PKEY_up_ref(evp);
             s_cache[actual_keylen] = evp;
@@ -140,9 +140,9 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
         }
     }
     EVP_PKEY * get_file_dh(std::string const & filename) {
-        EVP_PKEY * evp = NULL;
+        EVP_PKEY * evp = nullptr;
         static std::map<std::string,EVP_PKEY *> s_cache;
-        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", NULL, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, NULL, NULL);
+        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", nullptr, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, NULL, NULL);
         auto * fp = fopen(filename.c_str(), "rb");
         if(OSSL_DECODER_from_fp(dctx, fp)) {
             EVP_PKEY_up_ref(evp);
@@ -170,7 +170,7 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
         if (dhparam == "auto") {
             SSL_set_dh_auto(ssl, 1);
         } else {
-            EVP_PKEY * evp = NULL;
+            EVP_PKEY * evp = nullptr;
             try {
                 int keylen = std::stoi(dhparam);
                 evp = get_builtin_dh(keylen);
@@ -196,29 +196,22 @@ namespace {
         public:
             Description() : Feature::Description<StartTls>(tls_ns, FEAT_SECURE) {};
 
-            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &s) override {
+            sigslot::tasklet<bool> offer(optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (s.secured()) co_return false;
                 SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
                 if (!ctx) co_return false;
-                xml_document<> *d = node->document();
-                auto feature = d->allocate_node(node_element, "starttls");
-                feature->append_attribute(d->allocate_attribute("xmlns", tls_ns.c_str()));
+                auto feature = node->append_element({tls_ns, "starttls"});
                 if (Config::config().domain(s.local_domain()).require_tls()) {
-                    auto required = d->allocate_node(node_element, "required");
-                    feature->append_node(required);
+                    feature->append_element("required");
                 }
-                node->append_node(feature);
                 co_return true;
             }
         };
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle StartTLS");
-            xml_document<> *d = node->document();
-            d->fixup<parse_default>(node, true);
-            std::string name = node->name();
-            if ((name == "starttls" && m_stream.direction() == INBOUND) ||
-                (name == "proceed" && m_stream.direction() == OUTBOUND)) {
+            if ((node->name() == "starttls" && m_stream.direction() == INBOUND) ||
+                (node->name() == "proceed" && m_stream.direction() == OUTBOUND)) {
                 if (!m_stream.remote_domain().empty()) {
                     m_stream.logger().debug("Negotiating TLS");
                     start_tls(m_stream, true);
@@ -228,8 +221,7 @@ namespace {
                     co_return true;
                 } else {
                     xml_document<> doc;
-                    auto failure = doc.allocate_node(node_element, "failure");
-                    failure->append_attribute(doc.allocate_attribute("xmlns", tls_ns.c_str()));
+                    doc.append_element({tls_ns, "failure"});
                     m_stream.send(doc);
                     co_return false;
                 }
@@ -237,7 +229,7 @@ namespace {
             co_return false;
         }
 
-        bool negotiate(rapidxml::xml_node<> * offer) override {
+        bool negotiate(rapidxml::optional_ptr<rapidxml::xml_node<>> offer) override {
             if (m_stream.secured()) {
                 m_stream.logger().warn("Remote is offering TLS but we already have it?");
                 return false;
@@ -245,9 +237,7 @@ namespace {
             SSL_CTX *ctx = Config::config().domain(m_stream.local_domain()).ssl_ctx();
             if (ctx) {
                 xml_document<> d;
-                auto n = d.allocate_node(node_element, "starttls");
-                n->append_attribute(d.allocate_attribute("xmlns", tls_ns.c_str()));
-                d.append_node(n);
+                d.append_element({tls_ns, "starttls"});
                 m_stream.send(d);
                 return true;
             } else {
@@ -321,6 +311,23 @@ namespace Metre {
         }
     }
 
+    int reverify_callback(int preverify_ok, X509_STORE_CTX * st) {
+        const int name_sz = 256;
+        std::string cert_name{"<no cert>"};
+        if (auto cert = X509_STORE_CTX_get_current_cert(st)) {
+            cert_name.resize(name_sz);
+            X509_NAME_oneline(X509_get_subject_name(cert), const_cast<char *>(cert_name.data()), name_sz);
+        }
+        auto depth = X509_STORE_CTX_get_error_depth(st);
+        if (preverify_ok) {
+            Config::config().logger().info("Cert {} passed reverification: {}", depth, cert_name);
+        } else {
+            Config::config().logger().info("Cert {} failed reverification: {}", depth, cert_name);
+            Config::config().logger().info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
+        }
+        return preverify_ok;
+    }
+
 /**
      * This is a fairly massive coroutine, but I've kept it this way because it's
      * difficult to break apart. Indeed, I pulled it together out of two major callback
@@ -363,19 +370,30 @@ namespace Metre {
         // Fun fact: We can only add these to SSL_DANE via the connection.
         for (auto const & rr : gathered.gathered_tlsa) {
             stream.logger().debug("Adding TLSA {} / {} / {} with {} bytes of match data", rr.certUsage, rr.selector, rr.matchType, rr.matchData.length());
-            SSL_dane_tlsa_add(ssl, rr.certUsage, rr.selector, rr.matchType,
-                              reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length());
+            if (0 == SSL_dane_tlsa_add(ssl, rr.certUsage, rr.selector, rr.matchType,
+                              reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length())) {
+                stream.logger().warn("TLSA record rejected");
+            }
         }
         X509_STORE_CTX_init(st, store, cert, chain);
         X509_STORE_CTX_set0_dane(st, SSL_get0_dane(ssl));
+        X509_STORE_CTX_set_verify_cb(st, reverify_callback);
+        stream.logger().info("Reverification for {} by {}", route.domain(), route.local());
         bool valid = (X509_verify_cert(st) == 1);
-        if (!valid) {
+        if (valid) {
+            if (gathered.gathered_tlsa.empty()) {
+                stream.logger().info("verify_tls: PKIX verification succeeded");
+            } else {
+                stream.logger().info("verify_tls: DANE verification succeeded");
+            }
+        } else {
             auto error = X509_STORE_CTX_get_error(st);
             auto depth = X509_STORE_CTX_get_error_depth(st);
             char buf[1024];
             stream.logger().warn("verify_tls: Chain failed validation: {} (at depth {})", ERR_error_string(error, buf),
                                  depth);
         }
+        X509_STORE_CTX_free(st);
         co_return valid;
     }
 

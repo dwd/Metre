@@ -32,6 +32,7 @@ SOFTWARE.
 #include "config.h"
 #include <memory>
 #include "base64.h"
+#include "rapidxml_iterators.hpp"
 
 using namespace Metre;
 using namespace rapidxml;
@@ -48,7 +49,7 @@ namespace {
         public:
             Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
 
-            sigslot::tasklet<bool> offer(xml_node<> *node, XMLStream &stream) override {
+            sigslot::tasklet<bool> offer(optional_ptr<xml_node<>> node, XMLStream &stream) override {
                 if (stream.remote_domain().empty()) co_return false;
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) ==
                     XMLStream::AUTHORIZED)
@@ -56,24 +57,18 @@ namespace {
                 std::shared_ptr<Route> &route = RouteTable::routeTable(stream.local_domain()).route(
                         stream.remote_domain());
                 if (co_await *stream.start_task("SASL EXTERNAL offer tls_auth_ok", stream.tls_auth_ok(*route))) {
-                    xml_document<> *d = node->document();
-                    auto feature = d->allocate_node(node_element, "mechanisms");
-                    feature->append_attribute(d->allocate_attribute("xmlns", sasl_ns.c_str()));
-                    auto mech = d->allocate_node(node_element, "mechanism");
-                    mech->value("EXTERNAL");
-                    feature->append_node(mech);
-                    node->append_node(feature);
+                    auto feature = node->append_element({sasl_ns, "mechanisms"});
+                    feature->append_element("mechanism", "EXTERNAL");
                 }
                 co_return true;
             }
         };
 
-        sigslot::tasklet<bool> auth(rapidxml::xml_node<> *node) {
+        sigslot::tasklet<bool> auth(optional_ptr<rapidxml::xml_node<>> node) {
             if (m_stream.remote_domain().empty()) co_return true;
             auto mechattr = node->first_attribute("mechanism");
-            if (!mechattr || !mechattr->value()) throw std::runtime_error("No mechanism attribute");
-            std::string mechname = mechattr->value();
-            if (mechname != "EXTERNAL") {
+            if (!mechattr || mechattr->value().empty()) throw std::runtime_error("No mechanism attribute");
+            if (mechattr->value() != "EXTERNAL") {
                 throw std::runtime_error("No such mechanism");
             }
             auto task = m_stream.start_task("SASL auth->response", response(node));
@@ -81,9 +76,9 @@ namespace {
             co_return true;
         }
 
-        sigslot::tasklet<bool> response(rapidxml::xml_node<> *node) {
+        sigslot::tasklet<bool> response(optional_ptr<rapidxml::xml_node<>> node) {
             std::string authzid;
-            if (node->value()) {
+            if (!node->value().empty()) {
                 authzid = node->value();
             }
             if (authzid == "=") {
@@ -93,9 +88,7 @@ namespace {
             }
             if (authzid.empty()) {
                 xml_document<> d;
-                auto n = d.allocate_node(node_element, "challenge");
-                n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
-                d.append_node(n);
+                d.append_element({sasl_ns, "challenge"});
                 m_stream.send(d);
                 co_return
                 true;
@@ -107,9 +100,7 @@ namespace {
                     m_stream.remote_domain());
             if (co_await *m_stream.start_task("SASL EXTERNAL response tls_auth_ok", m_stream.tls_auth_ok(*route))) {
                 xml_document<> d;
-                auto n = d.allocate_node(node_element, "success");
-                n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
-                d.append_node(n);
+                d.append_element({sasl_ns, "success"});
                 m_stream.send(d);
                 m_stream.s2s_auth_pair(m_stream.local_domain(), authzid, INBOUND, XMLStream::AUTHORIZED);
                 m_stream.set_auth_ready();
@@ -120,45 +111,38 @@ namespace {
             throw Metre::not_authorized("Authorization failure.");
         }
 
-        void challenge(rapidxml::xml_node<> *node) {
+        void challenge(optional_ptr<rapidxml::xml_node<>> node) {
             // Odd case - we have already told them.
             xml_document<> d;
-            auto n = d.allocate_node(node_element, "response");
-            n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
-            std::string authzid = base64_encode(
-                    reinterpret_cast<unsigned const char *>(m_stream.local_domain().c_str()),
-                    m_stream.local_domain().size());
-            n->value(m_stream.local_domain().c_str());
-            d.append_node(n);
+            std::string authzid = base64_encode(m_stream.local_domain());
+            d.append_element({sasl_ns, "response"}, authzid);
             m_stream.send(d);
         }
 
-        void success(rapidxml::xml_node<> *node) {
+        void success(optional_ptr<rapidxml::xml_node<>> node) {
             // Good-oh.
             m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), OUTBOUND, XMLStream::AUTHORIZED);
             m_stream.restart();
         }
 
-        sigslot::tasklet<bool> handle(rapidxml::xml_node<> *node) override {
+        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle SASL External");
-            xml_document<> *d = node->document();
-            d->fixup<parse_default>(node, true);
-            std::string name = node->name();
-            if ((name == "auth" && m_stream.direction() == INBOUND)) {
+            std::string name{node->name()};
+            if ((node->name() == "auth" && m_stream.direction() == INBOUND)) {
                 auto task = m_stream.start_task("SASL auth", auth(node));
                 co_await *task;
                 co_return true;
-            } else if (name == "response" && m_stream.direction() == INBOUND) {
+            } else if (node->name() == "response" && m_stream.direction() == INBOUND) {
                 auto task = m_stream.start_task("SASL response", response(node));
                 co_await *task;
                 co_return true;
-            } else if (name == "challenge" && m_stream.direction() == OUTBOUND) {
+            } else if (node->name() == "challenge" && m_stream.direction() == OUTBOUND) {
                 challenge(node);
                 co_return true;
-            } else if (name == "success" && m_stream.direction() == OUTBOUND) {
+            } else if (node->name() == "success" && m_stream.direction() == OUTBOUND) {
                 success(node);
                 co_return true;
-            } else if (name == "failure" && m_stream.direction() == OUTBOUND) {
+            } else if (node->name() == "failure" && m_stream.direction() == OUTBOUND) {
                 m_stream.logger().warn("EXTERNAL was offered but not accepted.");
                 // Try Dialback.
                 m_stream.set_auth_ready();
@@ -168,30 +152,28 @@ namespace {
             co_return false;
         }
 
-        bool negotiate(rapidxml::xml_node<> *feat) override {
+        bool negotiate(optional_ptr<rapidxml::xml_node<>> feat) override {
             bool external_found = false;
-            for (auto external = feat->first_node("mechanism"); external; external = external->next_sibling(
-                    "mechanism")) {
-                if (external->value()) {
-                    std::string mechanism{external->value(), external->value_size()};
-                    for (auto &c : mechanism) {
-                        c = std::toupper(c);
-                    }
-                    if (mechanism == "EXTERNAL") {
-                        external_found = true;
-                        break;
-                    }
+            for (auto & mech : rapidxml::children(feat)) {
+                if (mech.name() != "mechanism") {
+                    continue;
+                }
+                std::string mechanism{mech.value()};
+                for (auto &c : mechanism) {
+                    c = std::toupper(c);
+                }
+                if (mechanism == "EXTERNAL") {
+                    external_found = true;
+                    break;
                 }
             }
             if (!external_found) return false;
+            std::string authzid = base64_encode(m_stream.local_domain());
             xml_document<> d;
-            auto n = d.allocate_node(node_element, "auth");
-            n->append_attribute(d.allocate_attribute("xmlns", sasl_ns.c_str()));
+            auto n = d.append_element({sasl_ns, "auth"});
+            n->value_raw(authzid);
             auto mech = d.allocate_attribute("mechanism", "EXTERNAL");
             n->append_attribute(mech);
-            std::string authzid = base64_encode(m_stream.local_domain());
-            n->value(authzid.c_str());
-            d.append_node(n);
             m_stream.send(d);
             return true;
         }

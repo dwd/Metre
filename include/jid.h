@@ -40,9 +40,17 @@ namespace Metre {
         mutable std::optional<std::string> m_full;
         mutable std::optional<std::string> m_bare;
     public:
-        explicit Jid(std::string const &jid) {
+//        explicit Jid(std::string const &jid) {
+//            parse(jid);
+//        }
+
+        explicit Jid(std::string_view const &jid) {
             parse(jid);
         }
+//
+//        explicit Jid(const char * s) {
+//            parse(s);
+//        }
 
         Jid(std::string const &local, std::string const &domain, nullptr_t=nullptr)
                 : m_local(local), m_domain(domain) {
@@ -92,7 +100,7 @@ namespace Metre {
         }
 
     protected:
-        void parse(std::string const &s);
+        void parse(std::string_view const &s);
     };
 
 }

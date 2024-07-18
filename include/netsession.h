@@ -67,7 +67,7 @@ namespace Metre {
 
         bool drain();
 
-        void send(rapidxml::xml_document<> &d);
+        void send(rapidxml::xml_node<> &d);
 
         void send(std::string const &s);
 

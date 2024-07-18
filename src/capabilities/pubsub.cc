@@ -33,17 +33,14 @@ namespace {
 
         // Operations.
 
-        sigslot::tasklet<void> publish(Iq const &iq, rapidxml::xml_node<> *operation) {
+        sigslot::tasklet<void> publish(Iq const &iq, rapidxml::optional_ptr<rapidxml::xml_node<>> operation) {
             auto node_attr = operation->first_attribute("node");
-            if (!node_attr) {
-                throw Metre::stanza_bad_format("Missing node attribute");
-            }
-            std::string node_name{node_attr->value(), node_attr->value_size()};
+            std::string node_name(node_attr->value());
             // Auto-create the node if it doesn't exist.
             auto itemxml = operation->first_node("item");
             if (!itemxml) throw std::runtime_error("Missing item");
             auto item_idattr = itemxml->first_attribute("id");
-            std::string item_id{item_idattr->value(), item_idattr->value_size()};
+            std::string item_id(item_idattr->value());
             Node & node = *co_await m_endpoint.node(node_name, true);
             auto item = std::make_shared<Node::Item>(item_id, "");
             publish(iq, node, item);
@@ -59,7 +56,7 @@ namespace {
         Pubsub(BaseDescription const &descr, Endpoint &endpoint) : Capability(descr, endpoint) {
             endpoint.add_handler("http://jabber.org/protocol/pubsub", "pubsub", [this](Iq const & iq) {
                 auto operation = iq.query().first_node();
-                std::string op_name{operation->name(), operation->name_size()};
+                std::string op_name{operation->name()};
                 if (op_name == "publish") {
                     return publish(iq, operation);
                 } else {
