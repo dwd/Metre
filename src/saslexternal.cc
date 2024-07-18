@@ -170,7 +170,8 @@ namespace {
             if (!external_found) return false;
             std::string authzid = base64_encode(m_stream.local_domain());
             xml_document<> d;
-            auto n = d.append_element({sasl_ns, "auth"}, authzid);
+            auto n = d.append_element({sasl_ns, "auth"});
+            n->value_raw(authzid);
             auto mech = d.allocate_attribute("mechanism", "EXTERNAL");
             n->append_attribute(mech);
             m_stream.send(d);
