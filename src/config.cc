@@ -92,16 +92,16 @@ namespace {
         return version;
     }
 
-    std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, std::string const & domain_name, YAML::Node const & domain, SESSION_TYPE def) {
+    std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, std::string const & domain_name, YAML::Node const & domain, bool external) {
         std::string name;
-        bool forward = (def == INTERNAL || def == COMP);
-        SESSION_TYPE sess = def;
-        bool tls_required = !(def == INTERNAL || def == COMP);
+        bool forward = !external;
+        SESSION_TYPE sess = S2S;
+        bool tls_required = external;
         bool xmpp_ver = true;
         bool block = false;
         bool multiplex = true;
-        bool auth_pkix = (def == S2S) || (def == X2X);
-        bool auth_dialback = false;
+        bool auth_pkix = true;
+        bool auth_dialback = !external;
         bool dnssec_required = false;
         bool auth_pkix_crls = Config::config().fetch_pkix_status();
         bool auth_host = false;
@@ -152,7 +152,8 @@ namespace {
                 throw std::runtime_error("Unknown transport type");
             }
             multiplex = domain["transport"]["multiplex"].as<bool>(multiplex);
-            tls_required = domain["transport"]["sec"].as<bool>(tls_required);
+            auto tls_sec = domain["transport"]["tls_required"] ? domain["transport"]["tls_required"] : domain["transport"]["sec"];
+            tls_required = tls_sec.as<bool>(tls_required);
             xmpp_ver = domain["transport"]["xmpp_ver"].as<bool>(xmpp_ver);
             if (domain["transport"]["prefer"]) {
                 std::string tls_pref_str = domain["transport"]["prefer"].as<std::string>();
@@ -221,7 +222,8 @@ namespace {
         dom->max_tls_version(max_tls_version);
 
         if (auto dnst = domain["dns"]; dnst) {
-            dnssec_required = dnst["dnssec"].as<bool>(dnssec_required);
+            auto dnssec = dnst["dnssec_required"] ? dnst["dnssec_required"] : dnst["dnssec"];
+            dnssec_required = dnssec.as<bool>(dnssec_required);
             for (auto hostt : dnst["host"]) {
                 auto hosta = hostt["name"];
                 if (!hosta) throw std::runtime_error("Missing name in host DNS override");
@@ -546,20 +548,19 @@ void Config::load(std::string const &filename) {
     }
     Config::Domain *any_domain = nullptr;
     if (auto external = root_node["remote"]; external) {
-        if (auto any = external["any"]; any) {
-            std::unique_ptr<Config::Domain> dom = parse_domain(nullptr, "any", any, S2S);
-            any_domain = dom.get(); // Save this pointer.
-            m_domains[dom->domain()] = std::move(dom);
-        } else {
-            m_domains[""] = std::make_unique<Config::Domain>("", INTERNAL, true, false, true, true, true, true, true, false,
-                                                             std::optional<std::string>());
-        }
+        YAML::Node block;
+        block["block"] = true;
+        auto const & any_node = external["any"] ? external["any"] : block;
+        // This will 'parse' a non-existent domain if any isn't explicitly set, but that's OK.
+        std::unique_ptr<Config::Domain> dom = parse_domain(nullptr, "any", any_node, true);
+        any_domain = dom.get(); // Save this pointer.
+        m_domains[dom->domain()] = std::move(dom);
         for (auto const & item : external) {
             auto name = item.first.as<std::string>();
             if (name == "any") {
                 continue;
             }
-            std::unique_ptr<Config::Domain> dom = parse_domain(any_domain, name, item.second, S2S);
+            std::unique_ptr<Config::Domain> dom = parse_domain(any_domain, name, item.second, true);
             m_domains[dom->domain()] = std::move(dom);
         }
     }
@@ -569,7 +570,7 @@ void Config::load(std::string const &filename) {
             if (name == "any") {
                 continue;
             }
-            std::unique_ptr<Config::Domain> dom = parse_domain(any_domain, name, item.second, INTERNAL);
+            std::unique_ptr<Config::Domain> dom = parse_domain(any_domain, name, item.second, false);
             m_domains[dom->domain()] = std::move(dom);
         }
     }
@@ -672,7 +673,7 @@ namespace {
                 throw std::runtime_error("No idea what this transport type is");
         }
         config["transport"]["multiplex"] = domain.multiplex();
-        config["transport"]["sec"] = domain.require_tls();
+        config["transport"]["tls_required"] = domain.require_tls();
         switch (domain.tls_preference()) {
             case PREFER_IMMEDIATE:
                 config["transport"]["prefer"] = "direct";
