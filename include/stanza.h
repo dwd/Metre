@@ -70,7 +70,7 @@ namespace Metre {
         std::optional<Jid> m_to;
         std::optional<std::string> m_type_str;
         std::optional<std::string> m_id;
-        std::string m_lang;
+        std::optional<std::string> m_lang;
         rapidxml::optional_ptr<rapidxml::xml_node<>> m_node = nullptr;
         std::unique_ptr<rapidxml::xml_document<>> m_doc;
     public:
@@ -97,6 +97,7 @@ namespace Metre {
 
         void to(Jid const &jid) {
             m_to.emplace(jid);
+            rewrite_node();
         }
 
         Jid const &from() const {
@@ -105,6 +106,7 @@ namespace Metre {
 
         void from(Jid const &jid) {
             m_from.emplace(jid);
+            rewrite_node();
         }
 
         std::optional<std::string> const &type_str() const {
@@ -113,6 +115,7 @@ namespace Metre {
 
         void type_str(std::optional<std::string> const & n) {
             m_type_str = n;
+            rewrite_node();
         }
 
         std::optional<std::string> const &id() const {
@@ -121,9 +124,10 @@ namespace Metre {
 
         void id(std::string_view s) {
             m_id = s;
+            rewrite_node();
         }
 
-        std::string const &lang() const {
+        std::optional<std::string> const &lang() const {
             return m_lang;
         }
 
@@ -133,15 +137,14 @@ namespace Metre {
         //!  by default.
         //! You can avoid this by calling node()->document())->allocate_string(), which
         //! is more efficient but clumsier.
+        //! Do NOT change the attributes of the root node directly; the
+        //! attributes will be removed and rewritten at various points.
         rapidxml::optional_ptr<rapidxml::xml_node<>> node() {
             return node_internal();
         }
         rapidxml::optional_ptr<rapidxml::xml_node<>> const node() const {
             return const_cast<Stanza *>(this)->node_internal();
         }
-
-        void render(rapidxml::xml_document<> &d) const;
-        void render(rapidxml::xml_document<> &d, std::optional<std::string> const &xmlns) const;
 
         std::unique_ptr<Stanza> create_bounce(Metre::base::stanza_exception const &e) const;
 
@@ -152,7 +155,8 @@ namespace Metre {
         void freeze(); // Make sure nothing is in volatile storage anymore.
 
     protected:
-        rapidxml::optional_ptr<rapidxml::xml_node<>> node_internal(); // If changed, call update();
+        rapidxml::optional_ptr<rapidxml::xml_node<>> node_internal();
+        void rewrite_node();
         void render_error(Stanza::Error e);
 
         void render_error(Metre::base::stanza_exception const &ex);
@@ -239,7 +243,6 @@ namespace Metre {
 
         std::string_view const &key() const {
             if (!m_type_str) {
-                const_cast<DB *>(this)->freeze();
                 return m_node->value();
             } else {
                 throw std::runtime_error("Keys not present in typed dialback element.");
@@ -278,10 +281,10 @@ namespace Metre {
                 : DB(name, to, from, "", key) {
         }
 
-        Result(Jid const &to, Jid const &from, Type t) : DB(name, to, from, "",
+        Result(Jid const &to, Jid const &from, Type t) : DB(name, to, from, {},
                                                             t) {}
 
-        Result(Jid const &to, Jid const &from, Stanza::Error t) : DB(name, to, from, "",
+        Result(Jid const &to, Jid const &from, Stanza::Error t) : DB(name, to, from, {},
                                                                      t) {}
 
         explicit Result(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : DB(name, node) {

@@ -75,11 +75,7 @@ public:
         ASSERT_EQ(stanza.type_str(), std::string("error"));
         // Now reparse the stanza.
         std::string xml;
-        {
-            rapidxml::xml_document<> doc;
-            stanza.render(doc);
-            rapidxml::print(std::back_inserter(xml), doc, rapidxml::print_no_indenting);
-        }
+        rapidxml::print(std::back_inserter(xml), stanza.node().value(), rapidxml::print_no_indenting);
         rapidxml::xml_document<> doc;
         doc.parse<rapidxml::parse_full>(const_cast<char *>(xml.c_str()));
         auto msg = doc.first_node("message");
@@ -107,11 +103,7 @@ public:
         ASSERT_EQ(stanza.type_str(), std::string("result"));
         // Now reparse the stanza.
         std::string xml;
-        {
-            rapidxml::xml_document<> doc;
-            stanza.render(doc);
-            rapidxml::print(std::back_inserter(xml), doc, rapidxml::print_no_indenting);
-        }
+        rapidxml::print(std::back_inserter(xml), stanza.node().value(), rapidxml::print_no_indenting);
         rapidxml::xml_document<> doc;
         doc.parse<rapidxml::parse_full>(const_cast<char *>(xml.c_str()));
         std::unique_ptr<Iq> iq{new Iq(doc.first_node())};
@@ -138,11 +130,7 @@ public:
         ASSERT_EQ(stanza.type_str(), std::string("result"));
         // Now reparse the stanza.
         std::string xml;
-        {
-            rapidxml::xml_document<> doc;
-            stanza.render(doc);
-            rapidxml::print(std::back_inserter(xml), doc, rapidxml::print_no_indenting);
-        }
+        rapidxml::print(std::back_inserter(xml), stanza.node().value(), rapidxml::print_no_indenting);
         rapidxml::xml_document<> doc;
         doc.parse<rapidxml::parse_full>(const_cast<char *>(xml.c_str()));
         std::unique_ptr<Iq> iq{new Iq(doc.first_node())};

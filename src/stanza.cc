@@ -40,6 +40,9 @@ Stanza::Stanza(const char *name, rapidxml::optional_ptr<rapidxml::xml_node<>> no
     if (typestr) m_type_str = typestr->value();
     auto id = node->first_attribute("id");
     if (id) m_id = id->value();
+    auto lang = node->first_attribute("xml:lang");
+    if (lang) m_lang = lang->value();
+    rewrite_node();
 }
 
 Stanza::Stanza(const char *name) : m_name(name) {
@@ -53,19 +56,22 @@ Stanza::Stanza(const char *name, std::optional<Jid> const &from, std::optional<J
           m_id(id) {
     m_doc = std::make_unique<rapidxml::xml_document<>>();
     m_node = m_doc->append_element(m_name);
-    if (m_from) m_node->append_attribute(m_doc->allocate_attribute("from", m_from->full()));
-    if (m_to) m_node->append_attribute(m_doc->allocate_attribute("to", m_to->full()));
-    if (m_type_str) m_node->append_attribute(m_doc->allocate_attribute("type", m_type_str.value()));
-    if (m_id) m_node->append_attribute(m_doc->allocate_attribute("id", m_id.value()));
+    rewrite_node();
+}
+
+void Stanza::rewrite_node() {
+    m_node->remove_all_attributes();
+    auto doc = m_node->document(); // Not always m_doc!
+    if (m_to) m_node->append_attribute(doc->allocate_attribute("to", m_to->full()));
+    if (m_from) m_node->append_attribute(doc->allocate_attribute("from", m_from->full()));
+    if (m_type_str) m_node->append_attribute(doc->allocate_attribute("type", m_type_str.value()));
+    if (m_id) m_node->append_attribute(doc->allocate_attribute("id", m_id.value()));
+    if (m_lang) m_node->append_attribute(doc->allocate_attribute("xml:lang", m_lang.value()));
 }
 
 void Stanza::freeze() {
     auto doc = std::make_unique<rapidxml::xml_document<>>();
     auto node = doc->append_element(m_name);
-    if (m_from) node->append_attribute(doc->allocate_attribute("from", m_from->full()));
-    if (m_to) node->append_attribute(doc->allocate_attribute("to", m_to->full()));
-    if (m_type_str) node->append_attribute(doc->allocate_attribute("type", m_type_str.value()));
-    if (m_id) node->append_attribute(doc->allocate_attribute("id", m_id.value()));
     if (m_node) {
         for (auto & child : rapidxml::children(m_node)) {
             node->append_node(doc->clone_node(&child, true));
@@ -73,26 +79,7 @@ void Stanza::freeze() {
     }
     m_doc = std::move(doc);
     m_node = node;
-}
-
-void Stanza::render(rapidxml::xml_document<> &d, std::optional<std::string> const & xmlns) const {
-    rapidxml::optional_ptr<rapidxml::xml_node<>> root;
-    if (xmlns.has_value()) {
-        root = d.append_element({xmlns.value(), m_name});
-    } else {
-        root = d.append_element(m_name);
-    }
-    if (m_to) root->append_attribute(d.allocate_attribute("to", m_to->full()));
-    if (m_from) root->append_attribute(d.allocate_attribute("from", m_from->full()));
-    if (m_type_str) root->append_attribute(d.allocate_attribute("type", m_type_str.value()));
-    if (m_id) root->append_attribute(d.allocate_attribute("id", m_id.value()));
-    for (auto & child : rapidxml::children(m_node)) {
-        root->append_node(d.clone_node(&child));
-    }
-}
-
-void Stanza::render(rapidxml::xml_document<> &d) const {
-    render(d, std::optional<std::string>{});
+    rewrite_node();
 }
 
 rapidxml::optional_ptr<rapidxml::xml_node<>> Stanza::node_internal() {
@@ -163,6 +150,7 @@ std::unique_ptr<Stanza> Stanza::create_forward() const {
     stanza->m_to = m_to;
     stanza->m_id = m_id;
     stanza->m_type_str = m_type_str;
+    stanza->rewrite_node();
     for (auto & child : rapidxml::children(m_node)) {
         stanza->m_node->append_node(stanza->m_doc->clone_node(&child));
     }
@@ -212,6 +200,7 @@ std::unique_ptr<Message> Message::create_response() const {
     stanza->m_id = m_id;
     stanza->m_type_str = m_type_str;
     stanza->m_type = m_type;
+    stanza->rewrite_node();
     return stanza;
 }
 
@@ -316,33 +305,30 @@ const char *DB::Result::name = "db:result";
  * Dialback
  */
 
-DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
-       std::optional<std::string> const &key)
-        : Stanza(name, to, from, std::optional<std::string>{}, stream_id) {
-    if (key) m_node->value(key.value());
-}
-
-DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t) : Stanza(name) {
-    m_to = to;
-    m_from = from;
-    m_id = stream_id;
-    switch (t) {
-        case VALID:
-            m_type_str = "valid";
-            break;
-        case INVALID:
-            m_type_str = "invalid";
-            break;
-        case STANZA_ERROR:
-            m_type_str = "error";
-            break;
+namespace {
+    const char * to_string(DB::Type t) {
+        switch(t) {
+            case Metre::DB::VALID:
+                return "valid";
+            case Metre::DB::INVALID:
+                return "invalid";
+            default:
+                break;
+        }
+        return "error";
     }
 }
 
-DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Stanza::Error e) : Stanza(name) {
-    m_to = to;
-    m_from = from;
-    m_id = stream_id;
-    m_type_str = "error";
+DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
+       std::optional<std::string> const &key)
+        : Stanza(name, from, to, std::optional<std::string>{}, stream_id) {
+    if (key) m_node->value(m_node->document()->allocate_string(key.value()));
+}
+
+DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Type t) :
+    Stanza(name, from, to, to_string(t), stream_id) {}
+
+DB::DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id, Stanza::Error e) :
+    Stanza(name, from, to, "error", stream_id) {
     render_error(e);
 }

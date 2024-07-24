@@ -61,7 +61,7 @@ namespace {
 
         bool negotiate(optional_ptr<rapidxml::xml_node<>>) override { // Note that this offer, unusually, can be nullptr.
             if (!m_stream.secured() && (Config::config().domain(m_stream.remote_domain()).require_tls())) {
-                m_stream.logger().info("Supressed dialback due to missing required TLS");
+                m_stream.logger().info("Suppressed dialback due to missing required TLS");
                 return false;
             }
             m_stream.set_auth_ready();

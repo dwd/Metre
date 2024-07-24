@@ -20,10 +20,8 @@ public:
     }
 
     static std::string print(Stanza & s) {
-        rapidxml::xml_document<> tmp_doc;
         std::string tmp_buffer;
-        s.render(tmp_doc);
-        rapidxml::print(std::back_inserter(tmp_buffer), *(tmp_doc.first_node()), rapidxml::print_no_indenting);
+        rapidxml::print(std::back_inserter(tmp_buffer), *(s.node()), rapidxml::print_no_indenting);
         return tmp_buffer;
     }
 };
@@ -132,11 +130,11 @@ TEST_F(MessageTest, MessageReplaceBodyDouble) {
         auto body3 = msg->node()->first_node("body");
         EXPECT_EQ(body3->value(), "Replacement body");
         std::string replacement("New replacement body");
-        body3->value(replacement);
-        auto body4 = msg->node()->first_node("body");
-        EXPECT_TRUE(body4);
-        EXPECT_EQ(body4->value(), "New replacement body");
+        body3->value(body3->document()->allocate_string(replacement));
     }
+    auto body4 = msg->node()->first_node("body");
+    EXPECT_TRUE(body4);
+    EXPECT_EQ(body4->value(), "New replacement body");
 }
 
 TEST_F(MessageTest, MessageReplaceBodyDoubleQuotes) {
@@ -252,7 +250,7 @@ TEST_F(MessageTest, Encapsulate) {
     auto container = msg->node()->append_element({"urn:xmpp:container", "container"});
     container->append_node(msg->node()->document()->clone_node(saved, true));
     auto tmp_buffer = print(*msg);
-    std::string expected = "<message to=\"bar@example.net/laks\" from=\"foo@example.org/lmas\" type=\"chat\" id=\"1234\"><container xmlns=\"urn:xmpp:container\"><message from=\"foo@example.org/lmas\" to=\"bar@example.net/laks\" type=\"chat\" id=\"1234\" xmlns=\"jabber:client\"><body>This is the body &amp; stuff</body></message></container></message>";
+    std::string expected = "<message to=\"bar@example.net/laks\" from=\"foo@example.org/lmas\" type=\"chat\" id=\"1234\"><container xmlns=\"urn:xmpp:container\"><message to=\"bar@example.net/laks\" from=\"foo@example.org/lmas\" type=\"chat\" id=\"1234\" xmlns=\"jabber:client\"><body>This is the body &amp; stuff</body></message></container></message>";
     EXPECT_EQ(tmp_buffer, expected);
 }
 
