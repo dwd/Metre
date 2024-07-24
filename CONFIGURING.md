@@ -114,7 +114,7 @@ Domain key names are of three forms:
 
 #### block
 
-Default: false (but complicated)
+Default: `false` (but complicated)
 
 By default, domains are not blocked, as is typical for XMPP services. Blocking a domain entirely rejects communication to or from it.
 
@@ -144,7 +144,7 @@ Multiplexing can hide the exact domains in use over a connection (though without
 
 #### transport.tls_required
 
-Default: `true`
+Default: `true` for `remote` domains, `false` for `local` ones; however this is further altered if the `transport.type`
 Inherits any: yes
 
 Require TLS (or equivalent in principle) for confidentiality. Setting this to true does not require TLS based authentication,  just encryption.
@@ -181,9 +181,13 @@ The number of seconds to wait while trying to send a stanza before giving up and
 
 #### forward
 
-Default: `true` for `remote` domains; otherwise `false`.
+Default: `false` for `remote` domains; otherwise `true`.
 
 Controls whether a domain should be forwarded across the security boundary at all.
+
+This is ignored for `internal` and `114` components, on the basis that you shouldn't be hosting services on a boundary if you don't want it visible from one or other side. It'll show as a default true in the config dump though.
+
+Otherwise the rule is simply that  Metre only forwards between domains that have different `forward` values.
 
 #### auth block
 
@@ -193,8 +197,8 @@ All domain blocks must have at least one valid authentication mechanism availabl
 
 #### auth.pkix
 
-Default: `true` for `remote` domains, otherwise `false`.
-Inherits any: yes; `remote` domains only.
+Default: `true`
+Inherits any: yes
 
 Whether or not to perform PKIX authentication (i.e. certificate-based authentication).
 
