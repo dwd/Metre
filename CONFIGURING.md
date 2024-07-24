@@ -99,14 +99,14 @@ The top-level filters key holds one key per filter, with global filter configura
 
 Domains are divided into two keys, which affect the defaults for each:
 
-* "remote" domains are those outside the security domain
-* "local" domains are those inside the security domain
+* `remote` domains are those outside the security domain
+* `local` domains are those inside the security domain
 
 ### Domain Key Names
 
 Domain key names are of three forms:
 
-* `any` is a special key describing the defaults. This must be a `remote` domain, and will provide defaults for some configuration, and act as a catch-all for any unmatched domain.
+* `any` is a special key describing the defaults. This must be a `remote` domain, and will provide defaults for some configuration (noted below as "Inherits any"), and act as a catch-all for any unmatched domain. If `any` is unspecified, it will get created with the defaults for `remote` domains, except that `block` will be `true`.
 * Wildcards are of the form `*.{suffix}`. More complex wildcards are unsupported. The `*` matches one or more domain labels.
 * Specific domains, without wildcards, match only that domain.
 
@@ -114,9 +114,13 @@ Domain key names are of three forms:
 
 #### block
 
-Default: false (or from `any`)
+Default: false (but complicated)
 
 By default, domains are not blocked, as is typical for XMPP services. Blocking a domain entirely rejects communication to or from it.
+
+Any unspecified domain will take defaults from `any`, however, and if `any` itself is not specified in configuration, it will default to `true`.
+
+As such, it might be better to say that only any *specifed* domain defaults to `false`.
 
 #### transport
 
@@ -124,11 +128,11 @@ This block configures how to communicate with the domain.
 
 #### transport.type
 
-Default: "s2s"
+Default: `s2s`
 
 Standard XMPP uses the XMPP S2S protocol, and this is the default.
 
-Other protocols include "x2x", which indicates XEP-0361, "114", which is for Components described in XEP-0114, and "internal", which is currently unsupported.
+Other protocols include `x2x`, which indicates XEP-0361, `114`, which is for Components described in XEP-0114, and `internal`, which is currently unsupported.
 
 #### transport.multiplex
 
@@ -136,43 +140,48 @@ Default: true
 
 Most XMPP servers can handle multiplexing on S2S connections, but some cannot. Metre aggressively multiplexes if possible, and turning this to false will prevent this, using a single connection for each domain pair.
 
-#### transport.sec
+Multiplexing can hide the exact domains in use over a connection (though without ECH, which Metre doesn't yet support, at least one domain will be visible).
 
-Default: true (or from `any`)
+#### transport.tls_required
+
+Default: `true`
+Inherits any: yes
 
 Require TLS (or equivalent in principle) for confidentiality. Setting this to true does not require TLS based authentication,  just encryption.
 
+Note this was `transport.sec` in previous versions, which is still supported.
+
 ####  transport.xmpp_ver
 
-Default: true
+Default: `true`
 
 Almost any server will handle XMPP/1.0, but some component libraries cannot, and will choke if they receive features despite supplying a version attribute in the stream open. Node.js based components are particularly affected. If you encounter this, set this to false and Metre will ignore the version attribute entirely.
 
 #### transport.prefer
 
-Default: "any"
+Default: `any`
 
-By default, Metre will treat XEP-0368 or StartTLS equally, but setting this to "immediate" or "direct" will cause Metre to use offered XEP-0368 first.
+By default, Metre will treat XEP-0368 or StartTLS equally, but setting this to `immediate` or `direct` will cause Metre to use offered XEP-0368 first.
 
-Alternately, setting this to "starttls" will make Metre use such connections by default.
+Alternately, setting this to `starttls` will make Metre use such connections by default.
 
 Metre will still honour any precedence in SRV records, and will only use these if advertised.
 
 #### transport.connect-timeout
 
-Default: 10
+Default: `10`
 
 The number of seconds to wait while trying to establish an XMPP session before giving up and trying the next advertised record.
 
 #### stanza-timeout
 
-Default: 20
+Default: `20`
 
 The number of seconds to wait while trying to send a stanza before giving up and bouncing.
 
 #### forward
 
-Default: true if transport type is either "114" or "internal"; otherwise false.
+Default: `true` for `remote` domains; otherwise `false`.
 
 Controls whether a domain should be forwarded across the security boundary at all.
 
@@ -184,7 +193,8 @@ All domain blocks must have at least one valid authentication mechanism availabl
 
 #### auth.pkix
 
-Default: from `any`, or true if transport type is either "s2s" or "x2x"
+Default: `true` for `remote` domains, otherwise `false`.
+Inherits any: yes; `remote` domains only.
 
 Whether or not to perform PKIX authentication (i.e. certificate-based authentication).
 
@@ -192,7 +202,7 @@ Whether or not to perform PKIX authentication (i.e. certificate-based authentica
 
 Default: whatever `fetch-crls` above is set to.
 
-Ineffective if `fetch-crls` is set to false, and setting this top true but `fetch-crls` to false will cause an error.
+Ineffective if `fetch-crls` is set to false, and setting this to true but `fetch-crls` to false will cause an error.
 
 This causes the revocation status of presented certificates to be checked. Metre uses a CRL cache, maintains CRLs for a maximum of one hour, and refetching sooner if the CRL indicates it in the nextUpdate field.
 
@@ -202,7 +212,8 @@ Fetching CRLs is quite efficient, though administrators should note that Metre f
 
 #### auth.dialback
 
-Default: false (or what `any` is set to)
+Default: `false` for `remote` domains, otherwise `true`
+Inherits any: yes
 
 This enables authentication by XEP-0220.
 
@@ -212,7 +223,7 @@ For example, a server connecting and offering a valid certificate for its domain
 
 #### auth.secret
 
-Default: none
+Default: not set
 
 If set, this is a shared secret used for authenticating XEP-0114 component connections.
 
@@ -220,7 +231,7 @@ In principle, this may be used in the future for TLS PSK authentication.
 
 #### auth.host
 
-Default: false
+Default: `false`
 
 This is used for XEP-0361 X2X authentication, and is not recommended.
 
@@ -248,9 +259,9 @@ A private key file.
 
 #### tls.dhparam
 
-Default: "auto"
+Default: `auto`
 
-The default, "auto", tells OpenSSL to automatically select DH parameters, as per SSL_set_dh_auto.
+The default, `auto`, tells OpenSSL to automatically select DH parameters, as per SSL_set_dh_auto.
 
 Otherwise, if the value is an integer, it will be used as the maximum size of the DH parameters to be used. Metre ships with built-in DH parameters of a number of sizes: 1024, 2048, 2236, 3072, and 4096. Higher numbers than 4096 are rejected and will cause an error.
 
@@ -261,7 +272,7 @@ These DH parameters are used when contacting this domain (ie, when it is the rem
 #### tls.min_version
 #### tls.max_version
 
-Default: none
+Default: `TLSv1.2` minimum, no maximum.
 
 These dictate the minimum, and maximum, versions of TLS to use when contacting this domain.
 
@@ -273,7 +284,8 @@ Up to TLSv1.3 is supported, and down to SSLv2 (though this is usually disabled i
 
 #### tls.ciphers
 
-Default: "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH" or whatever any is set to.
+Default: `HIGH:!3DES:!eNULL:!aNULL:@STRENGTH`
+Inherits any: yes
 
 A cipherlist in OpenSSL format.
 
@@ -283,9 +295,10 @@ Again, this is used for contacting the remote domain.
 
 Metre allows for DNS lookups to be overridden with static data, and also controls whether DNS records should be DNSSEC signed or not.
 
-#### dns.dnssec
+#### dns.dnssec_required
 
-Default: false or whatever `any` is set to; note that X2X overrides this default.
+Default: `false` (normally; `x2x` will default this to `true`)
+Inheirts any: yes
 
 If this is set to true, any DNS lookups that fail to be DNSSEC signed will be rejected.
 
@@ -319,4 +332,4 @@ This block contains TLSA records for DANE.
 
 #### filter-in
 
-Filters may use, or require, a block here by name. Note that this is "filter-in" for historical reasons; filters here process both TO and FROM the domain in question.
+Filters may use, or require, a block here by name. Filters here process both TO and FROM the domain in question, but on ingress; see filter documentation for more details.
