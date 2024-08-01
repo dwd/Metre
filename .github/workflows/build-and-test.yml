@@ -13,6 +13,8 @@ jobs:
           path: deps/sentry-native
       - name: Install dependencies
         run: sudo make apt-deps
+      - name: And also libcurl
+        run: sudo apt-get install libcurl4-openssl-dev
       - name: CMake Prep
         run: mkdir build && cd build && cmake -DMETRE_SENTRY=ON ..
       - name: CMake Build
