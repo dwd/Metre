@@ -9,7 +9,7 @@ jobs:
           submodules: true
       - uses: actions/checkout@v4
         with:
-          repository: https://github.com/getsentry/sentry-native
+          repository: getsentry/sentry-native
           path: deps/sentry-native
       - name: Install dependencies
         run: sudo make apt-deps
