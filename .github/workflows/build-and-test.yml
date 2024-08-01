@@ -20,7 +20,7 @@ jobs:
       - name: CMake Build
         run: cd build && cmake --build .
       - name: CMake Tests
-        run: ./build/bin/metre-test
+        run: ./build/metre-test
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
