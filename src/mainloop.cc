@@ -26,7 +26,6 @@ SOFTWARE.
 #ifdef METRE_UNIX
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <unistd.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 
@@ -36,7 +35,6 @@ SOFTWARE.
 #include <map>
 #include <sstream>
 #include "rapidxml.hpp"
-#include <optional> // Uses the supplied optional by default.
 #include "xmppexcept.h"
 #include "netsession.h"
 #include <event2/event.h>
@@ -49,12 +47,9 @@ SOFTWARE.
 #include <cstring>
 #include <atomic>
 #include "sigslot.h"
-#include "dns.h"
 #include "config.h"
 #include "log.h"
 #include "event2/thread.h"
-#include <functional>
-#include <vector>
 
 namespace Metre {
     class Mainloop : public sigslot::has_slots {
@@ -72,6 +67,7 @@ namespace Metre {
         bool m_shutdown = false;
         bool m_shutdown_now = false;
         std::recursive_mutex m_scheduler_mutex;
+        std::shared_ptr<spdlog::logger> m_logger;
     public:
         static Mainloop *s_mainloop;
 
@@ -79,7 +75,7 @@ namespace Metre {
             s_mainloop = this;
         }
 
-        ~Mainloop() {
+        ~Mainloop() override {
             if (m_ub_event) {
                 event_del(m_ub_event);
                 event_free(m_ub_event);
@@ -89,26 +85,31 @@ namespace Metre {
             }
         }
 
-        struct event_base * event_base() const {
+        [[nodiscard]] struct event_base * event_base() const {
             return m_event_base;
         }
 
         bool init() {
-            if (m_event_base) throw std::runtime_error("I'm already initialized!");
+            if (m_event_base) {
+                throw std::runtime_error("I'm already initialized!");
+            }
             evthread_use_pthreads();
             m_event_base = event_base_new();
+            m_logger = Config::config().logger("loop");
+            bool ok = true;
             for (auto &listen : Config::config().listeners()) {
                 auto listener = evconnlistener_new_bind(m_event_base, new_session_cb,
                                                         const_cast<Config::Listener *>(&listen),
                                                         LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1,
                                                         listen.sockaddr(), sizeof(struct sockaddr_storage));
                 if (!listener) {
-                    throw std::runtime_error("Cannot bind to " + listen.name + " service port: " + strerror(errno));
+                    m_logger->critical("Cannot bind to {} service port: {}", listen.name, strerror(errno));
+                    continue;
                 }
                 m_listeners.push_back(listener);
-                METRE_LOG(Metre::Log::INFO, "Listening to " << listen.name << ".");
+                m_logger->info("Listening to {}", listen.name);
             }
-            return true;
+            return ok;
         }
 
         std::shared_ptr<NetSession> session_by_serial(long long int id) {
@@ -184,14 +185,14 @@ namespace Metre {
         }
 
         static void
-        new_session_cb(struct evconnlistener *listener, evutil_socket_t newsock, struct sockaddr *addr, int len,
+        new_session_cb(struct evconnlistener *, evutil_socket_t newsock, struct sockaddr *addr, int len,
                        void *arg) {
             Config::Listener const *listen = reinterpret_cast<Config::Listener *>(arg);
             Mainloop::s_mainloop->new_session_inbound(newsock, addr, len, listen);
         }
 
         void
-        new_session_inbound(evutil_socket_t sock, struct sockaddr *sin, int sinlen, Config::Listener const *listen) {
+        new_session_inbound(evutil_socket_t sock, struct sockaddr *sin, int, Config::Listener const *listen) {
             if (m_shutdown || m_shutdown_now) {
                 evutil_closesocket(sock);
                 return;
@@ -202,7 +203,7 @@ namespace Metre {
             auto it = m_sessions.find(session->serial());
             if (it != m_sessions.end()) {
                 // We already have one for this socket. This seems unlikely to be safe.
-                METRE_LOG(Metre::Log::CRIT, "Session already in ownership table; corruption.");
+                m_logger->critical("Session already in ownership table; corruption.");
                 assert(false);
             }
             char addrbuf[1024];
@@ -214,8 +215,7 @@ namespace Metre {
                 inet_ntop(AF_INET6, reinterpret_cast<void *>(&reinterpret_cast<struct sockaddr_in6 *>(sin)->sin6_addr),
                           addrbuf, 1024);
             }
-            METRE_LOG(Metre::Log::INFO,
-                      "New session on " << listen->name << " port from " << addrbuf);
+            m_logger->info("New session on {} port from {}", listen->name, addrbuf);
             m_sessions[session->serial()] = session;
             session->onClosed.connect(this, &Mainloop::session_closed);
         }
@@ -234,8 +234,7 @@ namespace Metre {
                 inx_addr = &sin6->sin6_addr;
             }
             char buf[INET6_ADDRSTRLEN + 1];
-            METRE_LOG(Metre::Log::DEBUG,
-                      "Connecting to " << inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN) << ":" << port);
+            m_logger->debug("Connecting to {}:{}", inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN), port);
             auto sesh = connect(fromd, tod, hostname, addr,
                                 sizeof(struct sockaddr_storage), port, stype, tls_mode);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
@@ -248,20 +247,20 @@ namespace Metre {
         }
 
         std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *sin,
-                size_t addrlen, unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
+        connect(std::string const &fromd, std::string const &tod, std::string const &, struct sockaddr *sin,
+                size_t addrlen, unsigned short, SESSION_TYPE stype, TLS_MODE tls_mode) {
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
             if (!bev) {
-                METRE_LOG(Metre::Log::CRIT, "Error creating BEV");
+                m_logger->critical("Error creating BEV");
                 throw std::runtime_error("Connection failed: cannot create BEV");
             }
             if (0 > bufferevent_socket_connect(bev, sin, static_cast<int>(addrlen))) {
-                METRE_LOG(Metre::Log::ERR, "Error connecting BEV");
+                m_logger->error("Error connecting BEV");
                 // TODO Something bad happened.
                 bufferevent_free(bev);
                 throw std::runtime_error("Connection failed: Socket connect failed");
             }
-            METRE_LOG(Metre::Log::DEBUG, "BEV fd is " << bufferevent_getfd(bev));
+            m_logger->debug("BEV fd is {}", bufferevent_getfd(bev));
             struct timeval tv = {0, 0};
             tv.tv_sec = Config::config().domain(tod).connect_timeout();
             bufferevent_set_timeouts(bev, nullptr, &tv);
@@ -270,7 +269,7 @@ namespace Metre {
             auto it = m_sessions.find(session->serial());
             if (it != m_sessions.end()) {
                 // We already have one for this socket. This seems unlikely to be safe.
-                METRE_LOG(Metre::Log::CRIT, "Session already in ownership table; corruption.");
+                m_logger->critical("Session already in ownership table; corruption.");
                 assert(false);
             }
             m_sessions[session->serial()] = session;
@@ -281,18 +280,39 @@ namespace Metre {
         void run(std::function<bool()> const &check_fn) {
             dns_setup();
             while (true) {
+                if (m_shutdown) {
+                    m_logger->info("Shutting down; closing listeners");
+                    for (auto listener : m_listeners) {
+                        evconnlistener_disable(listener);
+                        evconnlistener_free(listener);
+                    }
+                    m_listeners.clear();
+                    m_logger->info("Closing {} sessions", m_sessions.size());
+                    for (auto &it : m_sessions) {
+                        it.second->send(
+                                "<stream:error><system-shutdown xmlns='urn:ietf:params:xml:ns:xmpp-streams'/></stream:error></stream:close>");
+                        it.second->close();
+                    }
+                    m_shutdown_now = true;
+                    event_base_loopexit(m_event_base, nullptr);
+                    m_logger->info("Closed all sessions");
+                } else {
+                    std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
+                    if (!m_pending_actions.empty()) {
+                        struct timeval t = {0, 0};
+                        time_t now = time(nullptr);
+                        t.tv_sec = m_pending_actions.begin()->first - now;
+                        event_base_loopexit(m_event_base, &t);
+                    }
+                }
                 event_base_dispatch(m_event_base);
                 if (check_fn()) {
                     m_shutdown = true;
                 }
-                if (m_shutdown_now && m_sessions.empty()) {
-                    return;
-                }
-                m_closed_sessions.clear();
                 for (;;) {
                     std::list<std::function<void()>> run_now;
                     {
-                        std::lock_guard<std::recursive_mutex> l__(m_scheduler_mutex);
+                        std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
                         time_t now = std::time(nullptr);
                         while (!m_pending_actions.empty()) {
                             if (m_pending_actions.begin()->first <= now) {
@@ -304,36 +324,14 @@ namespace Metre {
                         }
                     }
                     if (run_now.empty()) break;
-//                    METRE_LOG(Metre::Log::INFO, "Executing " << run_now.size() << " deferred calls.");
                     for (auto & fn : run_now) {
                         fn();
                     }
                 }
-                if (m_shutdown) {
-                    METRE_LOG(Metre::Log::INFO, "Closing sessions.");
-                    for (auto listener : m_listeners) {
-                        evconnlistener_disable(listener);
-                        evconnlistener_free(listener);
-                    }
-                    m_listeners.clear();
-                    for (auto &it : m_sessions) {
-                        it.second->send(
-                                "<stream:error><system-shutdown xmlns='urn:ietf:params:xml:ns:xmpp-streams'/></stream:error></stream:close>");
-                        it.second->close();
-                    }
-                    m_shutdown_now = true;
-                    event_base_loopexit(m_event_base, NULL);
-                    METRE_LOG(Metre::Log::INFO, "Closed all sessions.");
-                } else {
-                    std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
-                    if (!m_pending_actions.empty()) {
-                        struct timeval t = {0, 0};
-                        time_t now = time(nullptr);
-                        METRE_LOG(Metre::Log::INFO, "Remaining deferred functions: " << m_pending_actions.size() << " wait " << m_pending_actions.begin()->first - now);
-                        t.tv_sec = m_pending_actions.begin()->first - now;
-                        event_base_loopexit(m_event_base, &t);
-                    }
+                if (m_shutdown_now && m_sessions.empty()) {
+                    return;
                 }
+                m_closed_sessions.clear();
             }
         }
 
@@ -352,7 +350,7 @@ namespace Metre {
 
         void shutdown() {
             m_shutdown = true;
-            event_base_loopexit(m_event_base, NULL);
+            event_base_loopexit(m_event_base, nullptr);
         }
 
         static void unbound_cb(evutil_socket_t, short, void *arg) {
@@ -366,7 +364,7 @@ namespace Metre {
             if (!m_ub_event) {
                 m_ub_event = event_new(m_event_base, ub_fd(Config::config().ub_ctx()), EV_READ | EV_PERSIST, unbound_cb,
                                        Config::config().ub_ctx());
-                event_add(m_ub_event, NULL);
+                event_add(m_ub_event, nullptr);
             }
         }
 
@@ -380,11 +378,11 @@ namespace Metre {
         }
 
         void session_closed(NetSession &ns) {
-            METRE_LOG(Log::DEBUG, "NS" << ns.serial() << " - Session closed.");
+            m_logger->debug("NS{} - Session closed.", ns.serial());
             auto it = m_sessions.find(ns.serial());
             if (it != m_sessions.end()) {
                 m_closed_sessions.push_back((*it).second);
-                event_base_loopexit(m_event_base, NULL);
+                event_base_loopexit(m_event_base, nullptr);
                 m_sessions.erase(it);
             }
         }
@@ -428,27 +426,40 @@ namespace Metre {
             return Mainloop::s_mainloop->session_by_serial(serial);
         }
 
-        void defer(std::function<void()> &&fn) {
-            Mainloop::s_mainloop->do_later(std::move(fn), 0);
+        namespace {
+            std::list<std::tuple<std::function<void()>,std::size_t>> early_defer;
         }
 
         void defer(std::function<void()> &&fn, std::size_t seconds) {
-            Mainloop::s_mainloop->do_later(std::move(fn), seconds);
+            if (!Mainloop::s_mainloop) {
+                early_defer.emplace_back(fn, seconds);
+            } else {
+                Mainloop::s_mainloop->do_later(std::move(fn), seconds);
+            }
+        }
+
+        void defer(std::function<void()> &&fn) {
+            defer(std::move(fn), 0);
         }
 
         void main(std::function<bool()> const &check_fn) {
             Metre::Mainloop loop;
+            auto & logger = Config::config().logger();
             if (!loop.init()) {
-                METRE_LOG(Metre::Log::CRIT, "Loop initialization failure");
+                logger.critical("Loop initialization failure");
                 return;
             }
+            for (auto [fn, seconds] : early_defer) {
+                loop.do_later(std::move(fn), seconds);
+            }
+            early_defer.clear();
             //Config::config().dns_init();
             loop.run(check_fn);
-            METRE_LOG(Metre::Log::INFO, "Shutdown complete");
+            logger.info("Shutdown complete");
         }
 
         void quit() {
-            METRE_LOG(Metre::Log::INFO, "Shutting down...");
+            Config::config().logger().info("Shutting down...");
             Mainloop::s_mainloop->shutdown();
         }
 

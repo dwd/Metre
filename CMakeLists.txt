@@ -14,6 +14,7 @@ option(VENDORED_DEPS "Use vendored dependencies" OFF)
 option(VCREDIST_PATH "Visual Studio Redistributable Installer path" "")
 option(USE_SPIFFING "Use Spiffing for label-based filtering (incomplete)" OFF)
 option(METRE_BUILD_TESTS "Build the tests for Metre" ON)
+option(METRE_SENTRY "Add Sentry/GlitchTip support" OFF)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
@@ -142,6 +143,10 @@ endif()
 find_package(OpenSSL 3.0.0 REQUIRED)
 
 add_subdirectory(deps/yaml-cpp EXCLUDE_FROM_ALL)
+if (METRE_SENTRY)
+set(SENTRY_BACKEND inproc)
+add_subdirectory(deps/sentry-native EXCLUDE_FROM_ALL)
+endif(METRE_SENTRY)
 
 set(YAMLCPP_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/yaml-cpp/include")
 
@@ -303,6 +308,7 @@ add_executable(metre-test
         src/dns.cc
         tests/cothread.cc
         tests/dns.cc
+        tests/main.cc
 )
 
 target_compile_definitions(metre-test PUBLIC
@@ -331,8 +337,12 @@ target_link_libraries(metre-test PRIVATE
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
-        GTest::gtest_main
+        GTest::gtest
 )
+if(METRE_SENTRY)
+    target_link_libraries(metre-test PRIVATE sentry)
+    target_compile_definitions(metre-test PRIVATE DWD_GTEST_SENTRY=1)
+endif(METRE_SENTRY)
 
 if (UNIX)
     target_include_directories(metre-test PRIVATE

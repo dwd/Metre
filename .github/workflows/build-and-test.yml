@@ -7,11 +7,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - uses: actions/checkout@v4
+        with:
+          repository: https://github.com/getsentry/sentry-native
+          path: deps/sentry-native
       - name: Install dependencies
         run: sudo make apt-deps
       - name: CMake Prep
-        run: mkdir build && cd build && cmake ..
+        run: mkdir build && cd build && cmake -DMETRE_SENTRY=ON ..
       - name: CMake Build
         run: cd build && cmake --build .
       - name: CMake Tests
-        run: cd build && ctest
+        run: ./build/bin/metre-test
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+

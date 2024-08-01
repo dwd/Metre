@@ -673,7 +673,6 @@ sigslot::tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
 }
 
 void XMLStream::task_completed() {
-    logger().debug("Task completed, currently [{}] running.", m_tasks.size());
     Router::defer([this]() {
         m_tasks.remove_if([this](auto & task) {
             if(!task->running()) {
@@ -691,11 +690,8 @@ void XMLStream::task_completed() {
 std::shared_ptr<sigslot::tasklet<bool>> XMLStream::start_task(std::string const & s, sigslot::tasklet<bool> &&otask) {
     auto task = std::make_shared<sigslot::tasklet<bool>>(std::move(otask));
     task->set_name(s);
-    logger().debug("Task [{}] starting, currently [{}] running.", s, m_tasks.size());
     task->start();
-    if (!task->running()) {
-        logger().debug("Task [{}] immediate stop, currently [{}] running.", s, m_tasks.size());
-    } else {
+    if (task->running()) {
         freeze();
         task->complete().connect(this, &XMLStream::task_completed);
         m_tasks.emplace_back(task);
