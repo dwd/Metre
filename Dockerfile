@@ -14,6 +14,7 @@ RUN set -eux; \
        libunwind-dev \
        ninja-build \
        pkg-config \
+       libcurl4-openssl-dev \
    ; \
    apt-get clean; \
    rm -rf /var/lib/apt/lists/* ;
@@ -37,6 +38,7 @@ RUN cmake \
         -DCMAKE_BUILD_TYPE=Debug \
         -DVENDORED_DEPS=OFF \
         -DMETRE_BUILD_TESTS=OFF \
+        -DMETRE_SENTRY=ON \
         -GNinja \
         ../src
 RUN export CMAKE_BUILD_PARALLEL_LEVEL=4; \
@@ -60,6 +62,8 @@ COPY --from=cpp-build /app/deps/ /
 
 WORKDIR /app
 COPY --from=cpp-build /app/install/bin/metre .
+
+HEALTHCHECK CMD ["/app/metre", "-d", "healthcheck"]
 
 ENTRYPOINT ["/app/metre", "-d", "docker"]
 

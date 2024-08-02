@@ -398,6 +398,14 @@ namespace Metre {
             return m_data_dir;
         }
 
+        [[nodiscard]] const char * healthcheck_address() const {
+            return m_healthcheck_address.c_str();
+        }
+
+        [[nodiscard]] unsigned short int healthcheck_port() const {
+            return m_healthcheck_port;
+        }
+
     private:
         static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
 
@@ -420,6 +428,8 @@ namespace Metre {
         std::shared_ptr<spdlog::logger> m_logger;
         std::string m_log_level;
         std::string m_log_flush;
+        std::string m_healthcheck_address;
+        unsigned short int m_healthcheck_port;
     };
 }
 

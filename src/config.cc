@@ -524,6 +524,10 @@ void Config::load(std::string const &filename) {
         m_data_dir = globals["datadir"].as<std::string>(m_data_dir);
         m_dns_keys = globals["dnssec-keys"].as<std::string>(m_dns_keys);
         m_fetch_crls = globals["fetch-crls"].as<bool>(m_fetch_crls);
+        if (globals["healthcheck"]) {
+            m_healthcheck_port = globals["healthcheck"]["port"].as<unsigned short>(7000);
+            m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>("0.0.0.0");
+        }
         if (auto filters = root_node["filters"]; filters) {
             for (auto const & item : filters) {
                 auto filter_name = item.first.as<std::string>();
@@ -844,6 +848,8 @@ std::string Config::asString() const {
     config["globals"]["boot-method"] = m_boot;
     config["globals"]["fetch-crls"] = m_fetch_crls;
     config["globals"]["dnssec-keys"] = m_dns_keys;
+    config["healthcheck"]["address"] = m_healthcheck_address;
+    config["healthcheck"]["port"] = m_healthcheck_port;
 
     for (auto const &[filter_name, filter] : Filter::all_filters()) {
         config["filters"][filter_name] = filter->config();

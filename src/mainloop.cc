@@ -50,11 +50,36 @@ SOFTWARE.
 #include "config.h"
 #include "log.h"
 #include "event2/thread.h"
+#include "event2/http.h"
+#include "event2/buffer.h"
+
+namespace {
+    void healthcheck(struct evhttp_request *req, void *) {
+        switch (evhttp_request_get_command(req)) {
+            case EVHTTP_REQ_GET:
+            case EVHTTP_REQ_HEAD:
+                break;
+            default:
+                return;
+        }
+
+        evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "application/json");
+        char resp[] = "{\"status\":\"ok\"}";
+        char len[] = "15";
+        evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Length", len);
+        auto reply = evbuffer_new();
+        evbuffer_add_printf(reply, "%s", resp);
+        evbuffer_add(reply, resp, 15);
+        evhttp_send_reply(req, HTTP_OK, nullptr, reply);
+        evbuffer_free(reply);
+    }
+}
 
 namespace Metre {
     class Mainloop : public sigslot::has_slots {
     private:
         struct event_base *m_event_base = nullptr;
+        struct evhttp * m_healthcheck_server = nullptr;
         std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;
         std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_id;
         std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_domain;
@@ -109,6 +134,12 @@ namespace Metre {
                 m_listeners.push_back(listener);
                 m_logger->info("Listening to {}", listen.name);
             }
+            auto port = Config::config().healthcheck_port();
+            auto address = Config::config().healthcheck_address();
+            m_logger->info("Starting healthcheck service on {}:{}", address, port);
+            m_healthcheck_server = evhttp_new(m_event_base);
+            evhttp_bind_socket(m_healthcheck_server, address, port);
+            evhttp_set_gencb(m_healthcheck_server, healthcheck, nullptr);
             return ok;
         }
 

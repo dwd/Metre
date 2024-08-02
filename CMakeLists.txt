@@ -256,6 +256,10 @@ target_link_libraries(metre PRIVATE
     OpenSSL::Crypto
         yaml-cpp
 )
+if(METRE_SENTRY)
+    target_link_libraries(metre PRIVATE sentry)
+    target_compile_definitions(metre PRIVATE METRE_SENTRY=1)
+endif(METRE_SENTRY)
 
 # target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
