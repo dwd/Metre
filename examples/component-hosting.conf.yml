@@ -1,0 +1,55 @@
+#
+# So, you want to host a component. OK.
+#
+# Let's assume the component is going to be echo.example.com
+
+# Setup global config:
+globals:
+  # We've only got one domain, but set it as the default anyway.
+  default-domain: echo.example.org
+  # Not required, but you might want to:
+  log:
+    level: debug
+    flush: info
+  # Get the below from somewhere trusted, and you'll get DNSSEC.
+  dnssec-keys: /etc/metre/dnssec.keys
+  # Do status checking on PKIX - not the default, but sensible.
+  fetch-crls: true
+
+# All remote domains:
+remote:
+  # Fallback domain, in this case all the domains we're not hosting.
+  # Specifying "any" means it's not blocked by default...
+  any:
+    transport:
+      # Turning off XEP-0220 multiplexing is most compatible, annoyingly.
+      multiplex: false
+    # If you want dialback, uncomment this:
+#    auth:
+#      dialback: true
+    tls:
+      # Giving `any` a PKIX identity ensures one exists; otherwise
+      # Metre might give up when trying to service misdirected contacts,
+      # making debugging very hard indeed.
+      x509:
+        chain: /my/public/cert-chain.pem
+        pkey: /my/private/key.pem
+      # You can also stipulate TLS config for connections to remote domains:
+      min_version: TLSv1.3 # For example.
+
+# All our local domains, in this case just our component:
+local:
+  echo.example.org:
+    transport:
+      # Use XEP-0114 component as the transport type.
+      type: 114
+      # Some component libraries - including the node.js one - will choke if they see features.
+      # Disable them by uncommenting this:
+      # xmpp_ver: false
+    auth:
+      secret: "My super secret component secret"
+    tls:
+      # The certificate used when acting as this domain.
+      x509:
+        chain: /my/public/cert-chain.pem
+        pkey: /my/private/key.pem
