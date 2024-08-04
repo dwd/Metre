@@ -265,7 +265,6 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, term_handler);
     signal(SIGSEGV, segv_handler);
     signal(SIGBUS, segv_handler);
-    signal(SIGABRT, segv_handler);
     // Firstly, load up the configuration.
     bc = std::make_unique<BootConfig>(argc, argv);
     std::cout << "Trying to load config from " << bc->config_file <<std::endl;
