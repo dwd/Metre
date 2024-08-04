@@ -355,8 +355,8 @@ void XMLStream::stream_open() {
     if (stream->xmlns().empty()) {
         throw Metre::bad_format("Missing namespace for stream");
     }
-    if (stream->name() != std::string("stream") ||
-        stream->xmlns() != std::string("http://etherx.jabber.org/streams")) {
+    if (stream->name() != "stream" ||
+        stream->xmlns() != "http://etherx.jabber.org/streams") {
         throw Metre::bad_namespace_prefix("Need a stream open");
     }
     // Assume we're good here.
@@ -374,13 +374,13 @@ void XMLStream::stream_open() {
         m_stream_local = domainname;
         if (from.empty()) {
             // TODO: A bit cut'n'pastey here.
-            start_task("Empty from inbound send_stream_open", send_stream_open(with_ver));
+            start_task("Empty from inbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), with_ver));
         } else {
             m_stream_remote = from;
             if (m_stream_remote == m_stream_local) {
                 throw std::runtime_error("That's me, you fool");
             }
-            start_task("With from, inbound send_stream_open", send_stream_open(with_ver));
+            start_task("With from, inbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), with_ver));
         }
     } else if (m_dir == OUTBOUND) {
         if (m_type == S2S) {
@@ -397,11 +397,11 @@ void XMLStream::stream_open() {
     }
 }
 
-sigslot::tasklet<bool> XMLStream::send_stream_open(bool with_version) {
+sigslot::tasklet<bool> XMLStream::send_stream_open(std::shared_ptr<sentry::transaction> trans, bool with_version) {
     if (m_x2x_mode) {
         if (m_secured) {
             auto route = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            if (!co_await tls_auth_ok(*route)) {
+            if (!co_await tls_auth_ok(trans->start_child("tls", m_stream_remote), *route)) {
                 throw host_unknown("Cannot authenticate host");
             }
         }
@@ -447,7 +447,7 @@ sigslot::tasklet<bool> XMLStream::send_stream_open(bool with_version) {
             auto features = doc.allocate_node(rapidxml::node_element, "stream:features");
             doc.append_node(features);
             for (auto f : Feature::features(m_type)) {
-                co_await *start_task("Feature offer", f->offer(features, *this));
+                co_await *start_task("Feature offer", f->offer(trans->start_child("feature.offer", f->xmlns()), features, *this));
             }
             m_session->send(doc);
         }
@@ -542,7 +542,11 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
 
         bool handled = false;
         if (f) {
-            auto task = start_task("XMLStream handle element", f->handle(element));
+            std::string clark_name = "{";
+            clark_name += element->xmlns();
+            clark_name += "}";
+            clark_name += element->name();
+            auto task = start_task("XMLStream handle element", f->handle(std::make_shared<sentry::transaction>("element", clark_name), element));
             if (task->running()) {
                 return;
             } else {
@@ -578,7 +582,7 @@ void XMLStream::do_restart() {
     m_stanza.clear();
     m_stream_buf.clear();
     if (m_dir == OUTBOUND) {
-        start_task("Restart outbound send_stream_open", send_stream_open(true));
+        start_task("Restart outbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), true));
         thaw();
     }
 }
@@ -665,9 +669,9 @@ bool XMLStream::bidi(bool b) {
     return m_bidi;
 }
 
-sigslot::tasklet<bool> XMLStream::tls_auth_ok(Route &route) {
+sigslot::tasklet<bool> XMLStream::tls_auth_ok(std::shared_ptr<sentry::span> span, Route &route) {
     if (!m_secured) co_return false;
-    auto task = start_task("tls_auth_ok call verify_tls", verify_tls(*this, route));
+    auto task = start_task("tls_auth_ok call verify_tls", verify_tls(span->start_child("tls", "verify"), *this, route));
     auto ret = co_await *task;
     co_return ret;
 }

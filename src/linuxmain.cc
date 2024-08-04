@@ -210,11 +210,7 @@ namespace {
 
     void segv_handler(int s) {
         METRE_LOG(Metre::Log::INFO, "Fatal signal " << s);
-        if (s == SIGSEGV) {
-            bug_reporter("SIGSEGV", "Segmentation Fault");
-        } else {
-            bug_reporter("SIGBUS", "Bus Error");
-        }
+        bug_reporter(sigabbrev_np(s), sigdescr_np(s));
     }
 
     void terminate_handler() {
@@ -249,7 +245,6 @@ namespace {
 
         event_base_dispatch(base);
 
-        evhttp_request_free(req);
         evhttp_connection_free(conn);
         event_base_free(base);
 
@@ -260,7 +255,7 @@ namespace {
 int main(int argc, char *argv[]) {
 #ifdef METRE_SENTRY
     auto sentry_options = sentry_options_new();
-    sentry_options_set_debug(sentry_options, 1000);
+    sentry_options_set_traces_sample_rate(sentry_options, 1.0);
     sentry_init(sentry_options);
 #endif
     std::set_terminate(terminate_handler);
@@ -270,8 +265,10 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, term_handler);
     signal(SIGSEGV, segv_handler);
     signal(SIGBUS, segv_handler);
+    signal(SIGABRT, segv_handler);
     // Firstly, load up the configuration.
     bc = std::make_unique<BootConfig>(argc, argv);
+    std::cout << "Trying to load config from " << bc->config_file <<std::endl;
     config = std::make_unique<Metre::Config>(bc->config_file);
     if (bc->boot_method.empty()) {
         bc->boot_method = config->boot_method();

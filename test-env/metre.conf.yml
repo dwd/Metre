@@ -1,0 +1,46 @@
+globals:
+  default-domain: cassidy.cridland.io
+  rundir: test-env/run
+  datadir: test-env/data
+  dnssec-keys: test-env/keys
+  log:
+    level: debug
+
+remote:
+  any:
+    transport:
+          type: s2s
+          prefer: direct
+          sec: false
+    tls:
+      x509:
+        chain: test-env/public_key.pem
+        pkey: test-env/private_key.pem
+  dave.cridland.net:
+    transport:
+          type: s2s
+          prefer: direct
+          sec: false
+    tls:
+      x509:
+        chain: test-env/public_key.pem
+        pkey: test-env/private_key.pem
+    dns:
+      srv:
+        - host: dave.cridland.net
+          port: 5222
+      tlsa:
+        - hostname: "dave.cridland.net"
+          port: 5222
+          certusage: DomainCert
+          matchdata: test-env/public_key.pem
+
+local:
+  cassidy.cridland.io:
+    transport:
+      type: internal
+    tls:
+      x509:
+        chain: test-env/chain.pem
+        pkey: test-env/private_key.pem
+

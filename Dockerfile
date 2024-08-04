@@ -41,8 +41,7 @@ RUN cmake \
         -DMETRE_SENTRY=ON \
         -GNinja \
         ../src
-RUN export CMAKE_BUILD_PARALLEL_LEVEL=4; \
-    cmake --build . --target metre
+RUN cmake --build . --target metre
 RUN cmake --build . --target install
 
 RUN set -eux; \
@@ -63,8 +62,8 @@ COPY --from=cpp-build /app/deps/ /
 WORKDIR /app
 COPY --from=cpp-build /app/install/bin/metre .
 
-HEALTHCHECK CMD ["/app/metre", "-d", "healthcheck"]
-
-ENTRYPOINT ["/app/metre", "-d", "docker"]
+#For the healthcheck to work and be configurable, we pretty much have to stipulate where the config file is...
+HEALTHCHECK CMD ["/app/metre", "-d", "healthcheck", "-c", "/tmp/metre.conf.yml"]
+ENTRYPOINT ["/app/metre", "-d", "docker", "-c", "/tmp/metre.conf.yml"]
 
 EXPOSE 5269 5222 5275 5276

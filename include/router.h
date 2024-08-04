@@ -32,6 +32,7 @@ SOFTWARE.
 #include "core.h"
 #include "sigslot.h"
 #include "sigslot/tasklet.h"
+#include "sentry-wrap.h"
 
 #include <string>
 #include <memory>
@@ -45,9 +46,9 @@ namespace Metre {
     class Route : public sigslot::has_slots {
     private:
         std::weak_ptr<NetSession> m_to;
-        sigslot::tasklet<bool> m_to_task;
+        std::optional<sigslot::tasklet<bool>> m_to_task;
         std::weak_ptr<NetSession> m_vrfy;
-        sigslot::tasklet<bool> m_verify_task;
+        std::optional<sigslot::tasklet<bool>> m_verify_task;
         std::list<std::unique_ptr<Stanza>> m_stanzas;
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
@@ -72,9 +73,9 @@ namespace Metre {
             return m_local;
         }
 
-        sigslot::tasklet<bool> init_session_vrfy();
+        sigslot::tasklet<bool> init_session_vrfy(std::shared_ptr<sentry::span>);
 
-        sigslot::tasklet<bool> init_session_to();
+        sigslot::tasklet<bool> init_session_to(std::shared_ptr<sentry::transaction>);
 
         void outbound(NetSession *ns);
 

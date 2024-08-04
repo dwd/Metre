@@ -326,10 +326,10 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
     m_logger = Config::config().logger("domain <" + m_domain + ">");
 }
 
-sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(FILTER_DIRECTION dir, Stanza &s) const {
-    if (m_parent) co_return co_await m_parent->filter(dir, s);
+sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::span> span, FILTER_DIRECTION dir, Stanza &s) const {
+    if (m_parent) co_return co_await m_parent->filter(span->start_child("filter", "parent"), dir, s);
     for (auto &filter : m_filters) {
-        auto filter_result = co_await filter->apply(dir, s);
+        auto filter_result = co_await filter->apply(span->start_child("filter", filter->name()), dir, s);
         if (filter_result == DROP) co_return DROP;
     }
     co_return PASS;
@@ -454,7 +454,13 @@ void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
         throw std::runtime_error("Private key mismatch");
     }
     SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
-    SSL_CTX_set_default_verify_paths(m_ssl_ctx);
+//    if(SSL_CTX_set_default_verify_paths(m_ssl_ctx) == 0) {
+    if(SSL_CTX_load_verify_locations(m_ssl_ctx, nullptr, "/etc/ssl/certs") == 0) {
+        m_logger->warn("Loading default verify paths failed:");
+        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
+            m_logger->error("OpenSSL Error (default_verify_paths): {}", ERR_reason_error_string(e));
+        }
+    }
     SSL_CTX_set_tlsext_servername_callback(m_ssl_ctx, ssl_servername_cb);
     std::string ctx = "Metre::" + m_domain;
     SSL_CTX_set_session_id_context(m_ssl_ctx, reinterpret_cast<const unsigned char *>(ctx.c_str()),
@@ -524,9 +530,11 @@ void Config::load(std::string const &filename) {
         m_data_dir = globals["datadir"].as<std::string>(m_data_dir);
         m_dns_keys = globals["dnssec-keys"].as<std::string>(m_dns_keys);
         m_fetch_crls = globals["fetch-crls"].as<bool>(m_fetch_crls);
+        m_healthcheck_address =  "0.0.0.0";
+        m_healthcheck_port = 7000;
         if (globals["healthcheck"]) {
-            m_healthcheck_port = globals["healthcheck"]["port"].as<unsigned short>(7000);
-            m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>("0.0.0.0");
+            m_healthcheck_port = globals["healthcheck"]["port"].as<unsigned short>(m_healthcheck_port);
+            m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>(m_healthcheck_address);
         }
         if (auto filters = root_node["filters"]; filters) {
             for (auto const & item : filters) {
@@ -1117,7 +1125,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     m_srvrec->rrs.push_back(rr);
 }
 
-sigslot::tasklet<void> Config::Domain::gather_host(Resolver & r, GatheredData & g, std::string const & host, uint16_t port, DNS::ConnectInfo::Method method) const {
+sigslot::tasklet<void> Config::Domain::gather_host(std::shared_ptr<sentry::span>, Resolver & r, GatheredData & g, std::string const & host, uint16_t port, DNS::ConnectInfo::Method method) const {
     auto addr_recs = co_await r.AddressLookup(host);
     if (!addr_recs.error.empty()) co_return; // Interesting case: a DNSSEC-signed SVCB/SRV record pointing to a non-existent host still adds that host to the X.509-acceptable names.
     if (!addr_recs.dnssec && m_dnssec_required) co_return;
@@ -1136,7 +1144,7 @@ sigslot::tasklet<void> Config::Domain::gather_host(Resolver & r, GatheredData & 
     }
 }
 
-sigslot::tasklet<void> Config::Domain::gather_tlsa(Resolver & r, GatheredData & g, std::string const & host, uint16_t port) const {
+sigslot::tasklet<void> Config::Domain::gather_tlsa(std::shared_ptr<sentry::span>, Resolver & r, GatheredData & g, std::string const & host, uint16_t port) const {
     auto recs = co_await r.TlsaLookup(port, host);
     if (!recs.error.empty()) co_return;
     if (!recs.dnssec) co_return;
@@ -1145,7 +1153,7 @@ sigslot::tasklet<void> Config::Domain::gather_tlsa(Resolver & r, GatheredData & 
     }
 }
 
-sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather() const {
+sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather(std::shared_ptr<sentry::span> span) const {
     auto r = resolver();
     std::string domain = m_domain;
     GatheredData g;
@@ -1173,8 +1181,8 @@ aname_restart:
                 method = DNS::ConnectInfo::Method::DirectTLS;
                 default_port = 5270;
             }
-            co_await gather_host(*r, g, rr.hostname, rr.port ? rr.port : default_port, method);
-            co_await gather_tlsa(*r, g, rr.hostname, rr.port ? rr.port : default_port);
+            co_await gather_host(span->start_child("gather.host", rr.hostname), *r, g, rr.hostname, rr.port ? rr.port : default_port, method);
+            co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port ? rr.port : default_port);
         }
     } else {
         // SRV path
@@ -1184,12 +1192,12 @@ aname_restart:
                 if (srv.dnssec) {
                     g.gathered_hosts.insert(rr.hostname);
                 }
-                co_await gather_host(*r, g, rr.hostname, rr.port, (rr.tls ? DNS::ConnectInfo::Method::DirectTLS : DNS::ConnectInfo::Method::StartTLS));
-                co_await gather_tlsa(*r, g, rr.hostname, rr.port);
+                co_await gather_host(span->start_child("gather.host", rr.hostname), *r, g, rr.hostname, rr.port, (rr.tls ? DNS::ConnectInfo::Method::DirectTLS : DNS::ConnectInfo::Method::StartTLS));
+                co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port);
             }
         } else {
-            co_await gather_host(*r, g, domain, 5269, DNS::ConnectInfo::Method::StartTLS);
-            co_await gather_tlsa(*r, g, domain, 5269);
+            co_await gather_host(span->start_child("gather.host", domain), *r, g, domain, 5269, DNS::ConnectInfo::Method::StartTLS);
+            co_await gather_tlsa(span->start_child("gather.tlsa", domain), *r, g, domain, 5269);
         }
     }
     co_return g;

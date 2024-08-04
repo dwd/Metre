@@ -29,6 +29,7 @@ SOFTWARE.
 #include "defs.h"
 #include "rapidxml.hpp"
 #include "xmlstream.h"
+#include "sentry-wrap.h"
 #include "sigslot/tasklet.h"
 #include <list>
 
@@ -46,7 +47,7 @@ namespace Metre {
         public:
             BaseDescription(std::string const &, Feature::Type);
 
-            virtual sigslot::tasklet<bool> offer(rapidxml::optional_ptr<rapidxml::xml_node<>> node, XMLStream &s) {
+            virtual sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, rapidxml::optional_ptr<rapidxml::xml_node<>> node, XMLStream &s) {
                 co_return false;
             }
 
@@ -81,7 +82,7 @@ namespace Metre {
         };
 
 
-        virtual sigslot::tasklet<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>>) = 0;
+        virtual sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, rapidxml::optional_ptr<rapidxml::xml_node<>>) = 0;
 
         virtual bool negotiate(rapidxml::optional_ptr<rapidxml::xml_node<>>) { return false; }
 

@@ -85,7 +85,7 @@ namespace {
             return false;
         }
 
-        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
+        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> span, optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle component");
 
             std::unique_ptr<Stanza> s;
@@ -124,12 +124,12 @@ namespace {
                         throw not_authorized();
                     }
                     m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
-                    if (DROP == co_await Config::config().domain(from.domain()).filter(FILTER_DIRECTION::FROM, *s)) {
+                    if (DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
                         m_stream.logger().info("Stanza discarded by FROM filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
-                    if (DROP == co_await Config::config().domain(to.domain()).filter(FILTER_DIRECTION::TO, *s)) {
+                    if (DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
                         m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }

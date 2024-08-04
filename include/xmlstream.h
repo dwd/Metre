@@ -174,7 +174,7 @@ namespace Metre {
 
         bool x2x_mode() const { return m_x2x_mode; }
 
-        sigslot::tasklet<bool> tls_auth_ok(Route &domain);
+        sigslot::tasklet<bool> tls_auth_ok(std::shared_ptr<sentry::span>, Route &domain);
 
         AUTH_STATE s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION) const;
 
@@ -218,7 +218,7 @@ namespace Metre {
 
         void stream_open();
 
-        sigslot::tasklet<bool> send_stream_open(bool);
+        sigslot::tasklet<bool> send_stream_open(std::shared_ptr<sentry::transaction>, bool);
     };
 }
 

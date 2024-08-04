@@ -49,14 +49,14 @@ namespace {
         public:
             Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
 
-            sigslot::tasklet<bool> offer(optional_ptr<xml_node<>> node, XMLStream &stream) override {
+            sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span> span, optional_ptr<xml_node<>> node, XMLStream &stream) override {
                 if (stream.remote_domain().empty()) co_return false;
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) ==
                     XMLStream::AUTHORIZED)
                     co_return false;
                 std::shared_ptr<Route> &route = RouteTable::routeTable(stream.local_domain()).route(
                         stream.remote_domain());
-                if (co_await *stream.start_task("SASL EXTERNAL offer tls_auth_ok", stream.tls_auth_ok(*route))) {
+                if (co_await *stream.start_task("SASL EXTERNAL offer tls_auth_ok", stream.tls_auth_ok(span->start_child("tls", stream.remote_domain()), *route))) {
                     auto feature = node->append_element({sasl_ns, "mechanisms"});
                     feature->append_element("mechanism", "EXTERNAL");
                 }
@@ -64,19 +64,19 @@ namespace {
             }
         };
 
-        sigslot::tasklet<bool> auth(optional_ptr<rapidxml::xml_node<>> node) {
+        sigslot::tasklet<bool> auth(std::shared_ptr<sentry::span> span, optional_ptr<rapidxml::xml_node<>> node) {
             if (m_stream.remote_domain().empty()) co_return true;
             auto mechattr = node->first_attribute("mechanism");
             if (!mechattr || mechattr->value().empty()) throw std::runtime_error("No mechanism attribute");
             if (mechattr->value() != "EXTERNAL") {
                 throw std::runtime_error("No such mechanism");
             }
-            auto task = m_stream.start_task("SASL auth->response", response(node));
+            auto task = m_stream.start_task("SASL auth->response", response(span->start_child("sasl.response", m_stream.remote_domain()), node));
             co_await *task;
             co_return true;
         }
 
-        sigslot::tasklet<bool> response(optional_ptr<rapidxml::xml_node<>> node) {
+        sigslot::tasklet<bool> response(std::shared_ptr<sentry::span> span, optional_ptr<rapidxml::xml_node<>> node) {
             std::string authzid;
             if (!node->value().empty()) {
                 authzid = node->value();
@@ -98,7 +98,7 @@ namespace {
             }
             std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                     m_stream.remote_domain());
-            if (co_await *m_stream.start_task("SASL EXTERNAL response tls_auth_ok", m_stream.tls_auth_ok(*route))) {
+            if (co_await *m_stream.start_task("SASL EXTERNAL response tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", m_stream.remote_domain()), *route))) {
                 xml_document<> d;
                 d.append_element({sasl_ns, "success"});
                 m_stream.send(d);
@@ -125,15 +125,15 @@ namespace {
             m_stream.restart();
         }
 
-        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
+        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> trans, optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle SASL External");
             std::string name{node->name()};
             if ((node->name() == "auth" && m_stream.direction() == INBOUND)) {
-                auto task = m_stream.start_task("SASL auth", auth(node));
+                auto task = m_stream.start_task("SASL auth", auth(trans->start_child("sasl.auth", m_stream.remote_domain()), node));
                 co_await *task;
                 co_return true;
             } else if (node->name() == "response" && m_stream.direction() == INBOUND) {
-                auto task = m_stream.start_task("SASL response", response(node));
+                auto task = m_stream.start_task("SASL response", response(trans->start_child("sasl.response", m_stream.remote_domain()), node));
                 co_await *task;
                 co_return true;
             } else if (node->name() == "challenge" && m_stream.direction() == OUTBOUND) {

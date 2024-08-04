@@ -39,6 +39,7 @@ SOFTWARE.
 //#include <fmt/chrono.h>
 #include "spdlog/spdlog.h"
 #include "sigslot.h"
+#include "sentry-wrap.h"
 #include <sigslot/tasklet.h>
 
 /**
@@ -47,6 +48,7 @@ SOFTWARE.
 
 struct ssl_ctx_st; // This is an SSL_CTX
 struct x509_store_ctx_st; // This is a X509_STORE_CTX
+struct x509_st;
 
 /**
  * Lib unbound.
@@ -82,6 +84,22 @@ namespace Metre {
         private:
             Domain const &m_domain;
             std::shared_ptr<spdlog::logger> m_logger;
+        };
+
+        class PKIXIdentity {
+        public:
+            PKIXIdentity() = delete;
+            PKIXIdentity(PKIXIdentity const &) = delete;
+            PKIXIdentity(std::string const & certfile, std::string const & pkeyfile); // Simple keypair.
+        };
+
+        class PKIXContext {
+        public:
+            PKIXContext();
+
+            void add_identity(PKIXIdentity const &);
+
+            struct ssl_ctx_st * instantiate(std::string const & name);
         };
 
         class Domain {
@@ -189,6 +207,7 @@ namespace Metre {
             }
 
             [[nodiscard]] struct ssl_ctx_st *ssl_ctx() const;
+            [[nodiscard]] std::list<struct x509_st *> pkix_tas() const;
 
             /* Loading functions */
             void x509(std::string const &chain, std::string const &key);
@@ -211,7 +230,7 @@ namespace Metre {
 
             ~Domain();
 
-            sigslot::tasklet<FILTER_RESULT> filter(FILTER_DIRECTION dir, Stanza &s) const;
+            sigslot::tasklet<FILTER_RESULT> filter(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) const;
 
             std::list<std::unique_ptr<Filter>> &filters() {
                 return m_filters;
@@ -272,9 +291,9 @@ namespace Metre {
             };
 
             // Do DNS discovery:
-            [[nodiscard]] sigslot::tasklet<GatheredData> gather() const;
-            [[nodiscard]] sigslot::tasklet<void> gather_host(Resolver &, GatheredData &, std::string const &, uint16_t, DNS::ConnectInfo::Method) const;
-            [[nodiscard]] sigslot::tasklet<void> gather_tlsa(Resolver &, GatheredData &, std::string const &, uint16_t) const;
+            [[nodiscard]] sigslot::tasklet<GatheredData> gather(std::shared_ptr<sentry::span>) const;
+            [[nodiscard]] sigslot::tasklet<void> gather_host(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string const &, uint16_t, DNS::ConnectInfo::Method) const;
+            [[nodiscard]] sigslot::tasklet<void> gather_tlsa(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string const &, uint16_t) const;
 
         private:
             std::shared_ptr<spdlog::logger> m_logger;

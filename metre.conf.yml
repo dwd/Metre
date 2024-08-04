@@ -1,5 +1,5 @@
 globals:
-  default-domain: jekyll.cridland.im
+  default-domain: cassidy.cridland.im
   rundir: /home/dwd/src/Metre/run
   datadir: /home/dwd/src/Metre/data
   dnssec-keys: /home/dwd/src/Metre/keys
@@ -14,7 +14,7 @@ remote:
           sec: false
 
 local:
-  jekyll.dave.cridland.net:
+  cassidy.cridland.im:
     transport:
       type: internal
 

@@ -28,6 +28,7 @@ SOFTWARE.
 #include "xmppexcept.h"
 #include "router.h"
 #include "config.h"
+#include "sentry-wrap.h"
 #include <memory>
 #include <endpoint.h>
 #include <log.h>
@@ -38,7 +39,7 @@ using namespace rapidxml;
 namespace {
     const std::string sasl_ns = "jabber:server";
 
-    class JabberServer : public Feature, public sigslot::has_slots {
+    class JabberServer : public Feature {
     public:
         explicit JabberServer(XMLStream &s) : Feature(s) {}
 
@@ -47,7 +48,7 @@ namespace {
             Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
         };
 
-        sigslot::tasklet<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
+        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> span, rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle JabberServer");
             std::unique_ptr<Stanza> s;
             if (node->name() == "message") {
@@ -59,12 +60,12 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type(std::string(node->name()));
             }
-            auto task = m_stream.start_task("jabber::server handle(Stanza)", handle(s));
+            auto task = m_stream.start_task("jabber::server handle(Stanza)", handle(span->start_child("stanza", "handle"), s));
             co_await *task;
             co_return true;
         }
 
-        sigslot::tasklet<bool> handle(std::unique_ptr<Stanza> &s) {
+        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::span> span, std::unique_ptr<Stanza> &s) {
             try {
                 try {
                     Jid const &to = s->to();
@@ -75,7 +76,7 @@ namespace {
                             if (m_stream.secured()) {
                                 s->freeze();
                                 auto r = RouteTable::routeTable(to.domain()).route(from.domain());
-                                auto task = m_stream.start_task("jabber::server tls_auth_ok", m_stream.tls_auth_ok(*r));
+                                auto task = m_stream.start_task("jabber::server tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", from.domain()), *r));
                                 bool result = co_await *task;
                                 if (result) {
                                     m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
@@ -89,12 +90,12 @@ namespace {
                         }
                     }
                     m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
-                    if (DROP == co_await Config::config().domain(from.domain()).filter(FILTER_DIRECTION::FROM, *s)) {
+                    if (DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
                         m_stream.logger().info("Stanza discarded by FROM filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
-                    if (DROP == co_await Config::config().domain(to.domain()).filter(FILTER_DIRECTION::TO, *s)) {
+                    if (DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
                         m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }

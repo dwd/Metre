@@ -10,6 +10,7 @@
 #include <openssl/ossl_typ.h>
 #include <openssl/x509.h>
 #include <openssl/err.h>
+#include <openssl/ssl.h>
 
 using namespace Metre;
 
@@ -109,14 +110,23 @@ Http::crl_callback_t &Http::do_crl(std::string const &urix) {
         std::string host = evhttp_uri_get_host(parsed);
         int port = evhttp_uri_get_port(parsed);
         if (port < 0) port = (ssl ? 443 : 80);
-        // TODO https support
-        if (ssl) throw std::runtime_error("Cannot do HTTPS quite yet for " + uri);
-        auto evcon = evhttp_connection_base_new(Router::event_base(), nullptr, host.c_str(), port);
+        evhttp_connection * evcon = nullptr;
+        if (ssl) {
+            SSL_CTX * ssl_ctx = SSL_CTX_new(TLS_client_method());
+            SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, nullptr);
+            SSL * ssl = SSL_new(ssl_ctx);
+            SSL_set_tlsext_host_name(ssl, host.c_str());
+            auto bev = bufferevent_openssl_socket_new(Router::event_base(), -1, ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+            evcon = evhttp_connection_base_bufferevent_new(Router::event_base(), nullptr, bev, host.c_str(), port);
+       } else {
+            evcon = evhttp_connection_base_new(Router::event_base(), nullptr, host.c_str(), port);
+        }
         // TODO config
         //evhttp_connection_set_retries(evcon, 3);
         //evhttp_connection_set_timeout(evcon, 5); // seconds
         m_requests[++m_req] = uri;
         auto request = evhttp_request_new(Http::s_done_crl, reinterpret_cast<void *>(m_req));
+        evhttp_add_header(evhttp_request_get_output_headers(request), "Host", host.c_str());
         if (!request) {
             throw std::runtime_error("evhttp couldn't create for " + uri);
         }

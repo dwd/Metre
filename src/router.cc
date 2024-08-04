@@ -41,7 +41,7 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_dom
     m_logger->log(spdlog::level::info, "Route created");
 }
 
-sigslot::tasklet<bool> Route::init_session_vrfy() {
+sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> span) {
     m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
     switch(Config::config().domain(m_domain.domain()).transport_type()) {
     case INTERNAL:
@@ -53,7 +53,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
     default:
         break;
     }
-    auto gathered = co_await Config::config().domain(m_domain.domain()).gather();
+    auto gathered = co_await Config::config().domain(m_domain.domain()).gather(span->start_child("gather", m_domain.domain()));
 
     if (gathered.gathered_connect.empty()) {
         m_logger->warn("DNS Lookup for [{}] failed", m_domain);
@@ -82,6 +82,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
     }
     for (auto &rr : gathered.gathered_connect) {
         try {
+            auto s = span->start_child("connect", rr.hostname);
             m_logger->trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
             auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                            reinterpret_cast<sockaddr *>(&rr.sockaddr),
@@ -89,7 +90,6 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
                                            rr.method == DNS::ConnectInfo::Method::DirectTLS ? IMMEDIATE : STARTTLS);
             m_logger->trace("Connected verify session: address=[{}:{}] serial=[{}]", rr.hostname, rr.port,
                             session->serial());
-
             m_logger->trace("Awaiting auth ready on verify session: serial=[{}]", session->serial());
             (void) co_await session->xml_stream().onAuthReady;
             if (!session->xml_stream().auth_ready()) {
@@ -107,7 +107,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy() {
     co_return false;
 }
 
-sigslot::tasklet<bool> Route::init_session_to() {
+sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transaction> trans) {
     m_logger->debug("Stanza session spin-up");
     auto session = Router::session_by_domain(m_domain.domain());
     if (!session) {
@@ -117,12 +117,14 @@ sigslot::tasklet<bool> Route::init_session_to() {
             m_logger->debug("Authenticating with verify session domain=[{}]", m_domain);
             if (!session) {
                 m_logger->debug("No verify session found");
-                if (!m_verify_task.running()) {
+                if (!m_verify_task.has_value()) {
                     m_logger->debug("No verify session task found, starting");
-                    m_verify_task = init_session_vrfy();
-                    m_verify_task.start();
+                    m_verify_task = init_session_vrfy(trans->start_child("verify_session", m_domain.domain()));
+                    m_verify_task.value().start();
                 }
-                if (!co_await m_verify_task) {
+                bool vrfy_success = co_await m_verify_task.value();
+                m_verify_task.reset();
+                if (!vrfy_success) {
                     m_logger->debug("Verify task failed");
                     co_return false;
                 }
@@ -144,8 +146,8 @@ sigslot::tasklet<bool> Route::init_session_to() {
                                                                 m_domain.domain());
                 rapidxml::xml_document<> d;
                 auto dbr = d.allocate_node(rapidxml::node_element, "db:result");
-                dbr->append_attribute(d.allocate_attribute("to", m_domain.domain().c_str()));
-                dbr->append_attribute(d.allocate_attribute("from", m_local.domain().c_str()));
+                dbr->append_attribute(d.allocate_attribute("to", m_domain.domain()));
+                dbr->append_attribute(d.allocate_attribute("from", m_local.domain()));
                 dbr->value(key);
                 d.append_node(dbr);
                 session->xml_stream().send(d);
@@ -226,9 +228,13 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
         vrfy->xml_stream().send(std::move(v));
     } else {
         queue(std::move(v));
-        if (!m_verify_task.running()) {
-            m_verify_task = init_session_vrfy();
-            m_verify_task.start();
+        if (!m_verify_task.has_value()) {
+            auto wrapper = [this](std::shared_ptr<sentry::transaction> && trans) -> sigslot::tasklet<bool> {
+                co_return co_await init_session_vrfy(trans->start_child("verify_session", m_domain.domain()));
+            };
+            m_verify_task = wrapper(std::make_shared<sentry::transaction>("transmit.verify", m_domain.domain()));
+            m_verify_task->complete().connect(this, [this]() {Router::defer([this]() {m_verify_task.reset();});});
+            m_verify_task->start();
         }
     }
 }
@@ -280,14 +286,15 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
     auto to = m_to.lock();
     if (to) {
         m_logger->debug("Existing stanza session: serial=[{}]", to->serial());
-        to->xml_stream().send(move(s));
+        to->xml_stream().send(std::move(s));
     } else {
         m_logger->debug("No stanza session");
         queue(std::move(s));
-        if (!m_to_task.running()) {
+        if (!m_to_task.has_value()) {
             m_logger->debug("No current task");
-            m_to_task = init_session_to();
-            m_to_task.start();
+            m_to_task = init_session_to(std::make_shared<sentry::transaction>("transmit.stanza", m_domain.domain()));
+            m_to_task->complete().connect(this, [this]() {Router::defer([this]() {m_to_task.reset();});});
+            m_to_task->start();
         }
     }
     m_logger->trace("Stanza accepted");

@@ -48,7 +48,7 @@ namespace {
         public:
             Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH_FALLBACK) {};
 
-            sigslot::tasklet<bool> offer(optional_ptr<xml_node<>> node, XMLStream &s) override {
+            sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (!s.secured() && (Config::config().domain(s.local_domain()).require_tls() ||
                                      Config::config().domain(s.remote_domain()).require_tls())) {
                     co_return false;
@@ -68,7 +68,7 @@ namespace {
             return false;
         }
 
-        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>>) override {
+        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, optional_ptr<rapidxml::xml_node<>>) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             throw Metre::unsupported_stanza_type("Wrong namespace for dialback.");
         }
@@ -86,7 +86,7 @@ namespace {
         /**
          * Inbound handling.
          */
-        sigslot::tasklet<bool> result(DB::Result &result) {
+        sigslot::tasklet<bool> result(std::shared_ptr<sentry::span> span, DB::Result &result) {
             /*
              * This is a request to authenticate, using the current key.
              */
@@ -108,7 +108,7 @@ namespace {
             auto const &route = RouteTable::routeTable(result.to()).route(result.from());
             result.freeze();
             // Shortcuts here.
-            if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(*route))) {
+            if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", result.from().domain()), *route))) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain_jid(), route->local_jid(), DB::VALID);
                 m_stream.send(std::move(d));
                 m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::AUTHORIZED);
@@ -193,7 +193,7 @@ namespace {
             }
         }
 
-        sigslot::tasklet<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
+        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> span, optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             if (node->name() == "result") {
                 auto p = std::make_unique<DB::Result>(node);
@@ -208,7 +208,7 @@ namespace {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:result");
                     }
                 } else {
-                    auto task = m_stream.start_task("Dialback calling result", result(*p));
+                    auto task = m_stream.start_task("Dialback calling result", result(span->start_child("dialback", "result"), *p));
                     co_return co_await *task;
                 }
             } else if (node->name() == "verify") {

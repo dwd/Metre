@@ -28,7 +28,6 @@ SOFTWARE.
 #include <rapidxml.hpp>
 #include <router.h>
 #include <log.h>
-#include "cothread.h"
 
 using namespace Metre;
 using namespace rapidxml;
@@ -44,16 +43,7 @@ namespace {
         DiscoCache(BaseDescription &b, Config::Domain &, YAML::Node const &) : Filter(b) {
         }
 
-        virtual sigslot::tasklet<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
-            auto fn = []() -> bool {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                return true;
-            };
-            CoThread<bool> cothread(fn);
-            co_await cothread.run();
-            if (dir == FILTER_DIRECTION::FROM) {
-                co_return PASS;
-            }
+        sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
             if (s.name() == Iq::name) {
                 Iq &iq = dynamic_cast<Iq &>(s);
                 if (iq.type() == Iq::GET) {

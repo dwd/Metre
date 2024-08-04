@@ -76,6 +76,9 @@ void Stanza::freeze() {
         for (auto & child : rapidxml::children(m_node)) {
             node->append_node(doc->clone_node(&child, true));
         }
+        if (!m_node->first_node() && !m_node->value().empty()) {
+            node->value(doc->allocate_string(m_node->value()));
+        }
     }
     m_doc = std::move(doc);
     m_node = node;

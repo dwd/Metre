@@ -290,6 +290,29 @@ TEST_F(IqTest, Namespace) {
     EXPECT_EQ(iq->node()->first_node()->xmlns(), "urn:xmpp:ping");
 }
 
+TEST(Dialback, DBResultParse) {
+    std::string xml = "<db:result from='from.example' to='to.example' id='stream'>key_goes_here</db:result>";
+    rapidxml::xml_document<> doc;
+    doc.parse<rapidxml::parse_fastest>(xml);
+    auto db_result = std::make_unique<DB::Result>(doc.first_node());
+    EXPECT_EQ(db_result->key(), "key_goes_here");
+    db_result->freeze();
+    EXPECT_EQ(db_result->key(), "key_goes_here");
+    std::string out;
+    rapidxml::print(std::back_inserter(out), db_result->node().value(), rapidxml::print_no_indenting);
+    EXPECT_EQ(out, "<db:result to=\"to.example\" from=\"from.example\" id=\"stream\">key_goes_here</db:result>");
+}
+
+TEST(Dialback, DBVerifyGen) {
+    auto res = []() {
+        return std::make_unique<DB::Verify>(Jid("to.example"), Jid("from.example"), "stream_id", "key_goes_here");
+    };
+    std::string out;
+    auto verify = res();
+    rapidxml::print(std::back_inserter(out), verify->node().value(), rapidxml::print_no_indenting);
+    EXPECT_EQ(out, "<db:verify to=\"to.example\" from=\"from.example\" id=\"stream_id\">key_goes_here</db:verify>");
+}
+
 #if 0
 class IqGenTest : public Test {
 public:

@@ -196,7 +196,7 @@ namespace {
         public:
             Description() : Feature::Description<StartTls>(tls_ns, FEAT_SECURE) {};
 
-            sigslot::tasklet<bool> offer(optional_ptr<xml_node<>> node, XMLStream &s) override {
+            sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (s.secured()) co_return false;
                 SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
                 if (!ctx) co_return false;
@@ -208,7 +208,7 @@ namespace {
             }
         };
 
-        sigslot::tasklet<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
+        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle StartTLS");
             if ((node->name() == "starttls" && m_stream.direction() == INBOUND) ||
                 (node->name() == "proceed" && m_stream.direction() == OUTBOUND)) {
@@ -260,7 +260,7 @@ namespace {
 }
 
 namespace Metre {
-    sigslot::tasklet<void> fetch_crls(spdlog::logger & logger, const SSL *ssl, X509 *cert) {
+    sigslot::tasklet<void> fetch_crls(std::shared_ptr<sentry::span>, spdlog::logger & logger, const SSL *ssl, X509 *cert) {
         STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
         SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
@@ -299,10 +299,7 @@ namespace Metre {
         // in the rare case we happen to cross an expiry boundary, but that's
         // no biggie.
         for (auto & uri : crls) {
-            std::string uristr;
-            int code;
-            X509_CRL *crl;
-            std::tie(uristr, code, crl) = co_await Http::crl(uri);
+            auto [uristr, code, crl] = co_await Http::crl(uri);
             logger.info("verify_tls: Fetched CRL - {}, with code {}", uristr, code);
             if (!X509_STORE_add_crl(store, crl)) {
                 // Erm. Whoops? Probably doesn't matter.
@@ -337,7 +334,7 @@ namespace Metre {
      * @param route
      * @return true if TLS verified correctly.
      */
-    sigslot::tasklet<bool> verify_tls(XMLStream &stream, Route &route) {
+    sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span> span, XMLStream &stream, Route &route) {
         SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
         auto & domain = Config::config().domain(route.domain());
         if (!ssl) co_return false; // No TLS.
@@ -352,20 +349,27 @@ namespace Metre {
         stream.logger().debug("verify_tls: [Re]verifying TLS for {}", domain.domain());
         STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
         SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+        X509_STORE *free_store = nullptr;
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
         X509_VERIFY_PARAM *vpm = X509_VERIFY_PARAM_new();
         if (domain.auth_pkix_status()) {
-            co_await fetch_crls(stream.logger(), ssl, cert);
+            co_await fetch_crls(span->start_child("tls", "fetch_crls"), stream.logger(), ssl, cert);
             X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CRL_CHECK_ALL);
         }
         X509_VERIFY_PARAM_set1_host(vpm, domain.domain().c_str(), domain.domain().size());
         // Add RFC 6125 additional names.
-        auto gathered = co_await domain.gather();
+        auto gathered = co_await domain.gather(span->start_child("gather", domain.domain()));
         for (auto const &host : gathered.gathered_hosts) {
             stream.logger().debug("Adding gathered hostname {}", host);
             X509_VERIFY_PARAM_add1_host(vpm, host.c_str(), host.size());
         }
         X509_STORE_CTX *st = X509_STORE_CTX_new();
+//        if (!domain.pkix_tas().empty()) {
+//            store = free_store = X509_STORE_new();
+//            for (auto * ta : domain.pkix_tas()) {
+//                X509_STORE_add_cert(store, ta);
+//            }
+//        }
         X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
         // Fun fact: We can only add these to SSL_DANE via the connection.
         for (auto const & rr : gathered.gathered_tlsa) {
@@ -394,6 +398,7 @@ namespace Metre {
                                  depth);
         }
         X509_STORE_CTX_free(st);
+        if (free_store) X509_STORE_free(free_store);
         co_return valid;
     }
 

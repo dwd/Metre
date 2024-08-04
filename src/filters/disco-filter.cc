@@ -42,7 +42,7 @@ namespace {
         Disco(BaseDescription &b, Config::Domain &domain, YAML::Node const & config) : Filter(b) {
         }
 
-        virtual sigslot::tasklet<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
+        virtual sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
             if (dir == FILTER_DIRECTION::FROM) {
                 co_return PASS;
             }
