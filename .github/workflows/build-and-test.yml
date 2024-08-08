@@ -11,6 +11,8 @@ jobs:
         with:
           repository: getsentry/sentry-native
           path: deps/sentry-native
+      - name: Apt dance
+        run: sudo apt-get update && sudo apt-get upgrade -yy
       - name: Install dependencies
         run: sudo make apt-deps
       - name: And also libcurl

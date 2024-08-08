@@ -20,7 +20,7 @@ namespace sentry {
     namespace detail {
         class dummy_raii {
         public:
-            explicit dummy_raii(std::string const &, std::string const &) {};
+            explicit dummy_raii(std::string const &, std::string const &, std::optional<std::string> const & = {}) {};
             void name(std::string const &) {}
             std::shared_ptr<dummy_raii> start_child(std::string const &, std::string const&) { return {}; }
         };
@@ -28,17 +28,8 @@ namespace sentry {
     using transaction = detail::dummy_raii;
     using span = detail::dummy_raii;
 #else
-    class scope;
     class span;
     class transaction;
-
-    class scope : public sigslot::tracker {
-    public:
-        scope();
-        void terminate() override;
-        void exception(std::exception_ptr const &) override;
-        ~scope();
-    };
 
 class span : public sigslot::tracker {
     sentry_span_t *  m_span = nullptr;
@@ -63,7 +54,8 @@ class transaction : public sigslot::tracker {
 
     void end();
 public:
-    transaction(std::string const & op_name, std::string const & description);
+    transaction(std::string const & op_name, std::string const & description, std::optional<std::string> const & trace_header = {});
+    void tag(std::string const &, std::string const &);
     void name(std::string const &);
     std::shared_ptr<span> start_child(std::string const & op_name, std::string const & desc);
 

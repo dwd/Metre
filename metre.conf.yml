@@ -1,10 +1,10 @@
 globals:
   default-domain: cassidy.cridland.im
-  rundir: /home/dwd/src/Metre/run
-  datadir: /home/dwd/src/Metre/data
-  dnssec-keys: /home/dwd/src/Metre/keys
   log:
-    level: debug
+    level: trace
+  healthcheck:
+    checks:
+      foo.example.org: dave.cridland.net
 
 remote:
   any:

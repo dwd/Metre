@@ -29,6 +29,7 @@ SOFTWARE.
 #include "router.h"
 #include "config.h"
 #include "sentry-wrap.h"
+#include "send.h"
 #include <memory>
 #include <endpoint.h>
 #include <log.h>
@@ -48,13 +49,28 @@ namespace {
             Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
         };
 
+        bool handle_iq(Iq const & iq) {
+            if (iq.id().has_value() && iq.id().value().starts_with("::metre::handle::")) {
+                Metre::Send::handle(iq);
+                return false;
+            }
+            return true;
+        }
+
         sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> span, rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle JabberServer");
             std::unique_ptr<Stanza> s;
             if (node->name() == "message") {
                 s = std::make_unique<Message>(node);
             } else if (node->name() == "iq") {
-                s = std::make_unique<Iq>(node);
+                auto iq = std::make_unique<Iq>(node);
+                if (!handle_iq(*iq)) {
+                    span->tag("from", iq->from().domain());
+                    span->tag("to", iq->to().domain());
+                    span->tag("mine", "yes");
+                    co_return true;
+                }
+                s = std::move(iq);
             } else if (node->name() == "presence") {
                 s = std::make_unique<Presence>(node);
             } else {
@@ -70,6 +86,9 @@ namespace {
                 try {
                     Jid const &to = s->to();
                     Jid const &from = s->from();
+                    span->containing_transaction().tag("from", s->from().domain());
+                    span->containing_transaction().tag("to", s->to().domain());
+                    span->containing_transaction().tag("mine", "no");
                     // Check auth state.
                     if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
                         if (m_stream.x2x_mode()) {

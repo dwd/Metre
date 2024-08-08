@@ -45,6 +45,8 @@ namespace sigslot {
             std::cout << "Resumption (deferred completed) " << c.address() << std::endl;
         });
     }
+    void register_coro(std::coroutine_handle<>) {}
+    void deregister_coro(std::coroutine_handle<>) {}
 }
 
 class EndpointTest : public ::testing::Test, public sigslot::has_slots {

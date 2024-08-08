@@ -535,6 +535,11 @@ void Config::load(std::string const &filename) {
         if (globals["healthcheck"]) {
             m_healthcheck_port = globals["healthcheck"]["port"].as<unsigned short>(m_healthcheck_port);
             m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>(m_healthcheck_address);
+            if (globals["healthcheck"]["checks"]) {
+                for (auto const & from : globals["healthcheck"]["checks"]) {
+                    m_healthchecks.emplace(std::make_pair(from.first.as<std::string>(), from.second.as<std::string>()));
+                }
+            }
         }
         if (auto filters = root_node["filters"]; filters) {
             for (auto const & item : filters) {
@@ -856,8 +861,11 @@ std::string Config::asString() const {
     config["globals"]["boot-method"] = m_boot;
     config["globals"]["fetch-crls"] = m_fetch_crls;
     config["globals"]["dnssec-keys"] = m_dns_keys;
-    config["healthcheck"]["address"] = m_healthcheck_address;
-    config["healthcheck"]["port"] = m_healthcheck_port;
+    config["globals"]["healthcheck"]["address"] = m_healthcheck_address;
+    config["globals"]["healthcheck"]["port"] = m_healthcheck_port;
+    for (auto const & [from, to] : m_healthchecks) {
+        config["globals"]["healthcheck"]["checks"][from] = to;
+    }
 
     for (auto const &[filter_name, filter] : Filter::all_filters()) {
         config["filters"][filter_name] = filter->config();

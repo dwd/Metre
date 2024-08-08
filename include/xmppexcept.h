@@ -106,7 +106,7 @@ namespace Metre {
     METRE_STANZA_EXCEPT(service_unavailable, "This service is not available at this jid", "cancel",
                         "service-unavailable");
 
-    METRE_STANZA_EXCEPT(undefined_condition, "An internal server error occured processing this stanza", "cancel",
+    METRE_STANZA_EXCEPT(undefined_condition, "An internal server error occurred processing this stanza", "cancel",
                         "undefined-condition");
 
     METRE_STANZA_EXCEPT(remote_server_timeout, "The remote server could not be reached within the required time",

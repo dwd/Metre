@@ -51,6 +51,8 @@ namespace {
         std::string boot_method = "";
 
         BootConfig(int argc, char *argv[]) {
+            const char * env_conf_file = getenv("METRE_CONF_YML");
+            if (env_conf_file) config_file = env_conf_file;
             for (int i = 1; argv[i]; ++i) {
                 char opt;
                 switch (argv[i][0]) {

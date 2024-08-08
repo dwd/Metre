@@ -23,6 +23,7 @@ SOFTWARE.
 
 ***/
 
+#include "sigslot.h"
 #include "router.h"
 #include "dns.h"
 #include "xmlstream.h"
@@ -42,6 +43,7 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_dom
 }
 
 sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> span) {
+    span->containing_transaction().tag("domain", m_domain.domain());
     m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
     switch(Config::config().domain(m_domain.domain()).transport_type()) {
     case INTERNAL:
@@ -60,6 +62,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
         co_return false;
     }
     if (Config::config().domain(m_domain.domain()).multiplex()) {
+        auto span_ = span->start_child("multiplex", "scan for existing sessions");
         for (auto &rr: gathered.gathered_connect) {
             m_logger->trace("Should look for [{}:{}]", rr.hostname, rr.port);
             auto session = Router::session_by_address(rr.hostname, rr.port);
@@ -81,8 +84,9 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
         }
     }
     for (auto &rr : gathered.gathered_connect) {
+        auto span_ = span->start_child("connect", "Connection");
         try {
-            auto s = span->start_child("connect", rr.hostname);
+            auto s = span_->start_child("connect", rr.hostname);
             m_logger->trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
             auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                            reinterpret_cast<sockaddr *>(&rr.sockaddr),
@@ -108,6 +112,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
 }
 
 sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transaction> trans) {
+    trans->tag("domain", m_domain.domain());
     m_logger->debug("Stanza session spin-up");
     auto session = Router::session_by_domain(m_domain.domain());
     if (!session) {
@@ -132,6 +137,8 @@ sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transactio
         } while (!session);
         m_logger->trace("Got verify session domain=[{}]", m_domain);
     }
+    auto span_ = trans->start_child("auth", "Authentication");
+    trans->tag("auth", "sasl");
     switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
         default:
             if (!session->xml_stream().auth_ready()) {
@@ -140,6 +147,7 @@ sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transactio
             }
             /// Send a dialback request.
             {
+                trans->tag("auth", "dialback");
                 m_logger->trace("Dialing back: domain=[{}]");
                 std::string key = Config::config().dialback_key(session->xml_stream().stream_id(),
                                                                 m_local.domain(),
@@ -232,8 +240,8 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
             auto wrapper = [this](std::shared_ptr<sentry::transaction> && trans) -> sigslot::tasklet<bool> {
                 co_return co_await init_session_vrfy(trans->start_child("verify_session", m_domain.domain()));
             };
-            m_verify_task = wrapper(std::make_shared<sentry::transaction>("transmit.verify", m_domain.domain()));
-            m_verify_task->complete().connect(this, [this]() {Router::defer([this]() {m_verify_task.reset();});});
+            m_verify_task = wrapper(std::make_shared<sentry::transaction>("transmit", "Verify session spin-up"));
+            m_verify_task->complete().connect(this, [this]() {Router::defer([this]() {m_verify_task.reset();}, {0,5000});});
             m_verify_task->start();
         }
     }
@@ -292,7 +300,7 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
         queue(std::move(s));
         if (!m_to_task.has_value()) {
             m_logger->debug("No current task");
-            m_to_task = init_session_to(std::make_shared<sentry::transaction>("transmit.stanza", m_domain.domain()));
+            m_to_task = init_session_to(std::make_shared<sentry::transaction>("transmit", "Stanza session spin-up"));
             m_to_task->complete().connect(this, [this]() {Router::defer([this]() {m_to_task.reset();});});
             m_to_task->start();
         }
