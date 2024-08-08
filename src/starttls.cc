@@ -309,11 +309,11 @@ namespace Metre {
     }
 
     int reverify_callback(int preverify_ok, X509_STORE_CTX * st) {
-        const int name_sz = 256;
-        std::string cert_name{"<no cert>"};
+        std::array<char, 256> buffer{};
+        std::string cert_name{"<no cert name>"};
         if (auto cert = X509_STORE_CTX_get_current_cert(st)) {
-            cert_name.resize(name_sz);
-            X509_NAME_oneline(X509_get_subject_name(cert), const_cast<char *>(cert_name.data()), name_sz);
+            X509_NAME_oneline(X509_get_subject_name(cert), buffer.data(), buffer.size());
+            cert_name = buffer.data();
         }
         auto depth = X509_STORE_CTX_get_error_depth(st);
         if (preverify_ok) {
