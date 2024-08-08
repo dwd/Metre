@@ -230,6 +230,9 @@ set(SOURCE_FILES
         src/dns.cc
         include/sentry-wrap.h
         ${METRE_SENTRY_SOURCES}
+        include/send.h
+        src/send.cc
+        src/send.cc
 )
 
 if(UNIX)

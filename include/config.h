@@ -425,6 +425,10 @@ namespace Metre {
             return m_healthcheck_port;
         }
 
+        [[nodiscard]] auto const & healthchecks() const {
+            return m_healthchecks;
+        }
+
     private:
         static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
 
@@ -449,6 +453,7 @@ namespace Metre {
         std::string m_log_flush;
         std::string m_healthcheck_address;
         unsigned short int m_healthcheck_port;
+        std::set<std::pair<std::string, std::string>> m_healthchecks;
     };
 }
 

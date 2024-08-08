@@ -2,6 +2,12 @@
 
 ## Overview
 
+### Sentry support
+
+Sentry support is not compiled in by default. If it is, then it remains passive unless the environment variable `SENTRY_DSN` is set.
+
+Metre generates a transaction per element in a stream, and this is likely to exhaust a Sentry SaaS quota very quickly indeed. There is currently little control beyond "on" or "off", so I'd recommend self-hosting.
+
 ### Files, and running config
 
 Metre will read in a YAML config file from (normally) wherever you told it to.
@@ -51,7 +57,7 @@ Metre will typically change directory to the runtime directory after starting, a
 
 ### datadir
 
-Default: Whatever `rundir` is set to.
+Default: Whatever `globals.rundir` is set to.
 
 Metre dumps runtime configuration here (and could potentially do more later).
 
@@ -73,7 +79,7 @@ Can also be "warning", "error", "debug", "trace" - this is the level below which
 
 ### log.flush
 
-Default: Same as `log.level`
+Default: Same as `globals.log.level`
 
 This controls when logging is flushed. For example, setting this to "info" with level set to "trace" will buffer logging until an "info" level message is emitted.
 
@@ -90,6 +96,45 @@ If set, a filename for loading in DNSSEC keying data. You should get this from a
 Default: false
 
 If set to true, will enable CRL fetching. CRL fetching will only occur for domains that are configured to check status, which itself is off by default.
+
+### healthcheck
+
+The healthcheck block within globals sets up a healthcheck HTTP API. This should not typically be exposed to public networks, and does not provide HTTPS. Currently, any URI path can be used, though this may change in the future.
+
+the Docker container will inject a healthcheck directive which will call this API continuously.
+
+### healthcheck.address
+
+Default: '0.0.0.0'
+
+The address to bind to, by default this is the universal IPv4 address.
+
+### healthcheck.port
+
+Default: 7000
+
+The port number to use.
+
+### healthcheck.checks
+
+This optional block contains a set of key/value pairs which indicate a XEP-0199 ping test to be performed in order for the healthcheck to pass.
+
+For example:
+
+```yaml
+globals:
+  healthcheck:
+    checks:
+      from.example.org: to.example.org
+      from.example.org: other.example.org
+      other.example.org: from.example.org
+```
+
+In this case, pings will be sent with Metre acting as `from.example.org` to `to.example.org` and `other.example.org`, and Metre will also act as `other.example.org` to send a ping to `from.example.org`.
+
+The two last seem like mirrors, but are checking entirely different connections.
+
+I don't recommend using external domains on the right-hand-side, as this generates significant traffic.
 
 ## Global Filter Settings
 

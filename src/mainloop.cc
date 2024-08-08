@@ -49,30 +49,61 @@ SOFTWARE.
 #include "sigslot.h"
 #include "config.h"
 #include "log.h"
+#include "send.h"
 #include "event2/thread.h"
 #include "event2/http.h"
 #include "event2/buffer.h"
 
 namespace {
-    void healthcheck(struct evhttp_request *req, void *) {
-        switch (evhttp_request_get_command(req)) {
-            case EVHTTP_REQ_GET:
-            case EVHTTP_REQ_HEAD:
-                break;
-            default:
-                return;
+    class task_sleep {
+        std::coroutine_handle<> awaiting;
+        bool ready = false;
+
+    public:
+        task_sleep() {
+            Metre::Router::defer([this]() {
+                wake();
+            });
         }
 
-        evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "application/json");
-        char resp[] = "{\"status\":\"ok\"}";
-        char len[] = "15";
-        evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Length", len);
-        auto reply = evbuffer_new();
-        evbuffer_add_printf(reply, "%s", resp);
-        evbuffer_add(reply, resp, 15);
-        evhttp_send_reply(req, HTTP_OK, nullptr, reply);
-        evbuffer_free(reply);
-    }
+        task_sleep(long secs) {
+            Metre::Router::defer([this]() {
+                wake();
+            }, secs);
+        }
+
+        task_sleep(struct timeval secs) {
+            Metre::Router::defer([this]() {
+                wake();
+            }, secs);
+        }
+
+        auto & operator co_await() {
+            return *this;
+        }
+
+
+        bool await_ready() {
+            return ready;
+        }
+
+        void await_suspend(std::coroutine_handle<> h) {
+            // The awaiting coroutine is already suspended.
+            awaiting = h;
+        }
+
+        void await_resume() {}
+
+    private:
+        void wake() {
+            ready = true;
+            ::sigslot::resume_switch(awaiting);
+        }
+    };
+
+//    constexpr bool operator < (struct timeval const & t1, struct timeval const & t2) {
+//        return t1.tv_sec < t2.tv_sec && t1.tv_usec < t2.tv_usec;
+//    }
 }
 
 template<>
@@ -101,7 +132,9 @@ namespace Metre {
         bool m_shutdown_now = false;
         std::recursive_mutex m_scheduler_mutex;
         std::shared_ptr<spdlog::logger> m_logger;
+        std::list<sigslot::tasklet<void>> m_coroutines;
     public:
+        std::set<std::coroutine_handle<>> coro_handles;
         static Mainloop *s_mainloop;
 
         Mainloop() : m_sessions() {
@@ -116,6 +149,101 @@ namespace Metre {
             if (m_event_base) {
                 event_base_free(m_event_base);
             }
+        }
+
+        static void healthcheck_cb(struct evhttp_request *req, void *) {
+            auto method = evhttp_request_get_command(req);
+            const char * method_name = "UNKNOWN";
+            switch (method) {
+                case EVHTTP_REQ_GET:
+                    method_name = "GET";
+                    break;
+                case EVHTTP_REQ_HEAD:
+                    method_name = "HEAD";
+                    break;
+                case EVHTTP_REQ_POST:
+                    method_name = "POST";
+                    break;
+                default:
+                    break;
+            }
+            auto uri = evhttp_request_get_evhttp_uri(req);
+            std::ostringstream transaction_name;
+            transaction_name << method_name << " " << evhttp_uri_get_path(uri);
+            auto headers = evhttp_request_get_input_headers(req);
+            auto trace = evhttp_find_header(headers, "sentry-trace");
+            if (trace) {
+                s_mainloop->m_logger->trace("Found sentry-trace header, injecting {}", trace);
+            }
+            auto trans = std::make_shared<sentry::transaction>("http.server", transaction_name.str(), trace ? trace : std::optional<std::string>{});
+            s_mainloop->m_coroutines.push_back(s_mainloop->healthcheck(trans, req));
+            s_mainloop->m_coroutines.rbegin()->start();
+        }
+
+        sigslot::tasklet<void> healthcheck(std::shared_ptr<sentry::transaction> trans, struct evhttp_request *req) {
+            m_logger->debug("Healthcheck start");
+            switch (evhttp_request_get_command(req)) {
+                case EVHTTP_REQ_GET:
+                case EVHTTP_REQ_HEAD:
+                    break;
+                default:
+                    evhttp_send_error(req, HTTP_BADMETHOD, "Method not supported");
+                    co_return;
+            }
+
+            evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "application/json");
+            std::ostringstream body;
+            body << "{\"status\":\"ok\"";
+            std::list<sigslot::tasklet<Iq const *>> pings;
+            for (auto const & [from, to] : Config::config().healthchecks()) {
+                std::string name = from + " -> ";
+                name.append(to);
+                pings.push_back(Send::ping(trans->start_child("xmpp.ping", name), Jid(from), Jid(to)));
+                pings.rbegin()->set_name(name);
+            }
+            // Start them all in parallel
+            for (auto & task : pings) {
+                task.start();
+            }
+            auto start = time(nullptr);
+            bool success = true;
+            // Run them all with a timeout.
+            while(!pings.empty()) {
+                co_await task_sleep({0, 500}); // Pause until activity.
+                auto it = pings.begin();
+                while (it != pings.end()) {
+                    auto & task = *it;
+                    if (!task.running()) {
+                        try {
+                            co_await task;
+                            body << ",\"" << task.coro.promise().name << "\":true";
+                        } catch(...) {
+                            body << ",\"" << task.coro.promise().name << "\":false";
+                            success = false;
+                        }
+                        it = pings.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+                if ((time(nullptr) - start) > 10) { // Arbitrary; needs configurable.
+                    break;
+                }
+            }
+            for (auto & task : pings) {
+                body << ",\"" << task.coro.promise().name << "\":false";
+            }
+            body << '}' << std::endl;
+            auto final_body = body.str();
+            std::ostringstream len;
+            len << final_body.length();
+            evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Length", len.str().c_str());
+            auto reply = evbuffer_new();
+            evbuffer_add_printf(reply, "%s", final_body.c_str());
+            evhttp_send_reply(req, success ? HTTP_OK : HTTP_INTERNAL, nullptr, reply);
+            evbuffer_free(reply);
+            event_base_loopbreak(m_event_base); // Do this at the end for cleanup to happen.
+            m_logger->debug("Healthcheck end");
         }
 
         [[nodiscard]] struct event_base * event_base() const {
@@ -147,7 +275,7 @@ namespace Metre {
             m_logger->info("Starting healthcheck service on {}:{}", address, port);
             m_healthcheck_server = evhttp_new(m_event_base);
             evhttp_bind_socket(m_healthcheck_server, address, port);
-            evhttp_set_gencb(m_healthcheck_server, healthcheck, nullptr);
+            evhttp_set_gencb(m_healthcheck_server, healthcheck_cb, nullptr);
             return ok;
         }
 
@@ -387,6 +515,15 @@ namespace Metre {
                         fn();
                     }
                 }
+                auto it = m_coroutines.begin();
+                while (it != m_coroutines.end()) {
+                    if (!it->running()) {
+                        it->get();
+                        it = m_coroutines.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
                 if (m_shutdown_now && m_sessions.empty()) {
                     return;
                 }
@@ -543,9 +680,21 @@ namespace Metre {
 
 namespace sigslot {
     void resume(std::coroutine_handle<> coro) {
+        if (!Metre::Mainloop::s_mainloop->coro_handles.contains(coro)) {
+            coro.resume();
+            return;
+        }
         Metre::Router::defer([=]() {
             std::coroutine_handle<> c = coro;
-            c.resume();
+            if (c && Metre::Mainloop::s_mainloop->coro_handles.contains(c) && !c.done()) {
+                c.resume();
+            }
         });
+    }
+    void register_coro(std::coroutine_handle<> coro) {
+        Metre::Mainloop::s_mainloop->coro_handles.insert(coro);
+    }
+    void deregister_coro(std::coroutine_handle<> coro) {
+        Metre::Mainloop::s_mainloop->coro_handles.erase(coro);
     }
 }

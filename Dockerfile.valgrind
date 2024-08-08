@@ -15,6 +15,7 @@ RUN set -eux; \
        ninja-build \
        pkg-config \
        libcurl4-openssl-dev \
+       valgrind \
    ; \
    apt-get clean; \
    rm -rf /var/lib/apt/lists/* ;
@@ -44,28 +45,8 @@ RUN cmake \
 RUN cmake --build . --target metre
 RUN cmake --build . --target install
 
-RUN set -eux; \
-    mkdir -p /app/deps/; \
-    ldd /app/install/bin/metre | awk '$1~/^\//{print $1}$3~/^\//{print $3}' \
-        | xargs -I{} cp --parents {} '/app/deps/'
-
-
-
-
-FROM scratch
-
 ENV METRE_CONF_YML="/tmp/metre.conf.yml"
-
-VOLUME /tmp
-
-COPY --from=cpp-build /etc/passwd /etc/shadow /etc/
-COPY --from=cpp-build /app/deps/ /
-
-WORKDIR /app
-COPY --from=cpp-build /app/install/bin/metre .
-
-#For the healthcheck to work and be configurable, we pretty much have to stipulate where the config file is, so we rely on Metre picking up the environment variable.
-HEALTHCHECK CMD ["/app/metre", "-d", "healthcheck"]
-ENTRYPOINT ["/app/metre", "-d", "docker"]
+HEALTHCHECK CMD ["/app/install/bin/metre", "-d", "healthcheck"]
+ENTRYPOINT ["/usr/bin/valgrind", "/app/install/bin/metre", "-d", "docker"]
 
 EXPOSE 5269 5222 5275 5276
