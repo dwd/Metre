@@ -7,13 +7,20 @@
 
 using namespace sentry;
 
-transaction::transaction(const std::string &op_name, const std::string &description) {
+transaction::transaction(const std::string &op_name, const std::string &description, std::optional<std::string> const & trace_header) {
     m_trans_ctx = sentry_transaction_context_new(description.c_str(), op_name.c_str());
+    if (trace_header.has_value()) {
+        sentry_transaction_context_update_from_header(m_trans_ctx, "sentry-trace", trace_header.value().c_str());
+    }
     m_trans = sentry_transaction_start(m_trans_ctx, sentry_value_new_null());
 }
 
 void transaction::name(std::string const & n) {
     sentry_transaction_set_name(m_trans, n.c_str());
+}
+
+void transaction::tag(const std::string & tag, const std::string & val) {
+    sentry_transaction_set_tag_n(m_trans, tag.c_str(), tag.length(), val.c_str(), val.length());
 }
 
 void transaction::end() {

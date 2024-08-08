@@ -70,6 +70,9 @@ namespace {
                 try {
                     Jid const &to = s->to();
                     Jid const &from = s->from();
+                    span->containing_transaction().tag("from", s->from().domain());
+                    span->containing_transaction().tag("to", s->to().domain());
+                    span->containing_transaction().tag("mine", "no");
                     // Check auth state.
                     if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
                         if (m_stream.x2x_mode()) {
