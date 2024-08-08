@@ -108,7 +108,7 @@ namespace {
 
 template<>
 struct std::less<struct timeval> {
-    constexpr static bool operator()(struct timeval const & t1, struct timeval const & t2) {
+    constexpr bool operator()(struct timeval const & t1, struct timeval const & t2) const {
         if (t1.tv_sec == t2.tv_sec) return t1.tv_usec < t2.tv_usec;
         return t1.tv_sec < t2.tv_sec;
     }
@@ -502,7 +502,7 @@ namespace Metre {
                         gettimeofday(&now, nullptr);
                         while (!m_pending_actions.empty()) {
                             auto & next = m_pending_actions.begin()->first;
-                            if (std::less<struct timeval>::operator()(next, now)) {
+                            if (std::less<struct timeval>{}.operator()(next, now)) {
                                 run_now.emplace_back(std::move(m_pending_actions.begin()->second));
                                 m_pending_actions.erase(m_pending_actions.begin());
                             } else {
