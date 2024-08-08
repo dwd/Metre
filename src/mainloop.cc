@@ -75,6 +75,14 @@ namespace {
     }
 }
 
+template<>
+struct std::less<struct timeval> {
+    constexpr static bool operator()(struct timeval const & t1, struct timeval const & t2) {
+        if (t1.tv_sec == t2.tv_sec) return t1.tv_usec < t2.tv_usec;
+        return t1.tv_sec < t2.tv_sec;
+    }
+};
+
 namespace Metre {
     class Mainloop : public sigslot::has_slots {
     private:
@@ -88,7 +96,7 @@ namespace Metre {
         std::list<struct evconnlistener *> m_listeners;
         static std::atomic<unsigned long long> s_serial;
         std::list<std::shared_ptr<NetSession>> m_closed_sessions;
-        std::multimap<time_t, std::function<void()>> m_pending_actions;
+        std::multimap<struct timeval, std::function<void()>> m_pending_actions;
         bool m_shutdown = false;
         bool m_shutdown_now = false;
         std::recursive_mutex m_scheduler_mutex;
@@ -308,6 +316,27 @@ namespace Metre {
             return session;
         }
 
+        void next_break() {
+            struct timeval now;
+            gettimeofday(&now, nullptr);
+            struct timeval t = m_pending_actions.begin()->first;
+            if (t.tv_usec <= now.tv_usec) {
+                if (t.tv_sec <= now.tv_sec) {
+                    event_base_loopbreak(m_event_base);
+                    return;
+                }
+                t.tv_sec -= 1;
+                t.tv_usec += 1000000;
+            }
+            if (t.tv_sec < now.tv_sec) {
+                event_base_loopbreak(m_event_base);
+                return;
+            }
+            t.tv_sec -= now.tv_sec;
+            t.tv_usec -= now.tv_usec;
+            event_base_loopexit(m_event_base, &t);
+        }
+
         void run(std::function<bool()> const &check_fn) {
             dns_setup();
             while (true) {
@@ -330,10 +359,7 @@ namespace Metre {
                 } else {
                     std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
                     if (!m_pending_actions.empty()) {
-                        struct timeval t = {0, 0};
-                        time_t now = time(nullptr);
-                        t.tv_sec = m_pending_actions.begin()->first - now;
-                        event_base_loopexit(m_event_base, &t);
+                        next_break();
                     }
                 }
                 event_base_dispatch(m_event_base);
@@ -344,9 +370,11 @@ namespace Metre {
                     std::list<std::function<void()>> run_now;
                     {
                         std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
-                        time_t now = std::time(nullptr);
+                        struct timeval now;
+                        gettimeofday(&now, nullptr);
                         while (!m_pending_actions.empty()) {
-                            if (m_pending_actions.begin()->first <= now) {
+                            auto & next = m_pending_actions.begin()->first;
+                            if (std::less<struct timeval>::operator()(next, now)) {
                                 run_now.emplace_back(std::move(m_pending_actions.begin()->second));
                                 m_pending_actions.erase(m_pending_actions.begin());
                             } else {
@@ -366,16 +394,22 @@ namespace Metre {
             }
         }
 
-        void do_later(std::function<void()> &&fn, std::size_t seconds) {
+        void do_later(std::function<void()> &&fn, struct timeval seconds) {
             std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
-            time_t now = time(nullptr);
-            m_pending_actions.emplace(now + seconds, std::move(fn));
-            if (seconds == 0) {
+            struct timeval now;
+            gettimeofday(&now, nullptr);
+            struct timeval when = now;
+            when.tv_sec += seconds.tv_sec;
+            when.tv_usec += seconds.tv_usec;
+            if (when.tv_usec >= 1000000) {
+                when.tv_sec += 1;
+                when.tv_usec -= 1000000;
+            }
+            m_pending_actions.emplace(when, std::move(fn));
+            if (seconds.tv_sec == 0 && seconds.tv_usec == 0) {
                 event_base_loopbreak(m_event_base);
             } else {
-                struct timeval t = {0, 0};
-                t.tv_sec = m_pending_actions.begin()->first - now;
-                event_base_loopexit(m_event_base, &t);
+                next_break();
             }
         }
 
@@ -458,10 +492,10 @@ namespace Metre {
         }
 
         namespace {
-            std::list<std::tuple<std::function<void()>,std::size_t>> early_defer;
+            std::list<std::tuple<std::function<void()>,struct timeval>> early_defer;
         }
 
-        void defer(std::function<void()> &&fn, std::size_t seconds) {
+        void defer(std::function<void()> &&fn, struct timeval seconds) {
             if (!Mainloop::s_mainloop) {
                 early_defer.emplace_back(fn, seconds);
             } else {
@@ -470,7 +504,10 @@ namespace Metre {
         }
 
         void defer(std::function<void()> &&fn) {
-            defer(std::move(fn), 0);
+            defer(std::move(fn), {0, 0});
+        }
+        void defer(std::function<void()> &&fn, long seconds) {
+            defer(std::move(fn), {seconds, 0});
         }
 
         void main(std::function<bool()> const &check_fn) {

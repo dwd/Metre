@@ -37,7 +37,8 @@ namespace Metre {
 
         void defer(std::function<void()> &&);
 
-        void defer(std::function<void()> &&, std::size_t seconds);
+        void defer(std::function<void()> &&, long seconds);
+        void defer(std::function<void()> &&, struct timeval seconds);
 
         void main(std::function<bool()> const &);
 
