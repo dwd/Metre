@@ -43,7 +43,8 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_dom
 }
 
 sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> span) {
-    span->containing_transaction().tag("domain", m_domain.domain());
+    span->containing_transaction().tag("to", m_domain.domain());
+    span->containing_transaction().tag("from", m_local.domain());
     m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
     switch(Config::config().domain(m_domain.domain()).transport_type()) {
     case INTERNAL:
@@ -77,17 +78,20 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
                     m_logger->trace("Auth was not ready on verify session serial=[{}]", session->serial());
                     continue;
                 }
+                span->containing_transaction().tag("multiplex", "yes");
                 set_vrfy(session);
                 m_logger->trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
                 co_return true;
             }
         }
     }
+    span->containing_transaction().tag("multiplex", "no");
     for (auto &rr : gathered.gathered_connect) {
         auto span_ = span->start_child("connect", "Connection");
         try {
             auto s = span_->start_child("connect", rr.hostname);
             m_logger->trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
+            span->containing_transaction().tag("tls_mode", rr.method == DNS::ConnectInfo::Method::DirectTLS ? "XEP-0368" : "starttls");
             auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                            reinterpret_cast<sockaddr *>(&rr.sockaddr),
                                            rr.port, Config::config().domain(m_domain.domain()).transport_type(),
@@ -112,7 +116,8 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
 }
 
 sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transaction> trans) {
-    trans->tag("domain", m_domain.domain());
+    trans->tag("to", m_domain.domain());
+    trans->tag("from", m_local.domain());
     m_logger->debug("Stanza session spin-up");
     auto session = Router::session_by_domain(m_domain.domain());
     if (!session) {

@@ -19,8 +19,10 @@ void transaction::name(std::string const & n) {
     sentry_transaction_set_name(m_trans, n.c_str());
 }
 
-void transaction::tag(const std::string & tag, const std::string & val) {
-    sentry_transaction_set_tag_n(m_trans, tag.c_str(), tag.length(), val.c_str(), val.length());
+void transaction::tag(const std::string_view & tag, const std::string_view & val) {
+    std::string full_tag ="metre.";
+    full_tag += tag;
+    sentry_transaction_set_tag_n(m_trans, full_tag.data(), full_tag.length(), val.data(), val.length());
 }
 
 void transaction::end() {

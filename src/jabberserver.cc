@@ -64,10 +64,16 @@ namespace {
                 s = std::make_unique<Message>(node);
             } else if (node->name() == "iq") {
                 auto iq = std::make_unique<Iq>(node);
+                auto query = iq->node()->first_node();
+                if (query) {
+                    span->tag("query.xmlns", query->xmlns());
+                    span->tag("query.name", query->name());
+                }
                 if (!handle_iq(*iq)) {
                     span->tag("from", iq->from().domain());
                     span->tag("to", iq->to().domain());
                     span->tag("mine", "yes");
+                    span->tag("type", iq->type_str().has_value() ? iq->type_str().value() : "(null)");
                     co_return true;
                 }
                 s = std::move(iq);
@@ -76,6 +82,10 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type(std::string(node->name()));
             }
+            span->tag("from", s->from().domain());
+            span->tag("to", s->to().domain());
+            span->tag("mine", "no");
+            span->tag("type", s->type_str().has_value() ? s->type_str().value() : "(null)");
             auto task = m_stream.start_task("jabber::server handle(Stanza)", handle(span->start_child("stanza", "handle"), s));
             co_await *task;
             co_return true;
@@ -86,9 +96,6 @@ namespace {
                 try {
                     Jid const &to = s->to();
                     Jid const &from = s->from();
-                    span->containing_transaction().tag("from", s->from().domain());
-                    span->containing_transaction().tag("to", s->to().domain());
-                    span->containing_transaction().tag("mine", "no");
                     // Check auth state.
                     if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
                         if (m_stream.x2x_mode()) {
