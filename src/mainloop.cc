@@ -181,7 +181,6 @@ namespace Metre {
         }
 
         sigslot::tasklet<void> healthcheck(std::shared_ptr<sentry::transaction> trans, struct evhttp_request *req) {
-            m_logger->debug("Healthcheck start");
             switch (evhttp_request_get_command(req)) {
                 case EVHTTP_REQ_GET:
                 case EVHTTP_REQ_HEAD:
@@ -243,7 +242,6 @@ namespace Metre {
             evhttp_send_reply(req, success ? HTTP_OK : HTTP_INTERNAL, nullptr, reply);
             evbuffer_free(reply);
             event_base_loopbreak(m_event_base); // Do this at the end for cleanup to happen.
-            m_logger->debug("Healthcheck end");
         }
 
         [[nodiscard]] struct event_base * event_base() const {
