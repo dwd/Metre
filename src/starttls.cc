@@ -260,7 +260,7 @@ namespace {
 }
 
 namespace Metre {
-    sigslot::tasklet<void> fetch_crls(std::shared_ptr<sentry::span>, spdlog::logger & logger, const SSL *ssl, X509 *cert) {
+    sigslot::tasklet<void> fetch_crls(std::shared_ptr<sentry::span> span, spdlog::logger & logger, const SSL *ssl, X509 *cert) {
         STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
         SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
@@ -268,7 +268,7 @@ namespace Metre {
         X509_STORE_CTX_init(st, store, cert, chain);
         X509_verify_cert(st);
         STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
-        std::__cxx11::list<std::string> crls;
+        std::list<std::pair<std::string,std::shared_ptr<sentry::span>>> all_crls;
         for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
             auto current_cert = sk_X509_value(verified, certnum);
             std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
@@ -287,6 +287,7 @@ namespace Metre {
                                 std::string uristr{reinterpret_cast<char *>(uri->data),
                                                    static_cast<std::size_t>(uri->length)};
                                 logger.info("verify_tls: Fetching CRL - {}", uristr);
+                                all_crls.push_back(std::make_pair(uristr, span->start_child("http.client", uristr)));
                                 Http::crl(uristr);
                                 // We don't await here, just get them going in parallel.
                             }
@@ -298,9 +299,10 @@ namespace Metre {
         // Now we wait for them all. Order doesn't matter - we'll get new copies
         // in the rare case we happen to cross an expiry boundary, but that's
         // no biggie.
-        for (auto & uri : crls) {
+        for (auto & [uri, child_span] : all_crls) {
             auto [uristr, code, crl] = co_await Http::crl(uri);
-            logger.info("verify_tls: Fetched CRL - {}, with code {}", uristr, code);
+            child_span.reset();
+            logger.info("verify_tls: Fetched CRL - {}, with code {}", uri, code);
             if (!X509_STORE_add_crl(store, crl)) {
                 // Erm. Whoops? Probably doesn't matter.
                 ERR_clear_error();

@@ -197,6 +197,10 @@ namespace {
             METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             if (node->name() == "result") {
                 auto p = std::make_unique<DB::Result>(node);
+                span->tag("from", p->from().domain());
+                span->tag("to", p->to().domain());
+                span->tag("mine", "no");
+                span->tag("type", p->type_str().has_value() ? p->type_str().value() : "(null)");
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {
                         result_valid(*p);
@@ -213,6 +217,10 @@ namespace {
                 }
             } else if (node->name() == "verify") {
                 auto p = std::make_unique<DB::Verify>(node);
+                span->tag("from", p->from().domain());
+                span->tag("to", p->to().domain());
+                span->tag("mine", "no");
+                span->tag("type", p->type_str().has_value() ? p->type_str().value() : "(null)");
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {
                         verify_valid(*p);

@@ -22,7 +22,11 @@ namespace sentry {
         public:
             explicit dummy_raii(std::string const &, std::string const &, std::optional<std::string> const & = {}) {};
             void name(std::string const &) {}
-            std::shared_ptr<dummy_raii> start_child(std::string const &, std::string const&) { return {}; }
+            void tag(std::string_view const &, std::string_view const &) {}
+            auto & containing_transaction() {
+                return *this;
+            }
+            std::shared_ptr<dummy_raii> start_child(std::string_view const &, std::string_view const&) { return {}; }
         };
     }
     using transaction = detail::dummy_raii;
@@ -55,7 +59,7 @@ class transaction : public sigslot::tracker {
     void end();
 public:
     transaction(std::string const & op_name, std::string const & description, std::optional<std::string> const & trace_header = {});
-    void tag(std::string const &, std::string const &);
+    void tag(std::string_view const &, std::string_view const &);
     void name(std::string const &);
     std::shared_ptr<span> start_child(std::string const & op_name, std::string const & desc);
 
