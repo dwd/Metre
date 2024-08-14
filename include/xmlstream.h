@@ -137,6 +137,8 @@ namespace Metre {
             return m_closed;
         }
 
+        void close(rapidxml::optional_ptr<rapidxml::xml_node<>> error = {});
+
         std::optional<std::string> const &user() const {
             return m_user;
         }
@@ -153,7 +155,7 @@ namespace Metre {
 
         void set_auth_ready() {
             m_authready = true;
-            onAuthReady.emit(*this);
+            auth_state_changed.emit(*this);
         }
 
         void set_compressed() { m_compressed = true; }
@@ -162,7 +164,7 @@ namespace Metre {
 
         void set_secured() { m_secured = true; }
 
-        bool auth_ready() { return m_authready; }
+        bool auth_ready() { return !m_closed && m_authready; }
 
         std::string const &local_domain() const { return m_stream_local; }
 
@@ -208,8 +210,7 @@ namespace Metre {
         Feature &feature(std::string const &);
 
         // Signals:
-        sigslot::signal<XMLStream &> onAuthReady;
-        sigslot::signal<XMLStream &> onAuthenticated;
+        sigslot::signal<XMLStream &> auth_state_changed;
 
     private:
         void handle(rapidxml::optional_ptr<rapidxml::xml_node<>>);

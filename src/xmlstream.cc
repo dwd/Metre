@@ -199,36 +199,39 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
     return spaces + len - buf.length();
 }
 
-void XMLStream::handle_exception(Metre::base::xmpp_exception &e) {
+void XMLStream::handle_exception(Metre::base::xmpp_exception & e) {
     using namespace rapidxml;
     logger().error("Raising error: [{}]", e.what());
     xml_document<> d;
-    auto error = d.allocate_node(node_element, "stream:error");
-    auto specific = d.allocate_node(node_element, e.element_name());
-    specific->append_attribute(d.allocate_attribute("xmlns", "urn:ietf:params:xml:ns:xmpp-streams"));
-    auto text = d.allocate_node(node_element, "text", e.what());
-    specific->append_node(text);
+    auto error = d.append_element("stream:error");
+    auto specific = error->append_element({"urn:ietf:params:xml:ns:xmpp-streams", e.element_name()});
+    error->append_element({"urn:ietf:params:xml:ns:xmpp-streams", e.element_name()}, e.what());
     if (dynamic_cast<Metre::undefined_condition *>(&e)) {
-        auto other = d.allocate_node(node_element, "unhandled-exception");
-        other->append_attribute(d.allocate_attribute("xmlns", "http://cridland.im/xmlns/metre"));
-        specific->append_node(other);
+        specific->append_element({"http://cridland.im/xmlns/metre", "unhandled-exception"});
     }
-    error->append_node(specific);
+    close(error);
+}
+
+void XMLStream::close(rapidxml::optional_ptr<rapidxml::xml_node<>> error) {
+    if (m_closed) return;
     if (m_opened) {
-        d.append_node(error);
-        m_session->send(d);
+        if (error) m_session->send(error.value());
         m_session->send("</stream:stream>");
     } else {
-        auto node = d.allocate_node(node_element, "stream:stream");
+        rapidxml::xml_document<> d;
+        auto node = d.allocate_node(rapidxml::node_element, "stream:stream");
         node->append_attribute(d.allocate_attribute("xmlns:stream", "http://etherx.jabber.org/streams"));
         node->append_attribute(d.allocate_attribute("version", "1.0"));
         node->append_attribute(d.allocate_attribute("xmlns", content_namespace()));
-        node->append_node(error);
+        if (error) {
+            node->append_node(d.clone_node(error));
+        }
         d.append_node(node);
         m_session->send("<?xml version='1.0'?>");
         m_session->send(d);
     }
     m_closed = true;
+    auth_state_changed(*this);
 }
 
 void XMLStream::in_context(std::function<void()> &&fn, Stanza &s) {
@@ -466,8 +469,8 @@ void XMLStream::send(std::unique_ptr<Stanza> s) {
 }
 
 void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
+    m_logger->trace("handle element={} xmlns={}", element->name(), element->xmlns());
     if (element->xmlns() == "http://etherx.jabber.org/streams") {
-        m_logger->trace("handle element=[{}]", element->name());
         if (element->name() == "features") {
             for (;;) {
                 rapidxml::optional_ptr<rapidxml::xml_node<>> feature_offer = nullptr;
@@ -509,7 +512,6 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                         }
                     } else if (s2s_auth_pair(local_domain(), remote_domain(), OUTBOUND) == AUTHORIZED) {
                         set_auth_ready();
-                        onAuthenticated.emit(*this);
                     }
                     return;
                 }
@@ -522,7 +524,24 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                 if (escape) return; // We've done a stream restart or something.
             }
         } else if (element->name() == "error") {
-            throw std::runtime_error("Received an unknown XMPP XML error");
+            const std::string err_ns = "urn:ietf:params:xml:ns:xmpp-streams";
+            auto err_type = element->first_node({}, err_ns);
+            auto err_text = element->first_node("text", err_ns);
+            if (err_type->name() != "connection-timeout") {
+                if (err_text) {
+                    m_logger->error("Received {} over stream: {}", err_type->name(), err_text->value());
+                } else {
+                    m_logger->error("Received {} over stream", err_type->name());
+                }
+            } else {
+                if (err_text) {
+                    m_logger->debug("Received {} over stream: {}", err_type->name(), err_text->value());
+                } else {
+                    m_logger->debug("Received {} over stream", err_type->name());
+                }
+            }
+            m_session->close();
+            return;
         } else {
             throw Metre::unsupported_stanza_type("Unknown stream element");
         }
@@ -649,7 +668,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
             logger().info("Authorized {} session local: {} remote: {}", (dir == INBOUND ? "INBOUND" : "OUTBOUND"),
                           local, remote);
             if (m_bidi && dir == INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
-            onAuthenticated.emit(*this);
+            auth_state_changed.emit(*this);
         }
     }
     return m[key];

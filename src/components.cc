@@ -81,7 +81,7 @@ namespace {
         }
 
         bool negotiate(optional_ptr<rapidxml::xml_node<>>) override {
-            m_stream.onAuthReady.connect(this, &Component::send_handshake);
+            m_stream.auth_state_changed.connect(this, &Component::send_handshake);
             return false;
         }
 

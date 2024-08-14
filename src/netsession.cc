@@ -252,6 +252,7 @@ void NetSession::close() {
     if (!m_bev) {
         return;
     }
+    m_xml_stream->close();
     bufferevent_flush(m_bev, EV_WRITE, BEV_FINISHED);
     onClosed.emit(*this);
 }

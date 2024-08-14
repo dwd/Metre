@@ -94,7 +94,10 @@ namespace {
                 true;
             }
             if (authzid != m_stream.remote_domain()) {
-                throw Metre::not_authorized("Authzid and stream from differ");
+                xml_document<> d;
+                d.append_element({sasl_ns, "success"});
+                m_stream.send(d);
+                co_return true;
             }
             std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                     m_stream.remote_domain());
@@ -171,7 +174,7 @@ namespace {
             std::string authzid = base64_encode(m_stream.local_domain());
             xml_document<> d;
             auto n = d.append_element({sasl_ns, "auth"});
-            n->value_raw(authzid);
+            n->value(authzid);
             auto mech = d.allocate_attribute("mechanism", "EXTERNAL");
             n->append_attribute(mech);
             m_stream.send(d);

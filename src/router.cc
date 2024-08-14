@@ -72,8 +72,9 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
                 continue;
             }
             if (session && !session->xml_stream().auth_ready()) {
+                if (session->xml_stream().closed()) continue;
                 m_logger->trace("Awaiting auth ready on verify session serial=[{}]", session->serial());
-                (void) co_await session->xml_stream().onAuthReady;
+                (void) co_await session->xml_stream().auth_state_changed;
                 if (!session->xml_stream().auth_ready()) {
                     m_logger->trace("Auth was not ready on verify session serial=[{}]", session->serial());
                     continue;
@@ -99,10 +100,14 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
             m_logger->trace("Connected verify session: address=[{}:{}] serial=[{}]", rr.hostname, rr.port,
                             session->serial());
             m_logger->trace("Awaiting auth ready on verify session: serial=[{}]", session->serial());
-            (void) co_await session->xml_stream().onAuthReady;
+            while (!session->xml_stream().auth_ready()) {
+                if (session->xml_stream().closed()) {
+                    break;
+                }
+                (void) co_await session->xml_stream().auth_state_changed;
+            }
             if (!session->xml_stream().auth_ready()) {
                 m_logger->trace("Auth was not ready on verify session: serial=[{}]", session->serial());
-                continue;
             }
             set_vrfy(session);
             m_logger->debug("New outgoing verify session: address=[{}:{}]", rr.hostname, rr.port);
@@ -118,6 +123,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
 sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transaction> trans) {
     trans->tag("to", m_domain.domain());
     trans->tag("from", m_local.domain());
+restart:
     m_logger->debug("Stanza session spin-up");
     auto session = Router::session_by_domain(m_domain.domain());
     if (!session) {
@@ -146,9 +152,10 @@ sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transactio
     trans->tag("auth", "sasl");
     switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
         default:
-            if (!session->xml_stream().auth_ready()) {
+            while (!session->xml_stream().auth_ready()) {
+                if (session->xml_stream().closed()) goto restart;
                 m_logger->trace("Awaiting authentication ready: domain=[{}]");
-                (void) co_await session->xml_stream().onAuthReady;
+                (void) co_await session->xml_stream().auth_state_changed;
             }
             /// Send a dialback request.
             {
@@ -170,14 +177,15 @@ sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transactio
             // Fallthrough
         case XMLStream::REQUESTED:
             m_logger->trace("Awaiting authentication: domain=[{}]");
-            (void) co_await session->xml_stream().onAuthenticated;
+            (void) co_await session->xml_stream().auth_state_changed;
         case XMLStream::AUTHORIZED:
             m_logger->trace("Authorized: domain=[{}]");
             break;
     }
     while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) != XMLStream::AUTHORIZED) {
         m_logger->debug("Authenticating with verify session");
-        (void) co_await session->xml_stream().onAuthenticated;
+        if (session->xml_stream().closed()) co_return false;
+        (void) co_await session->xml_stream().auth_state_changed;
     }
     m_logger->trace("Setting 'to' session");
     set_to(session);
