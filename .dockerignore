@@ -1,5 +1,10 @@
 .git
+.github
+.dockerignore
 /.vscode
 /deps/openssl/
-./cmake-build-debug
-./build
+cmake-build*
+build
+*.md
+Dockerfile
+Dockerfile.*
