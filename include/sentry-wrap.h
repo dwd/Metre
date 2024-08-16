@@ -26,6 +26,7 @@ namespace sentry {
             auto & containing_transaction() {
                 return *this;
             }
+            void exception(std::exception_ptr const &) {}
             std::shared_ptr<dummy_raii> start_child(std::string_view const &, std::string_view const&) { return {}; }
         };
     }

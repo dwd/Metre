@@ -75,11 +75,11 @@ namespace Metre {
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_rx;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
         std::list<std::unique_ptr<Filter>> m_filters;
-        std::size_t m_num_crls = 0;
         std::map<std::string, struct X509_crl_st *> m_crls;
-        bool m_crl_complete = false;
         bool m_x2x_mode = false;
         bool m_bidi = false;
+        bool m_dialback_errors = false;
+        bool m_dialback = false;
         std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
         std::list<std::shared_ptr<sigslot::tasklet<bool>>> m_tasks;
         int m_in_flight = 0; // Tasks in flight.
@@ -135,6 +135,14 @@ namespace Metre {
 
         bool closed() const {
             return m_closed;
+        }
+        bool multiplex(bool target) const;
+        bool dialback() const {
+            return m_dialback;
+        }
+        bool dialback(bool dialback, bool errors) {
+            m_dialback = dialback;
+            m_dialback_errors = dialback && errors;
         }
 
         void close(rapidxml::optional_ptr<rapidxml::xml_node<>> error = {});

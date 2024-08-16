@@ -73,7 +73,7 @@ namespace Metre {
             return m_local;
         }
 
-        sigslot::tasklet<bool> init_session_vrfy(std::shared_ptr<sentry::span>);
+        sigslot::tasklet<bool> init_session_vrfy(std::shared_ptr<sentry::span>, bool multiplex);
 
         sigslot::tasklet<bool> init_session_to(std::shared_ptr<sentry::transaction>);
 

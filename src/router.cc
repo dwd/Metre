@@ -42,7 +42,7 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_dom
     m_logger->log(spdlog::level::info, "Route created");
 }
 
-sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> span) {
+sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> span, bool multiplex) {
     span->containing_transaction().tag("to", m_domain.domain());
     span->containing_transaction().tag("from", m_local.domain());
     m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
@@ -62,16 +62,17 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
         m_logger->warn("DNS Lookup for [{}] failed", m_domain);
         co_return false;
     }
-    if (Config::config().domain(m_domain.domain()).multiplex()) {
+    if (multiplex && Config::config().domain(m_domain.domain()).multiplex()) {
         auto span_ = span->start_child("multiplex", "scan for existing sessions");
         for (auto &rr: gathered.gathered_connect) {
             m_logger->trace("Should look for [{}:{}]", rr.hostname, rr.port);
             auto session = Router::session_by_address(rr.hostname, rr.port);
-            if (session && !Config::config().domain(session->xml_stream().remote_domain()).multiplex()) {
+            if (!session) continue;
+            if (!session->xml_stream().multiplex(true)) {
                 m_logger->trace("Session serial=[{}] found, but will not multiplex", session->serial());
                 continue;
             }
-            if (session && !session->xml_stream().auth_ready()) {
+            if (!session->xml_stream().auth_ready()) {
                 if (session->xml_stream().closed()) continue;
                 m_logger->trace("Awaiting auth ready on verify session serial=[{}]", session->serial());
                 (void) co_await session->xml_stream().auth_state_changed;
@@ -79,14 +80,14 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
                     m_logger->trace("Auth was not ready on verify session serial=[{}]", session->serial());
                     continue;
                 }
-                span->containing_transaction().tag("multiplex", "yes");
+                span->containing_transaction().tag("multiplex", "target");
                 set_vrfy(session);
                 m_logger->trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
                 co_return true;
             }
         }
     }
-    span->containing_transaction().tag("multiplex", "no");
+    span->containing_transaction().tag("multiplex", "none");
     for (auto &rr : gathered.gathered_connect) {
         auto span_ = span->start_child("connect", "Connection");
         try {
@@ -121,11 +122,19 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
 }
 
 sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transaction> trans) {
+    bool multiplex = true;
     trans->tag("to", m_domain.domain());
     trans->tag("from", m_local.domain());
 restart:
     m_logger->debug("Stanza session spin-up");
+    trans->tag("multiplex", "none");
     auto session = Router::session_by_domain(m_domain.domain());
+    if (session) {
+        if (!multiplex || session->xml_stream().multiplex(false)) {
+            m_logger->debug("Will not do sender multiplexing");
+        }
+        trans->tag("multiplex", "sender");
+    }
     if (!session) {
         m_logger->debug("No existing session for domain=[{}]", m_domain);
         do {
@@ -135,13 +144,14 @@ restart:
                 m_logger->debug("No verify session found");
                 if (!m_verify_task.has_value()) {
                     m_logger->debug("No verify session task found, starting");
-                    m_verify_task = init_session_vrfy(trans->start_child("verify_session", m_domain.domain()));
+                    m_verify_task = init_session_vrfy(trans->start_child("verify_session", m_domain.domain()), multiplex);
                     m_verify_task.value().start();
                 }
                 bool vrfy_success = co_await m_verify_task.value();
                 m_verify_task.reset();
                 if (!vrfy_success) {
                     m_logger->debug("Verify task failed");
+                    trans->exception({});
                     co_return false;
                 }
             }
@@ -151,7 +161,7 @@ restart:
     auto span_ = trans->start_child("auth", "Authentication");
     trans->tag("auth", "sasl");
     switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
-        default:
+        default: // NONE
             while (!session->xml_stream().auth_ready()) {
                 if (session->xml_stream().closed()) goto restart;
                 m_logger->trace("Awaiting authentication ready: domain=[{}]");
@@ -177,15 +187,32 @@ restart:
             // Fallthrough
         case XMLStream::REQUESTED:
             m_logger->trace("Awaiting authentication: domain=[{}]");
-            (void) co_await session->xml_stream().auth_state_changed;
+            while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::REQUESTED) {
+                m_logger->debug("Authenticating with verify session");
+                if (session->xml_stream().closed()) {
+                    if (multiplex) {
+                        multiplex = false;
+                        goto restart;
+                    } else {
+                        trans->exception({});
+                        co_return false;
+                    }
+                }
+                (void) co_await session->xml_stream().auth_state_changed;
+            }
+            if (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
+                // Rejected auth.
+                if (multiplex) {
+                    multiplex = false;
+                    goto restart;
+                } else {
+                    trans->exception({});
+                    co_return false;
+                }
+            }
         case XMLStream::AUTHORIZED:
             m_logger->trace("Authorized: domain=[{}]");
             break;
-    }
-    while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) != XMLStream::AUTHORIZED) {
-        m_logger->debug("Authenticating with verify session");
-        if (session->xml_stream().closed()) co_return false;
-        (void) co_await session->xml_stream().auth_state_changed;
     }
     m_logger->trace("Setting 'to' session");
     set_to(session);
@@ -251,7 +278,9 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
         queue(std::move(v));
         if (!m_verify_task.has_value()) {
             auto wrapper = [this](std::shared_ptr<sentry::transaction> && trans) -> sigslot::tasklet<bool> {
-                co_return co_await init_session_vrfy(trans->start_child("verify_session", m_domain.domain()));
+                bool result = co_await init_session_vrfy(trans->start_child("verify_session", m_domain.domain()), true);
+                if (!result) trans->exception({});
+                co_return result;
             };
             m_verify_task = wrapper(std::make_shared<sentry::transaction>("transmit", "Verify session spin-up"));
             m_verify_task->complete().connect(this, [this]() {Router::defer([this]() {m_verify_task.reset();}, {0,5000});});

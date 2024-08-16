@@ -293,7 +293,7 @@ namespace Metre {
             // Do DNS discovery:
             [[nodiscard]] sigslot::tasklet<GatheredData> gather(std::shared_ptr<sentry::span>) const;
             [[nodiscard]] sigslot::tasklet<void> gather_host(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string const &, uint16_t, DNS::ConnectInfo::Method) const;
-            [[nodiscard]] sigslot::tasklet<void> gather_tlsa(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string const &, uint16_t) const;
+            [[nodiscard]] sigslot::tasklet<void> gather_tlsa(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string const &, uint16_t, bool) const;
 
         private:
             std::shared_ptr<spdlog::logger> m_logger;
