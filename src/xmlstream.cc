@@ -722,3 +722,11 @@ std::shared_ptr<sigslot::tasklet<bool>> XMLStream::start_task(std::string const 
     }
     return task;
 }
+
+bool XMLStream::multiplex(bool target) const {
+    if (Config::config().domain(m_stream_remote).multiplex()) {
+        if (target) return m_dialback_errors; // Try target multiplexing if the remote end supports dialback errors.
+        return m_dialback; // Try sender multiplexing if any dialback is supported.
+    }
+    return false;
+}

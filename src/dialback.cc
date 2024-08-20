@@ -59,7 +59,12 @@ namespace {
             }
         };
 
-        bool negotiate(optional_ptr<rapidxml::xml_node<>>) override { // Note that this offer, unusually, can be nullptr.
+        bool negotiate(optional_ptr<rapidxml::xml_node<>> feature) override {// Note that this offer, unusually, can be nullptr.
+            bool errors = false;
+            if (feature && feature->first_node("errors")) {
+                errors = true;
+            }
+            m_stream.dialback(true, errors);
             if (!m_stream.secured() && (Config::config().domain(m_stream.remote_domain()).require_tls())) {
                 m_stream.logger().info("Suppressed dialback due to missing required TLS");
                 return false;
