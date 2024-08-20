@@ -157,6 +157,7 @@ set(FILTER_SOURCES
     src/filters/disco-cache.cc
     src/filters/disco-filter.cc
     src/filters/domain-translation.cc
+        src/filters/minimix.cc
 )
 
 if (USE_SPIFFING)
