@@ -67,6 +67,7 @@ namespace Metre {
         std::string m_stream_id;
         std::string m_stream_local;
         std::string m_stream_remote;
+        bool m_first_read = true;
         bool m_opened = false;
         bool m_closed = false;
         bool m_secured = false; // Crypto in place via TLS. //

@@ -144,20 +144,41 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                  * finishes, and copy that segment over to another buffer. Then reparse, this time properly.
                  */
                 logger().debug("Parsing stream open");
-                auto end = m_stream.parse<parse_open_only | parse_fastest>(buf);
-                auto test = m_stream.first_node();
-                if (test && !test->name().empty()) {
-                    m_stream_buf.assign(buf.data(), end.ptr());
-                    m_session->used(end.ptr() - buf.data());
-                    buf.remove_prefix(end.ptr() - buf.data());
-                    m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
-                    stream_open();
-                } else {
-                    m_stream_buf.clear();
+                try {
+                    auto end = m_stream.parse<parse_open_only | parse_fastest>(buf);
+                    m_first_read = false;
+                    auto test = m_stream.first_node();
+                    if (test && !test->name().empty()) {
+                        m_stream_buf.assign(buf.data(), end.ptr());
+                        m_session->used(end.ptr() - buf.data());
+                        buf.remove_prefix(end.ptr() - buf.data());
+                        m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
+                        stream_open();
+                    } else {
+                        m_stream_buf.clear();
+                    }
+                } catch (rapidxml::eof_error & e) {
+                    throw;
+                } catch (rapidxml::parse_error & e) {
+                    m_logger->info("Parse error; could be TLS handshake");
+                    if (m_first_read && !m_secured) {
+                        if (!start_tls(*this, false)) {
+                            m_logger->error("Tried starttls, but that didn't work either");
+                            throw;
+                        } else {
+                            m_logger->info("TLS negotiation underway");
+                            m_first_read = false;
+                            return 0;
+                        }
+                    } else {
+                        m_logger->error("Not first read or already TLS; giving up");
+                        throw;
+                    }
                 }
             }
             while (!buf.empty()) {
                 auto end = m_stanza.parse<parse_fastest | parse_parse_one>(buf, &m_stream);
+                m_first_read = false;
                 auto element = m_stanza.first_node();
                 if (!element || element->name().empty()) return len - buf.length();
                 bool tls_nego = element->xmlns() == "urn:ietf:params:xml:ns:xmpp-tls";
