@@ -496,15 +496,19 @@ SSL_CTX *Config::Domain::ssl_ctx() const {
     return ctx;
 }
 
-Config::Config(std::string const &filename) : m_dialback_secret(random_identifier()) {
-    s_config = this;
+Config::Config(std::string const &filename, bool lite) : m_dialback_secret(random_identifier()) {
+    if (!lite) {
+        s_config = this;
+    }
     // Spin up a temporary error logger.
-    m_root_logger = spdlog::stderr_color_st("console");
+    m_root_logger = spdlog::stderr_color_st(lite ? "boot" : "console");
     spdlog::set_level(spdlog::level::trace);
-    load(filename);
-    m_ub_ctx = ub_ctx_create();
-    if (!m_ub_ctx) {
-        throw std::runtime_error("DNS context creation failure.");
+    load(filename, lite);
+    if (!lite) {
+        m_ub_ctx = ub_ctx_create();
+        if (!m_ub_ctx) {
+            throw std::runtime_error("DNS context creation failure.");
+        }
     }
 }
 
@@ -518,7 +522,7 @@ void Config::write_runtime_config() const {
     of << tmp;
 }
 
-void Config::load(std::string const &filename) {
+void Config::load(std::string const &filename, bool lite) {
     auto root_node = YAML::LoadFile(filename);
     if (auto globals = root_node["globals"]; globals) {
         m_default_domain = globals["default-domain"].as<std::string>(m_default_domain);
@@ -541,6 +545,7 @@ void Config::load(std::string const &filename) {
                 }
             }
         }
+        if (lite) return;
         if (auto filters = root_node["filters"]; filters) {
             for (auto const & item : filters) {
                 auto filter_name = item.first.as<std::string>();
@@ -553,6 +558,7 @@ void Config::load(std::string const &filename) {
             }
         }
     }
+    if (lite) return;
     if (m_runtime_dir.empty()) {
         m_runtime_dir = "/var/run/";
     }
@@ -1177,15 +1183,16 @@ sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather(std::share
     span->containing_transaction().tag("gather.tlsa", "no");
     span->containing_transaction().tag("gather.tls.direct", "no");
     span->containing_transaction().tag("gather.tls.starttls", "no");
+    bool dnssec = true;
 aname_restart:
     g.gathered_connect.clear();
     auto svcb = co_await r->SvcbLookup(domain);
     if (svcb.error.empty() && !svcb.rrs.empty()) {
+        dnssec = dnssec && svcb.dnssec;
         span->containing_transaction().tag("gather.svcb", "yes");
         // SVCB pathway
         for (auto const & rr : svcb.rrs) {
             if (svcb.dnssec) {
-                span->containing_transaction().tag("gather.dnssec", "yes");
                 g.gathered_hosts.insert(rr.hostname);
             } else if (m_dnssec_required) {
                 continue;
@@ -1206,16 +1213,16 @@ aname_restart:
                 default_port = 5270;
             }
             co_await gather_host(span->start_child("gather.host", rr.hostname), *r, g, rr.hostname, rr.port ? rr.port : default_port, method);
-            co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port ? rr.port : default_port);
+            if (dnssec) co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port ? rr.port : default_port);
         }
     } else {
         // SRV path
         auto srv = co_await r->SrvLookup(domain); // Interesting case: An SVCB looking resulting in the ANAME case might follow to an SRV lookup.
         if (srv.error.empty() && !srv.rrs.empty()) {
+            dnssec = dnssec && svcb.dnssec;
             span->containing_transaction().tag("gather.srv", "yes");
             for (auto const & rr : srv.rrs) {
                 if (srv.dnssec) {
-                    span->containing_transaction().tag("gather.dnssec", "yes");
                     g.gathered_hosts.insert(rr.hostname);
                 }
                 if (rr.tls) {
@@ -1224,13 +1231,14 @@ aname_restart:
                     span->containing_transaction().tag("gather.tls.starttls", "yes");
                 }
                 co_await gather_host(span->start_child("gather.host", rr.hostname), *r, g, rr.hostname, rr.port, (rr.tls ? DNS::ConnectInfo::Method::DirectTLS : DNS::ConnectInfo::Method::StartTLS));
-                co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port);
+                if (dnssec) co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port);
             }
         } else {
             co_await gather_host(span->start_child("gather.host", domain), *r, g, domain, 5269, DNS::ConnectInfo::Method::StartTLS);
-            co_await gather_tlsa(span->start_child("gather.tlsa", domain), *r, g, domain, 5269);
+            if (dnssec) co_await gather_tlsa(span->start_child("gather.tlsa", domain), *r, g, domain, 5269);
         }
     }
+    span->containing_transaction().tag("gather.dnssec", dnssec ? "yes" : "no");
     co_return g;
 }
 

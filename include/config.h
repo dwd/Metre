@@ -328,7 +328,7 @@ namespace Metre {
             Domain const *m_parent = nullptr;
         };
 
-        explicit Config(std::string const &filename);
+        explicit Config(std::string const &filename, bool lite=false);
 
         ~Config();
 
@@ -360,7 +360,7 @@ namespace Metre {
 
         [[nodiscard]] Domain const &domain(std::string const &domain) const;
 
-        void load(std::string const &filename);
+        void load(std::string const &filename, bool lite);
 
         static Config const &config();
 

@@ -270,7 +270,7 @@ int main(int argc, char *argv[]) {
     // Firstly, load up the configuration.
     bc = std::make_unique<BootConfig>(argc, argv);
     std::cout << "Trying to load config from " << bc->config_file <<std::endl;
-    config = std::make_unique<Metre::Config>(bc->config_file);
+    auto config_lite = std::make_unique<Metre::Config>(bc->config_file, true);
     if (bc->boot_method.empty()) {
         bc->boot_method = config->boot_method();
     }
@@ -280,7 +280,9 @@ int main(int argc, char *argv[]) {
         } else {
             exit(1);
         }
-    } if (bc->boot_method == "sysv") {
+    }
+    config = std::make_unique<Metre::Config>(bc->config_file);
+    if (bc->boot_method == "sysv") {
         pid_t child = fork();
         if (child == -1) {
             std::cerr << "Fork failed: " << strerror(errno) << std::endl;
