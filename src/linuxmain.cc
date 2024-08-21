@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
         bc->boot_method = config->boot_method();
     }
     if (bc->boot_method == "healthcheck") {
-        if (healthcheck(config->healthcheck_port())) {
+        if (healthcheck(config_lite->healthcheck_port())) {
             exit(0);
         } else {
             exit(1);
