@@ -19,10 +19,24 @@ jobs:
         run: sudo apt-get install libcurl4-openssl-dev
       - name: CMake Prep
         run: mkdir build && cd build && cmake -DMETRE_SENTRY=ON ..
+      - name: Download Coverity Scan
+        run: curl https://scan.coverity.com/download/linux64 -d 'token=${{ secrets.COVERITY_TOKEN }}&project=dwd%2Frapidxml' -o coverity.tar.gz
+      - name: Unpack Coverity
+        run: mkdir coverity && cd coverity && tar xf ../coverity.tar.gz && ln -s cov-analysis-* current
       - name: CMake Build
-        run: cd build && cmake --build .
+        run: cd build && ../coverity/current/bin/cov-build --dir cov-int cmake --build .
       - name: CMake Tests
         run: ./build/metre-test
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      - name: Tar up Coverity output
+        run: cd build && tar czf ../cov-build-output.tar.gz cov-int
+      - name: Upload it
+        run: |
+          curl --form token=${{ secrets.COVERITY_TOKEN }} \
+          --form email=dave@cridland.net \
+          --form file=@cov-build-output.tar.gz \
+          --form version="vX" \
+          --form description="Metre" \
+          https://scan.coverity.com/builds?project=dwd%2FMetre
 
