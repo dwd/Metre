@@ -20,7 +20,7 @@ jobs:
       - name: CMake Prep
         run: mkdir build && cd build && cmake -DMETRE_SENTRY=ON ..
       - name: Download Coverity Scan
-        run: curl https://scan.coverity.com/download/linux64 -d 'token=${{ secrets.COVERITY_TOKEN }}&project=dwd%2Frapidxml' -o coverity.tar.gz
+        run: curl https://scan.coverity.com/download/linux64 -d 'token=${{ secrets.COVERITY_TOKEN }}&project=dwd%2FMetre' -o coverity.tar.gz
       - name: Unpack Coverity
         run: mkdir coverity && cd coverity && tar xf ../coverity.tar.gz && ln -s cov-analysis-* current
       - name: CMake Build
