@@ -7,6 +7,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+          fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           repository: getsentry/sentry-native
@@ -41,4 +42,15 @@ jobs:
           --form version="vX" \
           --form description="Metre" \
           https://scan.coverity.com/builds?project=dwd%2FMetre
+      - name: SonarQube install
+        uses: SonarSource/sonarcloud-github-c-cpp@v3
+      - name: Clean build
+        run: cd build && make clean
+      - name: Build Wrapper
+        run: cd build && build-wrapper-linux-x86-64 --out-dir sonar-out cmake --build .
+      - name: Sonar Scanner
+        run: cd build && sonar-scanner --define sonar.cfamily.compile-commands=sonar-out/compile_commands.json --define sonar.projectKey=dwd-github_metre --define sonar.organization=dwd-github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
