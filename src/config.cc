@@ -602,7 +602,7 @@ void Config::load(std::string const &filename, bool lite) {
             // address : port* : default_domain[*X2X] : session_type : tls_mode
             auto port = listener["port"].as<unsigned short>();
             SESSION_TYPE stype = S2S;
-            TLS_MODE tls = listener["tls"].as<bool>() ? IMMEDIATE : STARTTLS;
+            TLS_MODE tls = listener["tls"].as<bool>(false) ? IMMEDIATE : STARTTLS;
             if (listener["type"]) {
                 std::string s = listener["type"].as<std::string>();
                 if (s == "s2s") {

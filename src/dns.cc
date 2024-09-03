@@ -383,7 +383,7 @@ void Metre::DNS::Resolver::srv_lookup_done(int err, struct ub_result *result) {
         }
         if (m_current_srv.rrs.empty()) {
             DNS::Srv srv;
-            srv.error = error;
+            srv.error = std::move(error);
             srv.domain = result->qname;
             srv.dnssec = srv.dnssec && !!result->secure;
             m_srv_pending.emit(srv);

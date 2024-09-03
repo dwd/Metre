@@ -23,6 +23,8 @@ jobs:
         run: curl https://scan.coverity.com/download/linux64 -d 'token=${{ secrets.COVERITY_TOKEN }}&project=dwd%2FMetre' -o coverity.tar.gz
       - name: Unpack Coverity
         run: mkdir coverity && cd coverity && tar xf ../coverity.tar.gz && ln -s cov-analysis-* current
+      - name: Configure Coverity
+        run: ./coverity/current/bin/cov-configure --gcc
       - name: CMake Build
         run: cd build && ../coverity/current/bin/cov-build --dir cov-int cmake --build .
       - name: CMake Tests

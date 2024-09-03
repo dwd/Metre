@@ -104,8 +104,8 @@ namespace Metre {
 
         class Srv {
         public:
-            bool xmpp;
-            bool xmpps;
+            bool xmpp = false;
+            bool xmpps = false;
             std::vector<SrvRR> rrs;
             std::string domain;
             bool dnssec = false;

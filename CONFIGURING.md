@@ -382,3 +382,32 @@ This block contains TLSA records for DANE.
 #### filter-in
 
 Filters may use, or require, a block here by name. Filters here process both TO and FROM the domain in question, but on ingress; see filter documentation for more details.
+
+## Listeners
+
+Listeners define what ports Metre will listen on, and what traffic it expects on them.
+
+If no listeners are specified under the top-level `listeners` key, then Metre will default to listening on port 5269 (for "StartTLS", see below) and 5270 (for XEP-368) on all interfaces.
+
+Otherwise, `listeners` should be an array of objects, with keys as follows:
+
+#### port
+
+The TCP port to listen on. Mandatory.
+
+#### address
+
+The IP address to listen on. Defaults to the IPv6 ANY address, `::`.
+
+#### type
+
+The default type: one of `x2x`, `s2s`, or `114`, defaulting to `s2s`. Note that Metre will accept XEP-0114 traffic on an S2S port just fine, and vice-versa, so this is a default only.
+
+As such, this makes broadly no difference (except for X2X).
+
+#### tls
+
+A boolean which should indicate whether Metre should expect XEP-0368 style connections or StartTLS. If a peer connects to a StartTLS listener and tries to immediately negotiate TLS, it will actually work fine - Metre will detect this and the only difference is some relatively ugly logging. The reverse, however, won't work.
+
+This defaults to false (and thus allows either type).
+
