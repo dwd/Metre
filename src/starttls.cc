@@ -376,8 +376,10 @@ namespace Metre {
         // Fun fact: We can only add these to SSL_DANE via the connection.
         for (auto const & rr : gathered.gathered_tlsa) {
             stream.logger().debug("Adding TLSA {} / {} / {} with {} bytes of match data", rr.certUsage, rr.selector, rr.matchType, rr.matchData.length());
-            if (0 == SSL_dane_tlsa_add(ssl, static_cast<uint8_t>(rr.certUsage), static_cast<uint8_t>(rr.selector),
-                                       static_cast<uint8_t>(rr.matchType),
+            if (0 == SSL_dane_tlsa_add(ssl,
+                                       std::to_underlying(rr.certUsage),
+                                       std::to_underlying(rr.selector),
+                                       std::to_underlying(rr.matchType),
                                        reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length())) {
                 stream.logger().warn("TLSA record rejected");
             }

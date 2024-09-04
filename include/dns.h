@@ -143,17 +143,17 @@ namespace Metre::DNS {
 
     class TlsaRR {
     public:
-        enum class CertUsage {
+        enum class CertUsage : uint8_t {
             CAConstraint = 0,
             CertConstraint = 1,
             TrustAnchorAssertion = 2,
             DomainCert = 3
         };
-        enum class Selector {
+        enum class Selector : uint8_t {
             FullCert = 0,
             SubjectPublicKeyInfo = 1
         };
-        enum class MatchType {
+        enum class MatchType : uint8_t {
             Full = 0,
             Sha256 = 1,
             Sha512 = 2

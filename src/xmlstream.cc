@@ -502,7 +502,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                     logger().debug("Got feature offer: [{}:{}]", feat_ad->xmlns(), feat_ad->name());
                     if (m_features.find(offer_ns) != m_features.end()) continue; // Already negotiated.
                     Feature::Type offer_type = Feature::type(offer_ns, *this);
-                    logger().debug("Offer type seems to be [{}]", static_cast<int>(offer_type));
+                    logger().debug("Offer type seems to be [{}]", std::to_underlying(offer_type));
                     switch (offer_type) {
                         case Feature::Type::FEAT_NONE:
                             continue;
