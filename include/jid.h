@@ -23,11 +23,12 @@ SOFTWARE.
 
 ***/
 
-#ifndef JID__H
-#define JID__H
+#ifndef JID_H
+#define JID_H
 
 #include <string>
 #include <optional>
+#include <utility>
 
 #include <spdlog/common.h>
 
@@ -40,36 +41,24 @@ namespace Metre {
         mutable std::optional<std::string> m_full;
         mutable std::optional<std::string> m_bare;
     public:
-//        explicit Jid(std::string const &jid) {
-//            parse(jid);
-//        }
-
         explicit Jid(std::string_view const &jid) {
             parse(jid);
         }
-//
-//        explicit Jid(const char * s) {
-//            parse(s);
-//        }
 
-        Jid(std::string const &local, std::string const &domain, nullptr_t=nullptr)
-                : m_local(local), m_domain(domain) {
+        Jid(std::string const &local, std::string domain, nullptr_t=nullptr)
+                : m_local(local), m_domain(std::move(domain)) {
         }
 
-        Jid(std::string const &local, std::string const &domain, std::string const &resource)
-                : m_local(local), m_domain(domain), m_resource(resource) {
+        Jid(std::string const &local, std::string domain, std::string const &resource)
+                : m_local(local), m_domain(std::move(domain)), m_resource(resource) {
         }
 
-        Jid(nullptr_t, std::string const &domain, nullptr_t=nullptr)
-                : m_domain(domain) {
+        Jid(nullptr_t, std::string domain, nullptr_t=nullptr)
+                : m_domain(std::move(domain)) {
         }
 
-        Jid(nullptr_t, std::string const &domain, std::string const &resource)
-                : m_domain(domain), m_resource(resource) {
-        }
-
-        Jid(Jid const &jid)
-                : m_local(jid.m_local), m_domain(jid.m_domain), m_resource(jid.m_resource) {
+        Jid(nullptr_t, std::string domain, std::string const &resource)
+                : m_domain(std::move(domain)), m_resource(resource) {
         }
 
         std::string const &full() const;
@@ -107,7 +96,7 @@ namespace Metre {
 
 template <>
 struct fmt::formatter<Metre::Jid> : fmt::formatter<std::string> {
-    auto format(const Metre::Jid& c, fmt::format_context& ctx) {
+    auto format(const Metre::Jid& c, fmt::format_context& ctx) const {
         return fmt::formatter<std::string>::format(c.full(), ctx);
     }
 };

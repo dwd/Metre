@@ -20,7 +20,7 @@ namespace Metre {
         public:
             Item(std::string const &item_id, std::string const &payload);
 
-            std::string const &id() const {
+            [[nodiscard]] std::string const &id() const {
                 return m_item_id;
             }
         };
@@ -39,12 +39,12 @@ namespace Metre {
 
         private:
             std::list<std::shared_ptr<Item>> m_items;
-            std::map<std::string, std::list<std::shared_ptr<Item>>::const_iterator> m_item_ids;
+            std::map<std::string, std::list<std::shared_ptr<Item>>::const_iterator, std::less<>> m_item_ids;
         };
 
         class Subscription {
         public:
-            Subscription(Jid &jid);
+            explicit Subscription(Jid &jid);
 
             Jid const jid;
         };
@@ -59,11 +59,11 @@ namespace Metre {
 
         Facet *add_facet(std::unique_ptr<Facet> &&facet);
 
-        std::string const &name() const {
+        [[nodiscard]] std::string const &name() const {
             return m_name;
         }
 
-        std::string const &title() const {
+        [[nodiscard]] std::string const &title() const {
             return m_title;
         }
 
@@ -73,7 +73,7 @@ namespace Metre {
 
     private:
         Endpoint &m_endpoint;
-        std::map<std::string, std::unique_ptr<Facet>> m_facets;
+        std::map<std::string, std::unique_ptr<Facet>, std::less<>> m_facets;
         std::set<std::unique_ptr<Subscription>> m_subscriptions;
         std::string const m_name;
         std::string m_title;

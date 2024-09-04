@@ -20,13 +20,21 @@ namespace sentry {
     namespace detail {
         class dummy_raii {
         public:
-            explicit dummy_raii(std::string const &, std::string const &, std::optional<std::string> const & = {}) {};
-            void name(std::string const &) {}
-            void tag(std::string_view const &, std::string_view const &) {}
+            explicit dummy_raii(std::string const &, std::string const &, std::optional<std::string> const & = {}) {
+                // Dummy
+            };
+            void name(std::string const &) {
+                // Dummy
+            }
+            void tag(std::string_view const &, std::string_view const &) {
+                // Dummy
+            }
             auto & containing_transaction() {
                 return *this;
             }
-            void exception(std::exception_ptr const &) {}
+            void exception(std::exception_ptr const &) {
+                // Dummy
+            }
             std::shared_ptr<dummy_raii> start_child(std::string_view const &, std::string_view const&) { return {}; }
         };
     }
@@ -43,6 +51,8 @@ class span : public sigslot::tracker {
     void end();
 public:
     span(sentry_span_t * s, transaction & t);
+    span(span const &) = delete;
+    span(span &&) = delete;
     sentry::transaction  & containing_transaction() {
         return m_trans;
     }
@@ -50,7 +60,7 @@ public:
 
     void terminate() override;
     void exception(std::exception_ptr const &) override;
-    ~span();
+    ~span() override;
 };
 
 class transaction : public sigslot::tracker {
