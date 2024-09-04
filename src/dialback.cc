@@ -42,7 +42,7 @@ namespace {
 
     class NewDialback : public Feature {
     public:
-        explicit NewDialback(XMLStream &s) : Feature(s) {}
+        using Feature::Feature;
 
         class Description : public Feature::Description<NewDialback> {
         public:
@@ -81,7 +81,7 @@ namespace {
 
     class Dialback : public Feature, public sigslot::has_slots {
     public:
-        explicit Dialback(XMLStream &s) : Feature(s) {}
+        using Feature::Feature;
 
         class Description : public Feature::Description<Dialback> {
         public:
@@ -173,28 +173,30 @@ namespace {
         }
 
         void verify_valid(DB::Verify const &v) const {
-            if (m_stream.direction() != SESSION_DIRECTION::OUTBOUND)
+            using enum SESSION_DIRECTION;
+            if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
             if (!session) return; // Silently ignore this.
             XMLStream &stream = session->xml_stream();
-            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), SESSION_DIRECTION::INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
+            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), DB::Type::VALID);
                 stream.send(std::move(d));
-                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), SESSION_DIRECTION::INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
+                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
             }
         }
 
         void verify_invalid(DB::Verify const &v) const {
-            if (m_stream.direction() != SESSION_DIRECTION::OUTBOUND)
+            using enum SESSION_DIRECTION;
+            if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
             if (!session) return; // Silently ignore this.
             XMLStream &stream = session->xml_stream();
-            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), SESSION_DIRECTION::INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
+            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), Stanza::Error::forbidden);
                 stream.send(std::move(d));
-                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), SESSION_DIRECTION::INBOUND, XMLStream::AUTH_STATE::NONE);
+                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::NONE);
             }
         }
 

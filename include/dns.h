@@ -240,13 +240,14 @@ template <>
 struct fmt::formatter<Metre::DNS::TlsaRR::CertUsage> : fmt::formatter<std::string> {
     auto format(const Metre::DNS::TlsaRR::CertUsage c, fmt::format_context& ctx) const {
         switch (c) {
-            case Metre::DNS::TlsaRR::CertUsage::CertConstraint:
+            using enum Metre::DNS::TlsaRR::CertUsage;
+            case CertConstraint:
                 return fmt::formatter<std::string>::format("CertConstraint (PKIX-EE)", ctx);
-            case Metre::DNS::TlsaRR::CertUsage::CAConstraint:
+            case CAConstraint:
                 return fmt::formatter<std::string>::format("CAConstraint (PKIX-CA)", ctx);
-            case Metre::DNS::TlsaRR::CertUsage::DomainCert:
+            case DomainCert:
                 return fmt::formatter<std::string>::format("DomainCert (DANE-EE)", ctx);
-            case Metre::DNS::TlsaRR::CertUsage::TrustAnchorAssertion:
+            case TrustAnchorAssertion:
                 return fmt::formatter<std::string>::format("TrustAnchorAssertion (DANE-TA)", ctx);
             default:
                 return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
@@ -258,9 +259,10 @@ template <>
 struct fmt::formatter<Metre::DNS::TlsaRR::Selector> : fmt::formatter<std::string> {
     auto format(const Metre::DNS::TlsaRR::Selector c, fmt::format_context& ctx) const {
         switch (c) {
-            case Metre::DNS::TlsaRR::Selector::SubjectPublicKeyInfo:
+            using enum Metre::DNS::TlsaRR::Selector;
+            case SubjectPublicKeyInfo:
                 return fmt::formatter<std::string>::format("SubjectPublicKeyInfo", ctx);
-            case Metre::DNS::TlsaRR::Selector::FullCert:
+            case FullCert:
                 return fmt::formatter<std::string>::format("FullCert", ctx);
             default:
                 return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
@@ -272,11 +274,12 @@ template <>
 struct fmt::formatter<Metre::DNS::TlsaRR::MatchType> : fmt::formatter<std::string> {
     auto format(const Metre::DNS::TlsaRR::MatchType c, fmt::format_context& ctx) const {
         switch (c) {
-            case Metre::DNS::TlsaRR::MatchType::Sha256:
+            using enum Metre::DNS::TlsaRR::MatchType;
+            case Sha256:
                 return fmt::formatter<std::string>::format("SHA-256", ctx);
-            case Metre::DNS::TlsaRR::MatchType::Sha512:
+            case Sha512:
                 return fmt::formatter<std::string>::format("SHA-512", ctx);
-            case Metre::DNS::TlsaRR::MatchType::Full:
+            case Full:
                 return fmt::formatter<std::string>::format("Full", ctx);
             default:
                 return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);

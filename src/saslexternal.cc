@@ -43,7 +43,7 @@ namespace {
     class SaslExternal : public Feature {
     private:
     public:
-        explicit SaslExternal(XMLStream &s) : Feature(s) {}
+        using Feature::Feature;
 
         class Description : public Feature::Description<SaslExternal> {
         public:
@@ -129,23 +129,24 @@ namespace {
         }
 
         sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> trans, optional_ptr<rapidxml::xml_node<>> node) override {
+            using enum SESSION_DIRECTION;
             METRE_LOG(Metre::Log::DEBUG, "Handle SASL External");
             std::string name{node->name()};
-            if ((node->name() == "auth" && m_stream.direction() == SESSION_DIRECTION::INBOUND)) {
+            if ((node->name() == "auth" && m_stream.direction() == INBOUND)) {
                 auto task = m_stream.start_task("SASL auth", auth(trans->start_child("sasl.auth", m_stream.remote_domain()), node));
                 co_await *task;
                 co_return true;
-            } else if (node->name() == "response" && m_stream.direction() == SESSION_DIRECTION::INBOUND) {
+            } else if (node->name() == "response" && m_stream.direction() == INBOUND) {
                 auto task = m_stream.start_task("SASL response", response(trans->start_child("sasl.response", m_stream.remote_domain()), node));
                 co_await *task;
                 co_return true;
-            } else if (node->name() == "challenge" && m_stream.direction() == SESSION_DIRECTION::OUTBOUND) {
+            } else if (node->name() == "challenge" && m_stream.direction() == OUTBOUND) {
                 challenge(node);
                 co_return true;
-            } else if (node->name() == "success" && m_stream.direction() == SESSION_DIRECTION::OUTBOUND) {
+            } else if (node->name() == "success" && m_stream.direction() == OUTBOUND) {
                 success(node);
                 co_return true;
-            } else if (node->name() == "failure" && m_stream.direction() == SESSION_DIRECTION::OUTBOUND) {
+            } else if (node->name() == "failure" && m_stream.direction() == OUTBOUND) {
                 m_stream.logger().warn("EXTERNAL was offered but not accepted.");
                 // Try Dialback.
                 m_stream.set_auth_ready();

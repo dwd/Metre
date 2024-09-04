@@ -296,7 +296,7 @@ namespace {
             if (it == Filter::all_filters().end()) {
                 throw std::runtime_error("Unknown filter " + filter_name);
             }
-            auto &filter_desc = (*it).second;
+            auto const &filter_desc = (*it).second;
             dom->filters().emplace_back(filter_desc->create(*dom, filter.second));
         }
         return dom;
@@ -327,12 +327,13 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
 }
 
 sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::span> span, FILTER_DIRECTION dir, Stanza &s) const {
+    using enum FILTER_RESULT;
     if (m_parent) co_return co_await m_parent->filter(span->start_child("filter", "parent"), dir, s);
     for (auto &filter : m_filters) {
         auto filter_result = co_await filter->apply(span->start_child("filter", filter->name()), dir, s);
-        if (filter_result == FILTER_RESULT::DROP) co_return FILTER_RESULT::DROP;
+        if (filter_result == DROP) co_return DROP;
     }
-    co_return FILTER_RESULT::PASS;
+    co_return PASS;
 }
 
 
@@ -553,7 +554,7 @@ void Config::load(std::string const &filename, bool lite) {
                 if (it == Filter::all_filters().end()) {
                     throw std::runtime_error("Unknown filter " + filter_name);
                 }
-                auto &filter_desc = (*it).second;
+                auto const &filter_desc = (*it).second;
                 filter_desc->config(item.second);
             }
         }
@@ -604,13 +605,14 @@ void Config::load(std::string const &filename, bool lite) {
             SESSION_TYPE stype = SESSION_TYPE::S2S;
             TLS_MODE tls = listener["tls"].as<bool>(false) ? TLS_MODE::IMMEDIATE : TLS_MODE::STARTTLS;
             if (listener["type"]) {
+                using enum SESSION_TYPE;
                 std::string s = listener["type"].as<std::string>();
                 if (s == "s2s") {
-                    stype = SESSION_TYPE::S2S;
+                    stype = S2S;
                 } else if (s == "x2x") {
-                    stype = SESSION_TYPE::X2X;
+                    stype = X2X;
                 } else if (s == "114") {
-                    stype = SESSION_TYPE::COMP;
+                    stype = COMP;
                 } else {
                     throw std::runtime_error("Unknown type for listener");
                 }
@@ -681,16 +683,17 @@ namespace {
         config["block"] = domain.block();
         config["stanza-timeout"] = domain.stanza_timeout();
         switch (domain.transport_type()) {
-            case SESSION_TYPE::INTERNAL:
+            using enum SESSION_TYPE;
+            case INTERNAL:
                 config["transport"]["type"] = "internal";
                 break;
-            case SESSION_TYPE::S2S:
+            case S2S:
                 config["transport"]["type"] = "s2s";
                 break;
-            case SESSION_TYPE::COMP:
+            case COMP:
                 config["transport"]["type"] = "114";
                 break;
-            case SESSION_TYPE::X2X:
+            case X2X:
                 config["transport"]["type"] = "x2x";
             default:
                 throw std::runtime_error("No idea what this transport type is");
@@ -698,13 +701,14 @@ namespace {
         config["transport"]["multiplex"] = domain.multiplex();
         config["transport"]["tls_required"] = domain.require_tls();
         switch (domain.tls_preference()) {
-            case TLS_PREFERENCE::PREFER_IMMEDIATE:
+            using enum TLS_PREFERENCE;
+            case PREFER_IMMEDIATE:
                 config["transport"]["prefer"] = "direct";
                 break;
-            case TLS_PREFERENCE::PREFER_STARTTLS:
+            case PREFER_STARTTLS:
                 config["transport"]["prefer"] = "starttls";
                 break;
-            case TLS_PREFERENCE::PREFER_ANY:
+            case PREFER_ANY:
                 config["transport"]["prefer"] = "any";
                 break;
         }
@@ -739,10 +743,11 @@ namespace {
                 tlsa["hostname"] = hostname;
                 tlsa["port"] = port;
                 switch (rr.matchType) {
-                    case DNS::TlsaRR::MatchType::Sha256:
+                    using enum DNS::TlsaRR::MatchType;
+                    case Sha256:
                         tlsa["matchtype"] = "Sha256";
                         break;
-                    case DNS::TlsaRR::MatchType::Sha512:
+                    case Sha512:
                         tlsa["matchtype"] = "Sha512";
                         break;
                     default:
@@ -750,7 +755,8 @@ namespace {
                         break;
                 }
                 switch (rr.selector) {
-                    case DNS::TlsaRR::Selector::SubjectPublicKeyInfo:
+                    using enum DNS::TlsaRR::Selector;
+                    case SubjectPublicKeyInfo:
                         tlsa["selector"] = "SubjectPublicKeyInfo";
                         break;
                     default:
@@ -758,13 +764,14 @@ namespace {
                         break;
                 }
                 switch (rr.certUsage) {
-                    case DNS::TlsaRR::CertUsage::CAConstraint:
+                    using enum DNS::TlsaRR::CertUsage;
+                    case CAConstraint:
                         tlsa["certusage"] = "CAConstraint";
                         break;
-                    case DNS::TlsaRR::CertUsage::CertConstraint:
+                    case CertConstraint:
                         tlsa["certusage"] = "CertConstraint";
                         break;
-                    case DNS::TlsaRR::CertUsage::TrustAnchorAssertion:
+                    case TrustAnchorAssertion:
                         tlsa["certusage"] = "TrustAnchorAssertion";
                         break;
                     default:
@@ -908,13 +915,14 @@ std::string Config::asString() const {
             listener["port"] = ntohs(sa->sin6_port);
         }
         switch (listen.session_type) {
-            case SESSION_TYPE::S2S:
+            using enum SESSION_TYPE;
+            case S2S:
                 listener["type"] = "s2s";
                 break;
-            case SESSION_TYPE::X2X:
+            case X2X:
                 listener["type"] = "x2x";
                 break;
-            case SESSION_TYPE::COMP:
+            case COMP:
                 listener["type"] = "114";
                 break;
             default:

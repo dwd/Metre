@@ -65,8 +65,9 @@ sigslot::tasklet<void> Endpoint::process(Message & message) {
 
 sigslot::tasklet<void> Endpoint::process(Iq & iq) {
     switch (iq.type()) {
-        case Iq::Type::GET:
-        case Iq::Type::SET: {
+        using enum Iq::Type;
+        case GET:
+        case SET: {
             auto payload = iq.node()->first_node();
             if (payload != nullptr) {
                 std::string xmlns{payload->xmlns()};
@@ -78,8 +79,8 @@ sigslot::tasklet<void> Endpoint::process(Iq & iq) {
                 }
             }
         }
-        case Iq::Type::RESULT:
-        case Iq::Type::STANZA_ERROR:
+        case RESULT:
+        case STANZA_ERROR:
             co_return;
     }
     throw stanza_service_unavailable();

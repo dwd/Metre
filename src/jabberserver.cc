@@ -42,7 +42,7 @@ namespace {
 
     class JabberServer : public Feature {
     public:
-        explicit JabberServer(XMLStream &s) : Feature(s) {}
+        using Feature::Feature;
 
         class Description : public Feature::Description<JabberServer> {
         public:
