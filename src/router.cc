@@ -183,12 +183,12 @@ restart:
                 d.append_node(dbr);
                 session->xml_stream().send(d);
                 session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND,
-                                                    XMLStream::REQUESTED);
+                                                    XMLStream::AUTH_STATE::REQUESTED);
             }
             // Fallthrough
-        case XMLStream::REQUESTED:
+        case XMLStream::AUTH_STATE::REQUESTED:
             m_logger->trace("Awaiting authentication: domain=[{}]");
-            while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::REQUESTED) {
+            while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 m_logger->debug("Authenticating with verify session");
                 if (session->xml_stream().closed()) {
                     if (multiplex) {
@@ -201,7 +201,7 @@ restart:
                 }
                 (void) co_await session->xml_stream().auth_state_changed;
             }
-            if (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::NONE) {
+            if (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::NONE) {
                 // Rejected auth.
                 if (multiplex) {
                     multiplex = false;
@@ -212,7 +212,7 @@ restart:
                     co_return false;
                 }
             }
-        case XMLStream::AUTHORIZED:
+        case XMLStream::AUTH_STATE::AUTHORIZED:
             m_logger->trace("Authorized: domain=[{}]");
             break;
     }

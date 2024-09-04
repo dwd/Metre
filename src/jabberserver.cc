@@ -97,7 +97,7 @@ namespace {
                     Jid const &to = s->to();
                     Jid const &from = s->from();
                     // Check auth state.
-                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTHORIZED) {
+                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTH_STATE::AUTHORIZED) {
                         if (m_stream.x2x_mode()) {
                             if (m_stream.secured()) {
                                 s->freeze();
@@ -106,7 +106,7 @@ namespace {
                                 bool result = co_await *task;
                                 if (result) {
                                     m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), SESSION_DIRECTION::INBOUND,
-                                                           XMLStream::AUTHORIZED);
+                                                           XMLStream::AUTH_STATE::AUTHORIZED);
                                 } else {
                                     throw Metre::not_authorized();
                                 }

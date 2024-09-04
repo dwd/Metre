@@ -498,7 +498,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                 Feature::Type feature_type = Feature::Type::FEAT_NONE;
                 std::string feature_xmlns;
                 for (auto feat_ad = element->first_node(); feat_ad; feat_ad = feat_ad->next_sibling()) {
-                    std::string offer_ns(feat_ad->xmlns());
+                    auto const & offer_ns =feat_ad->xmlns();
                     logger().debug("Got feature offer: [{}:{}]", feat_ad->xmlns(), feat_ad->name());
                     if (m_features.find(offer_ns) != m_features.end()) continue; // Already negotiated.
                     Feature::Type offer_type = Feature::type(offer_ns, *this);
@@ -531,7 +531,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                             feature_xmlns = "urn:xmpp:features:dialback";
                             goto try_feature;
                         }
-                    } else if (s2s_auth_pair(local_domain(), remote_domain(), SESSION_DIRECTION::OUTBOUND) == AUTHORIZED) {
+                    } else if (s2s_auth_pair(local_domain(), remote_domain(), SESSION_DIRECTION::OUTBOUND) == AUTH_STATE::AUTHORIZED) {
                         set_auth_ready();
                     }
                     return;
@@ -600,10 +600,10 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
     }
 }
 
-Feature &XMLStream::feature(const std::string &ns) {
+Feature &XMLStream::feature(const std::string_view &ns) {
     auto i = m_features.find(ns);
     if (i == m_features.end()) {
-        throw std::runtime_error("Expected feature " + ns + " not found");
+        throw std::runtime_error(std::string("Expected feature ") + std::string(ns) + " not found");
     }
     return *(i->second);
 }
@@ -643,31 +643,31 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     if (m_type == SESSION_TYPE::COMP) {
         if (m_user) {
             if (dir == SESSION_DIRECTION::OUTBOUND && *m_user == remote) {
-                return AUTHORIZED;
+                return AUTH_STATE::AUTHORIZED;
             } else if (dir == SESSION_DIRECTION::INBOUND && *m_user == remote) {
-                return AUTHORIZED;
+                return AUTH_STATE::AUTHORIZED;
             }
         }
     }
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
     auto &m = (dir == SESSION_DIRECTION::INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto it = m.find(std::make_pair(local, remote));
-    AUTH_STATE auth_state = NONE;
+    AUTH_STATE auth_state = AUTH_STATE::NONE;
     if (it != m.end()) {
         auth_state = (*it).second;
     }
-    if (auth_state != AUTHORIZED && x2x_mode()) {
+    if (auth_state != AUTH_STATE::AUTHORIZED && x2x_mode()) {
         if (dir == SESSION_DIRECTION::INBOUND) {
             if (!secured()) {
                 // TODO : Needs to be checking the host is correct.
                 if (Config::config().domain(remote).auth_host()) {
-                    const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
-                    return AUTHORIZED;
+                    const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTH_STATE::AUTHORIZED);
+                    return AUTH_STATE::AUTHORIZED;
                 }
             }
         } else if (dir == SESSION_DIRECTION::OUTBOUND) {
-            const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
-            return AUTHORIZED;
+            const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTH_STATE::AUTHORIZED);
+            return AUTH_STATE::AUTHORIZED;
         }
     }
     return auth_state;
@@ -676,7 +676,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
 XMLStream::AUTH_STATE
 XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION dir,
                          XMLStream::AUTH_STATE state) {
-    if (state == AUTHORIZED && !m_secured && Config::config().domain(remote).require_tls()) {
+    if (state == AUTH_STATE::AUTHORIZED && !m_secured && Config::config().domain(remote).require_tls()) {
         throw Metre::not_authorized("Authorization attempt without TLS");
     }
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
@@ -685,7 +685,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     AUTH_STATE current = m[key];
     if (current < state) {
         m[key] = state;
-        if (state == XMLStream::AUTHORIZED) {
+        if (state == XMLStream::AUTH_STATE::AUTHORIZED) {
             logger().info("Authorized {} session local: {} remote: {}", (dir == SESSION_DIRECTION::INBOUND ? "INBOUND" : "OUTBOUND"),
                           local, remote);
             if (m_bidi && dir == SESSION_DIRECTION::INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
@@ -699,7 +699,7 @@ bool XMLStream::bidi(bool b) {
     m_bidi = b;
     if (m_bidi && m_dir == SESSION_DIRECTION::INBOUND) {
         for (auto const &p : m_auth_pairs_rx) {
-            if (p.second == XMLStream::AUTHORIZED) {
+            if (p.second == XMLStream::AUTH_STATE::AUTHORIZED) {
                 auto &local = p.first.first;
                 auto &remote = p.first.second;
                 RouteTable::routeTable(local).route(remote)->outbound(m_session);

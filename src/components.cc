@@ -120,7 +120,7 @@ namespace {
                     Jid const &from = s->from();
                     Jid const &to = s->to();
                     // Check auth state.
-                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTHORIZED) {
+                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTH_STATE::AUTHORIZED) {
                         throw not_authorized();
                     }
                     m_stream.logger().info("Applying stanza filters from [{}]", from.domain());

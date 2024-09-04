@@ -48,7 +48,7 @@ std::list<std::unique_ptr<Feature::BaseDescription>> const &Feature::features(SE
     return Feature::all_features(t);
 }
 
-std::unique_ptr<Feature> Feature::feature(std::string const &xmlns, XMLStream &stream) {
+std::unique_ptr<Feature> Feature::feature(std::string_view const &xmlns, XMLStream &stream) {
     for (auto const & f : Feature::features(stream.type())) {
         if (f->xmlns() == xmlns) {
             return f->instantiate(stream);
@@ -57,7 +57,7 @@ std::unique_ptr<Feature> Feature::feature(std::string const &xmlns, XMLStream &s
     return nullptr;
 }
 
-Feature::Type Feature::type(std::string const &xmlns, XMLStream &stream) {
+Feature::Type Feature::type(std::string_view const &xmlns, XMLStream &stream) {
     for (auto const & f : Feature::features(stream.type())) {
         if (f->xmlns() == xmlns) {
             return f->type(stream);

@@ -86,7 +86,7 @@ namespace Metre {
 
         virtual bool negotiate(rapidxml::optional_ptr<rapidxml::xml_node<>>) { return false; }
 
-        static std::unique_ptr<Feature> feature(std::string const &xmlns, XMLStream &);
+        static std::unique_ptr<Feature> feature(std::string_view const &xmlns, XMLStream &);
 
         static std::list<std::unique_ptr<Feature::BaseDescription>> const &features(SESSION_TYPE);
 
@@ -96,7 +96,7 @@ namespace Metre {
             return true;
         }
 
-        static Feature::Type type(std::string const &xmlns, XMLStream &t);
+        static Feature::Type type(std::string_view const &xmlns, XMLStream &t);
 
         virtual ~Feature();
     };
