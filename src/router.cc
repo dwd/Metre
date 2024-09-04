@@ -327,7 +327,7 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
     s->freeze();
     if (m_stanzas.empty())
         Router::defer([this]() {
-            bounce_stanzas(Stanza::remote_server_timeout);
+            bounce_stanzas(Stanza::Error::remote_server_timeout);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_stanzas.push_back(std::move(s));
     m_logger->debug("Queued stanza");

@@ -26,11 +26,11 @@ namespace Metre {
             return m_jid;
         }
 
-        virtual sigslot::tasklet<void> process(Presence const & presence);
+        virtual sigslot::tasklet<void> process(Presence & presence);
 
-        virtual sigslot::tasklet<void> process(Message const & message);
+        virtual sigslot::tasklet<void> process(Message & message);
 
-        virtual sigslot::tasklet<void> process(Iq const & iq);
+        virtual sigslot::tasklet<void> process(Iq & iq);
 
         void process(std::unique_ptr<Stanza> && stanza);
 

@@ -110,19 +110,19 @@ void Stanza::render_error(Metre::base::stanza_exception const &ex) {
 
 void Stanza::render_error(Stanza::Error e) {
     switch (e) {
-        case remote_server_timeout:
+        case Error::remote_server_timeout:
             render_error(stanza_remote_server_timeout());
             return;
-        case remote_server_not_found:
+        case Error::remote_server_not_found:
             render_error(stanza_remote_server_not_found());
             return;
-        case service_unavailable:
+        case Error::service_unavailable:
             render_error(stanza_service_unavailable());
             return;
-        case undefined_condition:
+        case Error::undefined_condition:
             render_error(stanza_undefined_condition());
             return;
-        case policy_violation:
+        case Error::policy_violation:
             render_error(stanza_policy_violation());
             return;
         default:
@@ -133,13 +133,13 @@ void Stanza::render_error(Stanza::Error e) {
 
 std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) const {
     switch (e) {
-        case remote_server_timeout:
+        case Error::remote_server_timeout:
             return create_bounce(stanza_remote_server_timeout());
-        case remote_server_not_found:
+        case Error::remote_server_not_found:
             return create_bounce(stanza_remote_server_not_found());
-        case service_unavailable:
+        case Error::service_unavailable:
             return create_bounce(stanza_service_unavailable());
-        case undefined_condition:
+        case Error::undefined_condition:
             return create_bounce(stanza_undefined_condition());
         default:
         METRE_LOG(Log::CRIT, "Unhandled stanza error type");
@@ -212,42 +212,42 @@ std::unique_ptr<Message> Message::create_response() const {
 void Message::type(Message::Type t) {
     m_type = t;
     switch(m_type) {
-        case NORMAL:
+        case Type::NORMAL:
             type_str(std::optional<std::string>());
             break;
-        case CHAT:
+        case Type::CHAT:
             type_str("chat");
             break;
-        case HEADLINE:
+        case Type::HEADLINE:
             type_str("headline");
             break;
-        case GROUPCHAT:
+        case Type::GROUPCHAT:
             type_str("groupchat");
             break;
-        case STANZA_ERROR:
+        case Type::STANZA_ERROR:
             type_str("error");
             break;
     }
 }
 
 Message::Type Message::set_type() const {
-    if (!type_str()) return NORMAL;
+    if (!type_str()) return Type::NORMAL;
     std::string const &t = *type_str();
     switch (t[0]) {
         case 'n':
-            if (t == "normal") return NORMAL;
+            if (t == "normal") return Type::NORMAL;
             break;
         case 'c':
-            if (t == "chat") return CHAT;
+            if (t == "chat") return Type::CHAT;
             break;
         case 'h':
-            if (t == "headline") return HEADLINE;
+            if (t == "headline") return Type::HEADLINE;
             break;
         case 'g':
-            if (t == "groupchat") return GROUPCHAT;
+            if (t == "groupchat") return Type::GROUPCHAT;
             break;
         case 'e':
-            if (t == "error") return STANZA_ERROR;
+            if (t == "error") return Type::STANZA_ERROR;
             break;
     }
     throw std::runtime_error("Unknown Message type");
@@ -262,13 +262,13 @@ Iq::Iq(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : Stanza(name, node) {
 
 const char *Iq::type_toString(Type t) {
     switch (t) {
-        case GET:
+        case Type::GET:
             return "get";
-        case SET:
+        case Type::SET:
             return "set";
-        case RESULT:
+        case Type::RESULT:
             return "result";
-        case STANZA_ERROR:
+        case Type::STANZA_ERROR:
             return "error";
     }
     return "error";
@@ -279,16 +279,16 @@ Iq::Type Iq::set_type() const {
     std::string const &t = *type_str();
     switch (t[0]) {
         case 'g':
-            if (t == "get") return GET;
+            if (t == "get") return Type::GET;
             break;
         case 's':
-            if (t == "set") return SET;
+            if (t == "set") return Type::SET;
             break;
         case 'r':
-            if (t == "result") return RESULT;
+            if (t == "result") return Type::RESULT;
             break;
         case 'e':
-            if (t == "error") return STANZA_ERROR;
+            if (t == "error") return Type::STANZA_ERROR;
             break;
     }
     throw std::runtime_error("Unknown IQ type");
@@ -311,9 +311,9 @@ const char *DB::Result::name = "db:result";
 namespace {
     const char * to_string(DB::Type t) {
         switch(t) {
-            case Metre::DB::VALID:
+            case Metre::DB::Type::VALID:
                 return "valid";
-            case Metre::DB::INVALID:
+            case Metre::DB::Type::INVALID:
                 return "invalid";
             default:
                 break;

@@ -49,7 +49,7 @@ sigslot::tasklet<Iq const *> Metre::Send::send(std::shared_ptr<sentry::span> spa
 }
 
 sigslot::tasklet<Iq const *> Metre::Send::ping(std::shared_ptr<sentry::span> span, Jid const & from, Jid const & to) {
-    auto iq = std::make_unique<Iq>(from, to, Iq::GET, make_id());
+    auto iq = std::make_unique<Iq>(from, to, Iq::Type::GET, make_id());
     iq->node()->append_element({"urn:xmpp:ping", "ping"});
     return send(std::move(span), std::move(iq));
 }

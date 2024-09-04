@@ -19,7 +19,7 @@ namespace {
 
         Ping(BaseDescription const &descr, Endpoint &jid) : Capability(descr, jid) {
             jid.add_handler("urn:xmpp:ping", "ping", [this](Iq const & iq) -> sigslot::tasklet<void> {
-                std::unique_ptr<Stanza> pong{new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id())};
+                auto pong = std::make_unique<Iq>(iq.to(), iq.from(), Iq::Type::RESULT, iq.id());
                 m_endpoint.send(std::move(pong));
                 co_return;
             });

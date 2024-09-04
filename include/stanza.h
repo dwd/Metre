@@ -23,8 +23,8 @@ SOFTWARE.
 
 ***/
 
-#ifndef STANZA__H
-#define STANZA__H
+#ifndef STANZA_H
+#define STANZA_H
 
 #include "jid.h"
 #include "xmppexcept.h"
@@ -38,7 +38,7 @@ namespace Metre {
 
     class Stanza {
     public:
-        typedef enum {
+        enum class Error {
             bad_request,
             conflict,
             feature_not_implemented,
@@ -61,7 +61,7 @@ namespace Metre {
             subscription_required,
             undefined_condition,
             unexpected_request
-        } Error;
+        };
 
         static const char *error_name(Error err);
     protected:
@@ -165,9 +165,9 @@ namespace Metre {
 
     class Message : public Stanza {
     public:
-        typedef enum {
+        enum class Type {
             NORMAL, CHAT, HEADLINE, GROUPCHAT, STANZA_ERROR
-        } Type;
+        };
         static const char *name;
     private:
         Type m_type;
@@ -189,9 +189,9 @@ namespace Metre {
 
     class Iq : public Stanza {
     public:
-        typedef enum {
+        enum class Type {
             GET, SET, RESULT, STANZA_ERROR
-        } Type;
+        };
         static const char *name;
     private:
         Type m_type;
@@ -227,9 +227,9 @@ namespace Metre {
         */
     class DB : public Stanza {
     public:
-        typedef enum {
+        enum class Type {
             VALID, INVALID, STANZA_ERROR
-        } Type;
+        };
 
         DB(const char *name, Jid const &to, Jid const &from, std::string const &stream_id,
            std::optional<std::string> const &key);
