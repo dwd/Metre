@@ -47,7 +47,7 @@ namespace {
 
         sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
             if (dir == FILTER_DIRECTION::FROM) {
-                co_return PASS;
+                co_return FILTER_RESULT::PASS;
             }
             auto descr = dynamic_cast<DomainTranslation::Description const &>(m_description);
             // Step 1: Rewrite from.
@@ -59,7 +59,7 @@ namespace {
                 }
             }
             // Step 2: Rewrite to.
-            co_return PASS;
+            co_return FILTER_RESULT::PASS;
         }
     };
 

@@ -36,7 +36,7 @@ SOFTWARE.
 namespace Metre {
     class Feature {
     public:
-        enum Type {
+        enum class Type {
             FEAT_NONE = 0, FEAT_POSTAUTH, FEAT_COMP, FEAT_AUTH_FALLBACK, FEAT_AUTH, FEAT_PREAUTH, FEAT_SECURE
         };
 
@@ -53,7 +53,7 @@ namespace Metre {
 
             std::string const &xmlns() const;
 
-            virtual Feature *instantiate(XMLStream &) = 0;
+            virtual std::unique_ptr<Feature> instantiate(XMLStream &) = 0;
 
             virtual Feature::Type type(XMLStream &) {
                 return m_type;
@@ -65,10 +65,10 @@ namespace Metre {
     protected:
         XMLStream &m_stream;
 
-        static std::list<Feature::BaseDescription *> &all_features(SESSION_TYPE);
+        static std::list<std::unique_ptr<Feature::BaseDescription>> &all_features(SESSION_TYPE);
 
     public:
-        Feature(XMLStream &);
+        explicit Feature(XMLStream &);
 
         template<typename T>
         class Description : public BaseDescription {
@@ -76,8 +76,8 @@ namespace Metre {
             Description(std::string const &ns, Feature::Type t) : BaseDescription(ns, t) {}
 
             /// offer!
-            Feature *instantiate(XMLStream &s) {
-                return new T(s);
+            std::unique_ptr<Feature> instantiate(XMLStream &s) override {
+                return std::make_unique<T>(s);
             }
         };
 
@@ -86,13 +86,13 @@ namespace Metre {
 
         virtual bool negotiate(rapidxml::optional_ptr<rapidxml::xml_node<>>) { return false; }
 
-        static Feature *feature(std::string const &xmlns, XMLStream &);
+        static std::unique_ptr<Feature> feature(std::string const &xmlns, XMLStream &);
 
-        static std::list<Feature::BaseDescription *> const &features(SESSION_TYPE);
+        static std::list<std::unique_ptr<Feature::BaseDescription>> const &features(SESSION_TYPE);
 
         template<typename T>
         static bool declare(SESSION_TYPE t) {
-            Feature::all_features(t).push_back(new typename T::Description());
+            Feature::all_features(t).push_back(std::make_unique<typename T::Description>());
             return true;
         }
 
@@ -103,7 +103,7 @@ namespace Metre {
 }
 
 #ifdef METRE_UNIX
-#define DECLARE_FEATURE(cls, typ) bool declare_##cls##_##typ __attribute__((unused)) { Metre::Feature::declare<cls>(typ) }
+#define DECLARE_FEATURE(cls, typ) bool declare_##cls##_##typ __attribute__((unused)) { Metre::Feature::declare<cls>(SESSION_TYPE::typ) }
 #else
 #define DECLARE_FEATURE(cls, typ) bool declare_##cls##_##typ { Metre::Feature::declare<cls>(typ) }
 #endif

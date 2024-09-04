@@ -318,11 +318,11 @@ int main(int argc, char *argv[]) {
         signal(SIGTERM, term_handler);
         signal(SIGSEGV, segv_handler);
         signal(SIGBUS, segv_handler);
-        Metre::Router::main([]() { return false; });
+        Metre::Router::run([]() { return false; });
     } else if (bc->boot_method == "none") {
         config->log_init(true);
         config->write_runtime_config();
-        Metre::Router::main([]() { return false; });
+        Metre::Router::run([]() { return false; });
     } else if (bc->boot_method == "docker") {
         config->docker_setup();
         config->write_runtime_config();
@@ -332,7 +332,7 @@ int main(int argc, char *argv[]) {
         signal(SIGINT, term_handler);
         signal(SIGSEGV, segv_handler);
         signal(SIGBUS, segv_handler);
-        Metre::Router::main([]() { return false; });
+        Metre::Router::run([]() { return false; });
     } else if (bc->boot_method == "systemd") {
         config->log_init(true);
         config->write_runtime_config();
@@ -341,7 +341,7 @@ int main(int argc, char *argv[]) {
         signal(SIGTERM, term_handler);
         signal(SIGSEGV, segv_handler);
         signal(SIGBUS, segv_handler);
-        Metre::Router::main([]() { return false; });
+        Metre::Router::run([]() { return false; });
     } else {
         std::cerr << "I don't know what " << bc->boot_method << " means." << std::endl;
         return 1;

@@ -44,12 +44,12 @@ namespace {
 
         class Description : public Feature::Description<Component> {
         public:
-            Description() : Feature::Description<Component>(sasl_ns, FEAT_POSTAUTH) {};
+            Description() : Feature::Description<Component>(sasl_ns, Type::FEAT_POSTAUTH) {};
         };
 
         [[nodiscard]] std::string handshake_content() const {
             Config::Domain const &domain = Config::config().domain(m_stream.local_domain());
-            if (domain.transport_type() != COMP) {
+            if (domain.transport_type() != SESSION_TYPE::COMP) {
                 throw Metre::host_unknown("Not a known component domain");
             }
             if (!domain.auth_secret().has_value()) {
@@ -120,21 +120,21 @@ namespace {
                     Jid const &from = s->from();
                     Jid const &to = s->to();
                     // Check auth state.
-                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
+                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTHORIZED) {
                         throw not_authorized();
                     }
                     m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
-                    if (DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
                         m_stream.logger().info("Stanza discarded by FROM filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
-                    if (DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
                         m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applied all stanza filters");
-                    if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
+                    if (Config::config().domain(to.domain()).transport_type() == SESSION_TYPE::INTERNAL) {
                         Endpoint::endpoint(to).process(std::move(s));
                     } else {
                         METRE_LOG(Metre::Log::DEBUG, "Component creating route: from=[" << from.domain() << "] to=[" << to.domain() << "]");

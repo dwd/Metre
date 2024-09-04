@@ -45,7 +45,7 @@ namespace {
 
         class Description : public Feature::Description<Bidi> {
         public:
-            Description() : Feature::Description<Bidi>(bidi_feat_ns, FEAT_PREAUTH) {};
+            Description() : Feature::Description<Bidi>(bidi_feat_ns, Type::FEAT_PREAUTH) {};
 
             sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>>node, XMLStream &s) override {
                 if (s.bidi()) co_return false;
@@ -81,7 +81,7 @@ namespace {
 
         class Description : public Feature::Description<BidiInbound> {
         public:
-            Description() : Feature::Description<BidiInbound>(bidi_ns, FEAT_PREAUTH) {};
+            Description() : Feature::Description<BidiInbound>(bidi_ns, Type::FEAT_PREAUTH) {};
         };
 
         sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, optional_ptr<rapidxml::xml_node<>> node) override {

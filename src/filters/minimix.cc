@@ -39,7 +39,7 @@ namespace {
                     }
                 }
             }
-            co_return PASS;
+            co_return FILTER_RESULT::PASS;
         }
     };
 

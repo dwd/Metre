@@ -49,25 +49,25 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
         : has_slots(), m_session(n), m_dir(dir), m_type(t) {
     std::ostringstream ss;
     ss << "XmlStream serial=[" << m_session->serial() << "]";
-    ss << (dir == INBOUND ? " IN" : " OUT");
+    ss << (dir == SESSION_DIRECTION::INBOUND ? " IN" : " OUT");
     ss << " type=[";
     switch (t) {
-        case S2S:
+        case SESSION_TYPE::S2S:
             ss << "S2S";
             break;
-        case COMP:
+        case SESSION_TYPE::COMP:
             ss << "COMP";
             break;
-        case X2X:
+        case SESSION_TYPE::X2X:
             ss << "X2X";
             break;
         default:
-            throw std::logic_error("Unknown type: " + std::to_string(t));
+            throw std::logic_error("Unknown type");
     }
     ss << "]";
     m_logger = Config::config().logger(ss.str());
-    if (t == X2X) {
-        m_type = S2S;
+    if (t == SESSION_TYPE::X2X) {
+        m_type = SESSION_TYPE::S2S;
         m_x2x_mode = true;
         m_bidi = true;
     }
@@ -79,25 +79,25 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
           m_stream_remote(stream_remote) {
     std::ostringstream ss;
     ss << "XmlStream serial=[" << m_session->serial() << "]";
-    ss << (dir == INBOUND ? " IN" : " OUT");
+    ss << (dir == SESSION_DIRECTION::INBOUND ? " IN" : " OUT");
     ss << " type=[";
     switch (t) {
-        case S2S:
+        case SESSION_TYPE::S2S:
             ss << "S2S";
             break;
-        case COMP:
+        case SESSION_TYPE::COMP:
             ss << "COMP";
             break;
-        case X2X:
+        case SESSION_TYPE::X2X:
             ss << "X2X";
             break;
         default:
-            throw std::logic_error("Unknown type: " + std::to_string(t));
+            throw std::logic_error("Unknown type");
     }
     ss << "]";
     m_logger = Config::config().logger(ss.str());
-    if (t == X2X) {
-        m_type = S2S;
+    if (t == SESSION_TYPE::X2X) {
+        m_type = SESSION_TYPE::S2S;
         m_x2x_mode = true;
         m_bidi = true;
     }
@@ -294,14 +294,14 @@ void XMLStream::in_context(std::function<void()> &&fn) {
 const char *XMLStream::content_namespace() const {
     const char *p;
     switch (m_type) {
-        case C2S:
+        case SESSION_TYPE::C2S:
             p = "jabber:client";
             break;
-        case COMP:
+        case SESSION_TYPE::COMP:
             p = "jabber:component:accept";
             break;
         default:
-        case S2S:
+        case SESSION_TYPE::S2S:
             p = "jabber:server";
             break;
     }
@@ -313,21 +313,21 @@ void XMLStream::check_domain_pair(std::string const &from_domain, std::string co
     if (to.block()) {
         throw Metre::host_unknown("Requested domain is blocked: to=[" + to_domain + "]");
     }
-    if (m_type == COMP && to.transport_type() != COMP) {
-        throw Metre::host_unknown("Component connection protocol mismatch: from=[" + from_domain + "] to=[" + to_domain + "] protocol id=[" + std::to_string(to.transport_type()) + "]");
+    if (m_type == SESSION_TYPE::COMP && to.transport_type() != SESSION_TYPE::COMP) {
+        throw Metre::host_unknown("Component connection protocol mismatch: from=[" + from_domain + "] to=[" + to_domain + "]");
     }
     Config::Domain const &from = Config::config().domain(from_domain);
     if (!from_domain.empty()) {
         if (from.block()) {
             throw Metre::host_unknown("Requesting domain is blocked: from=[" + from_domain + "]");
         }
-        if ((to.transport_type() != COMP) &&
-            ((from.forward() == to.forward()) && to.transport_type() != INTERNAL &&
-             from.transport_type() != INTERNAL)) {
+        if ((to.transport_type() != SESSION_TYPE::COMP) &&
+            ((from.forward() == to.forward()) && to.transport_type() != SESSION_TYPE::INTERNAL &&
+             from.transport_type() != SESSION_TYPE::INTERNAL)) {
             throw Metre::host_unknown("Will not forward between same domains with non-internal protocol: from=[" + from_domain + "] to=[" + to_domain + "]");
         }
-        if (m_type != COMP && from.transport_type() == COMP) {
-            throw Metre::host_unknown("Attempting to connect to non-component with component protocol:from=[" + from_domain + "] to=[" + to_domain + "] protocol id=[" + std::to_string(to.transport_type()) + "]");
+        if (m_type != SESSION_TYPE::COMP && from.transport_type() == SESSION_TYPE::COMP) {
+            throw Metre::host_unknown("Attempting to connect to non-component with component protocol:from=[" + from_domain + "] to=[" + to_domain + "]");
         }
     }
 }
@@ -342,13 +342,13 @@ void XMLStream::stream_open() {
     if (xmlns && !xmlns->value().empty()) {
         if (xmlns->value() == "jabber:client") {
             logger().debug("C2S stream detected.");
-            m_type = C2S;
+            m_type = SESSION_TYPE::C2S;
         } else if (xmlns->value() == "jabber:server") {
             logger().debug("S2S stream detected.");
-            m_type = S2S;
+            m_type = SESSION_TYPE::S2S;
         } else if (xmlns->value() == "jabber:component:accept") {
             logger().debug("114 (component) stream detected.");
-            m_type = COMP;
+            m_type = SESSION_TYPE::COMP;
         } else {
             logger().warn("Unidentified connection.");
         }
@@ -358,7 +358,7 @@ void XMLStream::stream_open() {
     if (domainat && !domainat->value().empty()) {
         domainname.assign(domainat->value());
         logger().debug("Requested contact domain [{}]", domainname);
-    } else if (m_dir == OUTBOUND) {
+    } else if (m_dir == SESSION_DIRECTION::OUTBOUND) {
         domainname = Jid(m_stream_local).domain();
     } else {
         domainname = Config::config().default_domain();
@@ -366,7 +366,7 @@ void XMLStream::stream_open() {
     std::string from;
     if (auto fromat = stream->first_attribute("from")) {
         from = Jid(fromat->value()).domain();
-        if (m_dir == OUTBOUND) {
+        if (m_dir == SESSION_DIRECTION::OUTBOUND) {
             if (from != m_stream_remote) {
                 // throw Metre::host_unknown("You're not who I was expecting.");
                 logger().warn("Remote server responded with {}, not {}", from, m_stream_remote);
@@ -390,11 +390,11 @@ void XMLStream::stream_open() {
         with_ver = true;
     }
     if (with_ver) {
-        auto const & ver_domain = (m_type == COMP) ? domainname : from;
+        auto const & ver_domain = (m_type == SESSION_TYPE::COMP) ? domainname : from;
         with_ver = Config::config().domain(ver_domain).xmpp_ver();
         if (!with_ver) logger().debug("Suppressing the version for {} due to config", ver_domain);
     }
-    if (m_dir == INBOUND) {
+    if (m_dir == SESSION_DIRECTION::INBOUND) {
         m_stream_local = domainname;
         if (from.empty()) {
             // TODO: A bit cut'n'pastey here.
@@ -406,8 +406,8 @@ void XMLStream::stream_open() {
             }
             start_task("With from, inbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), with_ver));
         }
-    } else if (m_dir == OUTBOUND) {
-        if (m_type == S2S) {
+    } else if (m_dir == SESSION_DIRECTION::OUTBOUND) {
+        if (m_type == SESSION_TYPE::S2S) {
             auto id_att = stream->first_attribute("id");
             if (id_att) {
                 if (!m_stream_id.empty()) {
@@ -446,7 +446,7 @@ sigslot::tasklet<bool> XMLStream::send_stream_open(std::shared_ptr<sentry::trans
         */
         std::string open = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
         open += content_namespace();
-        if (m_type == S2S) {
+        if (m_type == SESSION_TYPE::S2S) {
             open += "' xmlns:db='jabber:server:dialback";
             if (!m_stream_remote.empty()) {
                 open += "' to='";
@@ -455,7 +455,7 @@ sigslot::tasklet<bool> XMLStream::send_stream_open(std::shared_ptr<sentry::trans
         }
         open += "' from='";
         open += m_stream_local;
-        if (m_dir == INBOUND) {
+        if (m_dir == SESSION_DIRECTION::INBOUND) {
             open += "' id='";
             generate_stream_id();
             open += m_stream_id;
@@ -466,11 +466,11 @@ sigslot::tasklet<bool> XMLStream::send_stream_open(std::shared_ptr<sentry::trans
             open += "'>";
         }
         m_session->send(open);
-        if (with_version && m_dir == INBOUND) {
+        if (with_version && m_dir == SESSION_DIRECTION::INBOUND) {
             rapidxml::xml_document<> doc;
             auto features = doc.allocate_node(rapidxml::node_element, "stream:features");
             doc.append_node(features);
-            for (auto f : Feature::features(m_type)) {
+            for (auto const & f : Feature::features(m_type)) {
                 co_await *start_task("Feature offer", f->offer(trans->start_child("feature.offer", f->xmlns()), features, *this));
             }
             m_session->send(doc);
@@ -531,7 +531,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                             feature_xmlns = "urn:xmpp:features:dialback";
                             goto try_feature;
                         }
-                    } else if (s2s_auth_pair(local_domain(), remote_domain(), OUTBOUND) == AUTHORIZED) {
+                    } else if (s2s_auth_pair(local_domain(), remote_domain(), SESSION_DIRECTION::OUTBOUND) == AUTHORIZED) {
                         set_auth_ready();
                     }
                     return;
@@ -621,7 +621,7 @@ void XMLStream::do_restart() {
     m_stream.clear();
     m_stanza.clear();
     m_stream_buf.clear();
-    if (m_dir == OUTBOUND) {
+    if (m_dir == SESSION_DIRECTION::OUTBOUND) {
         start_task("Restart outbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), true));
         thaw();
     }
@@ -640,24 +640,24 @@ void XMLStream::generate_stream_id() {
 
 XMLStream::AUTH_STATE
 XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION dir) const {
-    if (m_type == COMP) {
+    if (m_type == SESSION_TYPE::COMP) {
         if (m_user) {
-            if (dir == OUTBOUND && *m_user == remote) {
+            if (dir == SESSION_DIRECTION::OUTBOUND && *m_user == remote) {
                 return AUTHORIZED;
-            } else if (dir == INBOUND && *m_user == remote) {
+            } else if (dir == SESSION_DIRECTION::INBOUND && *m_user == remote) {
                 return AUTHORIZED;
             }
         }
     }
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
-    auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
+    auto &m = (dir == SESSION_DIRECTION::INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto it = m.find(std::make_pair(local, remote));
     AUTH_STATE auth_state = NONE;
     if (it != m.end()) {
         auth_state = (*it).second;
     }
     if (auth_state != AUTHORIZED && x2x_mode()) {
-        if (dir == INBOUND) {
+        if (dir == SESSION_DIRECTION::INBOUND) {
             if (!secured()) {
                 // TODO : Needs to be checking the host is correct.
                 if (Config::config().domain(remote).auth_host()) {
@@ -665,7 +665,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
                     return AUTHORIZED;
                 }
             }
-        } else if (dir == OUTBOUND) {
+        } else if (dir == SESSION_DIRECTION::OUTBOUND) {
             const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
             return AUTHORIZED;
         }
@@ -680,15 +680,15 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
         throw Metre::not_authorized("Authorization attempt without TLS");
     }
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
-    auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
+    auto &m = (dir == SESSION_DIRECTION::INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto key = std::make_pair(local, remote);
     AUTH_STATE current = m[key];
     if (current < state) {
         m[key] = state;
         if (state == XMLStream::AUTHORIZED) {
-            logger().info("Authorized {} session local: {} remote: {}", (dir == INBOUND ? "INBOUND" : "OUTBOUND"),
+            logger().info("Authorized {} session local: {} remote: {}", (dir == SESSION_DIRECTION::INBOUND ? "INBOUND" : "OUTBOUND"),
                           local, remote);
-            if (m_bidi && dir == INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
+            if (m_bidi && dir == SESSION_DIRECTION::INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
             auth_state_changed.emit(*this);
         }
     }
@@ -697,7 +697,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
 
 bool XMLStream::bidi(bool b) {
     m_bidi = b;
-    if (m_bidi && m_dir == INBOUND) {
+    if (m_bidi && m_dir == SESSION_DIRECTION::INBOUND) {
         for (auto const &p : m_auth_pairs_rx) {
             if (p.second == XMLStream::AUTHORIZED) {
                 auto &local = p.first.first;

@@ -6,10 +6,10 @@
 
 Metre::Capability::BaseDescription::BaseDescription(std::string const &name) : m_name(name) {}
 
-Metre::Capability::BaseDescription::~BaseDescription() {}
+Metre::Capability::BaseDescription::~BaseDescription() = default;
 
-std::map<std::string, Metre::Capability::BaseDescription *> &Metre::Capability::all_capabilities() {
-    static std::map<std::string, Metre::Capability::BaseDescription *> s_capabilities;
+std::map<std::string, Metre::Capability::BaseDescription *, std::less<>> &Metre::Capability::all_capabilities() {
+    static std::map<std::string, Metre::Capability::BaseDescription *, std::less<>> s_capabilities;
     return s_capabilities;
 }
 
@@ -22,5 +22,5 @@ std::unique_ptr<Metre::Capability> Metre::Capability::create(std::string const &
     if (i == all_capabilities().end()) {
         throw std::runtime_error("No such capability " + name);
     }
-    return std::unique_ptr<Capability>((*i).second->instantiate(jid));
+    return (*i).second->instantiate(jid);
 }

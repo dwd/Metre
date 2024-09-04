@@ -19,7 +19,7 @@ namespace Metre {
 
         static Datastore &datastore();
 
-        typedef std::function<void(std::optional<std::string> const &)> callback;
+        using callback = std::function<void(std::optional<std::string> const &)>;
 
         void get(std::string const &scope, std::string const &node, callback const &fn) const;
 
@@ -43,9 +43,9 @@ namespace Metre {
         std::optional<std::string> m_empty;
 
         // Fake, temporary, implementation:
-        typedef std::map<std::string, std::string> itemmap;
-        typedef std::map<std::string, itemmap> nodemap;
-        typedef std::map<std::string, nodemap> scopemap;
+        using itemmap = std::map<std::string, std::string, std::less<>>;
+        using nodemap = std::map<std::string, itemmap, std::less<>>;
+        using scopemap = std::map<std::string, nodemap, std::less<>>;
         scopemap m_scopes;
     };
 }

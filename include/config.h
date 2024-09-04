@@ -36,7 +36,6 @@ SOFTWARE.
 
 #include "defs.h"
 #include "dns.h"
-//#include <fmt/chrono.h>
 #include "spdlog/spdlog.h"
 #include "sigslot.h"
 #include "sentry-wrap.h"
@@ -69,13 +68,13 @@ namespace Metre {
             ~Resolver() override;
 
             /* DNS */
-            srv_callback_t &SrvLookup(std::string const &domain);
+            srv_callback_t &SrvLookup(std::string const &domain) override;
 
-            svcb_callback_t &SvcbLookup(std::string const &domain);
+            svcb_callback_t &SvcbLookup(std::string const &domain) override;
 
-            addr_callback_t &AddressLookup(std::string const &hostname);
+            addr_callback_t &AddressLookup(std::string const &hostname) override;
 
-            tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname);
+            tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname) override;
 
             spdlog::logger & logger() const {
                 return *m_logger;
@@ -91,6 +90,7 @@ namespace Metre {
             PKIXIdentity() = delete;
             PKIXIdentity(PKIXIdentity const &) = delete;
             PKIXIdentity(std::string const & certfile, std::string const & pkeyfile); // Simple keypair.
+            void operator=(PKIXIdentity const &) = delete;
         };
 
         class PKIXContext {
@@ -285,7 +285,7 @@ namespace Metre {
 
             class GatheredData {
             public:
-                std::set<std::string> gathered_hosts; // verified possible hostnames.
+                std::set<std::string, std::less<>> gathered_hosts; // verified possible hostnames.
                 std::list<DNS::ConnectInfo> gathered_connect; // Connection options, preference order.
                 std::list<DNS::TlsaRR> gathered_tlsa; // Verified TLSA records as gathered.
             };
@@ -309,7 +309,7 @@ namespace Metre {
             bool m_auth_dialback = false;
             bool m_auth_host = false;
             bool m_dnssec_required = false;
-            TLS_PREFERENCE m_tls_preference = PREFER_ANY;
+            TLS_PREFERENCE m_tls_preference = TLS_PREFERENCE::PREFER_ANY;
             int m_min_tls_version = 0;
             int m_max_tls_version = 0;
             unsigned m_stanza_timeout = 20;

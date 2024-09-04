@@ -44,24 +44,24 @@ namespace {
 
         virtual sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
             if (dir == FILTER_DIRECTION::FROM) {
-                co_return PASS;
+                co_return FILTER_RESULT::PASS;
             }
             if (s.name() == Presence::name) {
                 auto caps = s.node()->first_node("c", "http://jabber.org/protocol/caps");
-                if (!caps) co_return PASS;
+                if (!caps) co_return FILTER_RESULT::PASS;
                 auto hash = caps->first_attribute("hash");
                 if (hash) {
                     // Translate to the new caps, if available.
                     auto ver = caps->first_attribute("ver");
                     if (!ver) {
                         // s.node()->remove_node(caps); // Maybe??
-                        co_return PASS;
+                        co_return FILTER_RESULT::PASS;
                     }
                     auto it = m_caps_translation.find(std::string{ver->value()});
                     if (it == m_caps_translation.end()) {
                         // Freeze the stream (?) and do a disco query.
                         // Probably need to return false here?
-                        co_return PASS; // Pass it for now.
+                        co_return FILTER_RESULT::PASS; // Pass it for now.
                     }
                     // We cool. Replace the old caps with the new one.
                     caps->remove_attribute(ver.get());
@@ -70,7 +70,7 @@ namespace {
                     // For security, we'll need to back-calculate the hash.
                 }
             }
-            co_return PASS;
+            co_return FILTER_RESULT::PASS;
         }
 
     private:

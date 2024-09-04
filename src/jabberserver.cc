@@ -46,7 +46,7 @@ namespace {
 
         class Description : public Feature::Description<JabberServer> {
         public:
-            Description() : Feature::Description<JabberServer>(sasl_ns, FEAT_POSTAUTH) {};
+            Description() : Feature::Description<JabberServer>(sasl_ns, Type::FEAT_POSTAUTH) {};
         };
 
         bool handle_iq(Iq const & iq) {
@@ -97,7 +97,7 @@ namespace {
                     Jid const &to = s->to();
                     Jid const &from = s->from();
                     // Check auth state.
-                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), INBOUND) != XMLStream::AUTHORIZED) {
+                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTHORIZED) {
                         if (m_stream.x2x_mode()) {
                             if (m_stream.secured()) {
                                 s->freeze();
@@ -105,7 +105,7 @@ namespace {
                                 auto task = m_stream.start_task("jabber::server tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", from.domain()), *r));
                                 bool result = co_await *task;
                                 if (result) {
-                                    m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), INBOUND,
+                                    m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), SESSION_DIRECTION::INBOUND,
                                                            XMLStream::AUTHORIZED);
                                 } else {
                                     throw Metre::not_authorized();
@@ -116,17 +116,17 @@ namespace {
                         }
                     }
                     m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
-                    if (DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
                         m_stream.logger().info("Stanza discarded by FROM filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
-                    if (DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
                         m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applied all stanza filters");
-                    if (Config::config().domain(to.domain()).transport_type() == INTERNAL) {
+                    if (Config::config().domain(to.domain()).transport_type() == SESSION_TYPE::INTERNAL) {
                         Endpoint::endpoint(to).process(std::move(s));
                     } else {
                         std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);

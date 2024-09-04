@@ -40,16 +40,16 @@ using namespace Metre;
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Config::Listener const *listen)
         : m_serial(serial), m_bev(nullptr),
-          m_xml_stream(std::make_unique<XMLStream>(this, INBOUND, listen->session_type)) {
+          m_xml_stream(std::make_unique<XMLStream>(this, SESSION_DIRECTION::INBOUND, listen->session_type)) {
     bufferevent(bev);
-    if (listen->session_type == X2X) {
+    if (listen->session_type == SESSION_TYPE::X2X) {
         m_xml_stream->remote_domain(listen->remote_domain);
         m_xml_stream->local_domain(listen->local_domain);
     }
-    if (listen->tls_mode == IMMEDIATE) {
+    if (listen->tls_mode ==TLS_MODE::IMMEDIATE) {
         start_tls(*m_xml_stream, false);
     }
-    if (listen->session_type == X2X) {
+    if (listen->session_type == SESSION_TYPE::X2X) {
         std::string stream_buf;
         stream_buf = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:server' to='";
         stream_buf += listen->local_domain;
@@ -69,9 +69,9 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::string const &stream_from,
                        std::string const &stream_to, SESSION_TYPE stype, TLS_MODE tls_mode)
         : m_serial(serial), m_bev(nullptr),
-          m_xml_stream(std::make_unique<XMLStream>(this, OUTBOUND, stype, stream_from, stream_to)) {
+          m_xml_stream(std::make_unique<XMLStream>(this, SESSION_DIRECTION::OUTBOUND, stype, stream_from, stream_to)) {
     bufferevent(bev);
-    if (tls_mode == IMMEDIATE) {
+    if (tls_mode == TLS_MODE::IMMEDIATE) {
         start_tls(*m_xml_stream, false);
     }
     std::ostringstream ss;
@@ -208,7 +208,7 @@ void NetSession::bev_closed() {
 void NetSession::bev_connected() {
     m_logger->trace("BEV connected");
     onConnected.emit(*this);
-    if (m_xml_stream->direction() == OUTBOUND) {
+    if (m_xml_stream->direction() == SESSION_DIRECTION::OUTBOUND) {
         m_xml_stream->restart();
     }
 }

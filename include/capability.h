@@ -24,11 +24,15 @@ namespace Metre {
         public:
             explicit BaseDescription(std::string const &);
 
-            std::list<std::string> const &disco() const {
+            [[nodiscard]] std::list<std::string> const &disco() const {
                 return m_disco;
             }
 
-            virtual Capability *instantiate(Endpoint &endpoint) = 0;
+            auto const & name() const {
+                return m_name;
+            }
+
+            virtual std::unique_ptr<Capability> instantiate(Endpoint &endpoint) = 0;
 
             virtual ~BaseDescription();
         };
@@ -37,12 +41,12 @@ namespace Metre {
         BaseDescription const &m_description;
         Endpoint &m_endpoint;
 
-        static std::map<std::string, BaseDescription *> &all_capabilities();
+        static std::map<std::string, BaseDescription *, std::less<>> &all_capabilities();
 
     public:
         Capability(BaseDescription const &, Endpoint &);
 
-        BaseDescription const &description() const {
+        [[nodiscard]] BaseDescription const &description() const {
             return m_description;
         }
 
@@ -51,8 +55,8 @@ namespace Metre {
         public:
             explicit Description(std::string const &name) : BaseDescription(name) {}
 
-            Capability *instantiate(Endpoint &endpoint) override {
-                return new T(*this, endpoint);
+            std::unique_ptr<Capability> instantiate(Endpoint &endpoint) override {
+                return std::make_unique<T>(*this, endpoint);
             }
         };
 
@@ -60,7 +64,7 @@ namespace Metre {
         static std::unique_ptr<Capability> create(std::string const &name, Endpoint &jid);
 
         template<typename T>
-        static bool declare(std::string const &name) throw() {
+        static bool declare(std::string const &name) noexcept {
             Capability::all_capabilities()[name] = new typename T::Description(name);
             return true;
         }
