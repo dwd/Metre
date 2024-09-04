@@ -39,17 +39,17 @@ std::string const &Feature::BaseDescription::xmlns() const {
 
 Feature::BaseDescription::~BaseDescription() {}
 
-std::list<Feature::BaseDescription *> &Feature::all_features(SESSION_TYPE t) {
-    static std::map<SESSION_TYPE, std::list<Feature::BaseDescription *>> ls;
+std::list<std::unique_ptr<Feature::BaseDescription>> &Feature::all_features(SESSION_TYPE t) {
+    static std::map<SESSION_TYPE, std::list<std::unique_ptr<Feature::BaseDescription>>> ls;
     return ls[t];
 }
 
-std::list<Feature::BaseDescription *> const &Feature::features(SESSION_TYPE t) {
+std::list<std::unique_ptr<Feature::BaseDescription>> const &Feature::features(SESSION_TYPE t) {
     return Feature::all_features(t);
 }
 
-Feature *Feature::feature(std::string const &xmlns, XMLStream &stream) {
-    for (auto f : Feature::features(stream.type())) {
+std::unique_ptr<Feature> Feature::feature(std::string_view const &xmlns, XMLStream &stream) {
+    for (auto const & f : Feature::features(stream.type())) {
         if (f->xmlns() == xmlns) {
             return f->instantiate(stream);
         }
@@ -57,11 +57,11 @@ Feature *Feature::feature(std::string const &xmlns, XMLStream &stream) {
     return nullptr;
 }
 
-Feature::Type Feature::type(std::string const &xmlns, XMLStream &stream) {
-    for (auto f : Feature::features(stream.type())) {
+Feature::Type Feature::type(std::string_view const &xmlns, XMLStream &stream) {
+    for (auto const & f : Feature::features(stream.type())) {
         if (f->xmlns() == xmlns) {
             return f->type(stream);
         }
     }
-    return FEAT_NONE;
+    return Type::FEAT_NONE;
 }

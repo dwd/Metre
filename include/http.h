@@ -14,11 +14,11 @@ struct X509_crl_st;
 namespace Metre {
     class Http {
     public:
-        typedef sigslot::signal<std::string const &, int, struct X509_crl_st *> crl_callback_t;
+        using crl_callback_t = sigslot::signal<std::string const &, int, struct X509_crl_st *>;
 
     private:
-        std::map<std::string, crl_callback_t> m_crl_waiting;
-        std::map<std::string, struct X509_crl_st *> m_crl_cache;
+        std::map<std::string, crl_callback_t, std::less<>> m_crl_waiting;
+        std::map<std::string, struct X509_crl_st *, std::less<>> m_crl_cache;
         std::map<std::uintptr_t, std::string> m_requests;
         std::uintptr_t m_req = 0;
 

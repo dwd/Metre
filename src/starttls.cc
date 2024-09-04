@@ -194,7 +194,7 @@ namespace {
 
         class Description : public Feature::Description<StartTls> {
         public:
-            Description() : Feature::Description<StartTls>(tls_ns, FEAT_SECURE) {};
+            Description() : Feature::Description<StartTls>(tls_ns, Type::FEAT_SECURE) {};
 
             sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (s.secured()) co_return false;
@@ -210,13 +210,13 @@ namespace {
 
         sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle StartTLS");
-            if ((node->name() == "starttls" && m_stream.direction() == INBOUND) ||
-                (node->name() == "proceed" && m_stream.direction() == OUTBOUND)) {
+            if ((node->name() == "starttls" && m_stream.direction() == SESSION_DIRECTION::INBOUND) ||
+                (node->name() == "proceed" && m_stream.direction() == SESSION_DIRECTION::OUTBOUND)) {
                 if (!m_stream.remote_domain().empty()) {
                     m_stream.logger().debug("Negotiating TLS");
                     start_tls(m_stream, true);
                     co_return true;
-                } else if (m_stream.type() == COMP) {
+                } else if (m_stream.type() == SESSION_TYPE::COMP) {
                     start_tls(m_stream, true);
                     co_return true;
                 } else {
@@ -376,8 +376,11 @@ namespace Metre {
         // Fun fact: We can only add these to SSL_DANE via the connection.
         for (auto const & rr : gathered.gathered_tlsa) {
             stream.logger().debug("Adding TLSA {} / {} / {} with {} bytes of match data", rr.certUsage, rr.selector, rr.matchType, rr.matchData.length());
-            if (0 == SSL_dane_tlsa_add(ssl, rr.certUsage, rr.selector, rr.matchType,
-                              reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length())) {
+            if (0 == SSL_dane_tlsa_add(ssl,
+                                       std::to_underlying(rr.certUsage),
+                                       std::to_underlying(rr.selector),
+                                       std::to_underlying(rr.matchType),
+                                       reinterpret_cast<const unsigned char *>(rr.matchData.data()), rr.matchData.length())) {
                 stream.logger().warn("TLSA record rejected");
             }
         }
@@ -411,7 +414,7 @@ namespace Metre {
         setup_session(ssl, stream.remote_domain());
         if (!ssl) throw std::runtime_error("Failure to initiate TLS, sorry!");
         bufferevent_ssl_state st = BUFFEREVENT_SSL_ACCEPTING;
-        if (stream.direction() == INBOUND) {
+        if (stream.direction() == SESSION_DIRECTION::INBOUND) {
             SSL_set_accept_state(ssl);
             if (send_proceed) {
                 xml_document<> d;

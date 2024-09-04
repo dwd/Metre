@@ -35,7 +35,7 @@ namespace {
                 auto bounce = iq.create_bounce(Stanza::Error::service_unavailable);
                 m_endpoint.send(std::move(bounce));
             } else {
-                auto result = std::make_unique<Iq>(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id());
+                auto result = std::make_unique<Iq>(iq.to(), iq.from(), Metre::Iq::Type::RESULT, iq.id());
                 auto response = result->node()->append_element({"http://jabber.org/protocol/disco#items", "query"});
                 auto doc = result->node()->document();
                 for (auto const &node : m_endpoint.nodes()) {
@@ -58,7 +58,7 @@ namespace {
                 auto bounce = iq.create_bounce(Stanza::Error::service_unavailable);
                 m_endpoint.send(std::move(bounce));
             } else {
-                auto result = std::make_unique<Iq>(iq.to(), iq.from(), Metre::Iq::RESULT, iq.id());
+                auto result = std::make_unique<Iq>(iq.to(), iq.from(), Metre::Iq::Type::RESULT, iq.id());
                 auto response = result->node()->append_element({"http://jabber.org/protocol/disco#info", "query"});
                 auto doc = result->node()->document();
                 for (auto const &cap : m_endpoint.capabilities()) {

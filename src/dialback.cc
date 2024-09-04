@@ -42,11 +42,11 @@ namespace {
 
     class NewDialback : public Feature {
     public:
-        explicit NewDialback(XMLStream &s) : Feature(s) {}
+        using Feature::Feature;
 
         class Description : public Feature::Description<NewDialback> {
         public:
-            Description() : Feature::Description<NewDialback>(db_feat_ns, FEAT_AUTH_FALLBACK) {};
+            Description() : Feature::Description<NewDialback>(db_feat_ns, Type::FEAT_AUTH_FALLBACK) {};
 
             sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (!s.secured() && (Config::config().domain(s.local_domain()).require_tls() ||
@@ -81,11 +81,11 @@ namespace {
 
     class Dialback : public Feature, public sigslot::has_slots {
     public:
-        explicit Dialback(XMLStream &s) : Feature(s) {}
+        using Feature::Feature;
 
         class Description : public Feature::Description<Dialback> {
         public:
-            Description() : Feature::Description<Dialback>(db_ns, FEAT_AUTH) {};
+            Description() : Feature::Description<Dialback>(db_ns, Type::FEAT_AUTH) {};
         };
 
         /**
@@ -96,16 +96,16 @@ namespace {
              * This is a request to authenticate, using the current key.
              */
             Config::Domain const &from_domain = Config::config().domain(result.from().domain());
-            if (from_domain.transport_type() == INTERNAL || from_domain.transport_type() == COMP) {
+            if (from_domain.transport_type() == SESSION_TYPE::INTERNAL || from_domain.transport_type() == SESSION_TYPE::COMP) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
-                                                                         Stanza::not_acceptable);
+                                                                         Stanza::Error::not_acceptable);
                 m_stream.send(std::move(d));
                 co_return true;
             }
             m_stream.check_domain_pair(result.from().domain(), result.to().domain());
             if (!m_stream.secured() && Config::config().domain(result.from().domain()).require_tls()) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(result.from(), result.to(),
-                                                                         Stanza::policy_violation);
+                                                                         Stanza::Error::policy_violation);
                 m_stream.send(std::move(d));
                 co_return true;
             }
@@ -114,18 +114,18 @@ namespace {
             result.freeze();
             // Shortcuts here.
             if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", result.from().domain()), *route))) {
-                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain_jid(), route->local_jid(), DB::VALID);
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain_jid(), route->local_jid(), DB::Type::VALID);
                 m_stream.send(std::move(d));
-                m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::AUTHORIZED);
+                m_stream.s2s_auth_pair(route->local(), route->domain(), SESSION_DIRECTION::INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
                 co_return true;
             }
             if (!from_domain.auth_dialback()) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain_jid(), route->local_jid(),
-                                                                         Stanza::not_authorized);
+                                                                         Stanza::Error::not_authorized);
                 m_stream.send(std::move(d));
                 co_return true;
             }
-            m_stream.s2s_auth_pair(route->local(), route->domain(), INBOUND, XMLStream::REQUESTED);
+            m_stream.s2s_auth_pair(route->local(), route->domain(), SESSION_DIRECTION::INBOUND, XMLStream::AUTH_STATE::REQUESTED);
             // With syntax done, we should send the key:
             route->transmit(
                     std::make_unique<DB::Verify>(route->domain_jid(), route->local_jid(), m_stream.stream_id(), std::string(result.key())));
@@ -134,38 +134,38 @@ namespace {
         }
 
         void result_valid(DB::Result const &result) {
-            if (m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND) >=
-                XMLStream::REQUESTED) {
-                m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND, XMLStream::AUTHORIZED);
+            if (m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), SESSION_DIRECTION::OUTBOUND) >=
+                XMLStream::AUTH_STATE::REQUESTED) {
+                m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), SESSION_DIRECTION::OUTBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
             }
         }
 
         void result_invalid(DB::Result const &result) {
-            if (m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND) ==
-                XMLStream::REQUESTED) {
-                m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND, XMLStream::NONE);
+            if (m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), SESSION_DIRECTION::OUTBOUND) ==
+                XMLStream::AUTH_STATE::REQUESTED) {
+                m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), SESSION_DIRECTION::OUTBOUND, XMLStream::AUTH_STATE::NONE);
             }
             // Risky, here - the remote server might close the stream on us.
         }
 
         void result_error(DB::Result const &result) {
-            if (m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND) ==
-                XMLStream::REQUESTED) {
-                m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), OUTBOUND, XMLStream::NONE);
+            if (m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), SESSION_DIRECTION::OUTBOUND) ==
+                XMLStream::AUTH_STATE::REQUESTED) {
+                m_stream.s2s_auth_pair(result.to().domain(), result.from().domain(), SESSION_DIRECTION::OUTBOUND, XMLStream::AUTH_STATE::NONE);
             }
         }
 
         void verify(DB::Verify const &v) {
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
-            DB::Type validity = DB::INVALID;
+            DB::Type validity = DB::Type::INVALID;
             m_stream.logger().debug("Handling db:verify");
             if (session) {
                 m_stream.logger().debug("Verify [NS{}] session found.", session->serial());
-                if (session->xml_stream().s2s_auth_pair(v.to().domain(), v.from().domain(), OUTBOUND) >=
-                    XMLStream::REQUESTED) {
+                if (session->xml_stream().s2s_auth_pair(v.to().domain(), v.from().domain(), SESSION_DIRECTION::OUTBOUND) >=
+                    XMLStream::AUTH_STATE::REQUESTED) {
                     m_stream.logger().debug("Verify [NS{}] Auth State is correct.", session->serial());
                     std::string expected = Config::config().dialback_key(*v.id(), v.to().domain(), v.from().domain());
-                    if (v.key() == expected) validity = DB::VALID;
+                    if (v.key() == expected) validity = DB::Type::VALID;
                 }
             }
             std::unique_ptr<Stanza> d = std::make_unique<DB::Verify>(v.from(), v.to(), *v.id(), validity);
@@ -173,28 +173,30 @@ namespace {
         }
 
         void verify_valid(DB::Verify const &v) const {
+            using enum SESSION_DIRECTION;
             if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
             if (!session) return; // Silently ignore this.
             XMLStream &stream = session->xml_stream();
-            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::REQUESTED) {
-                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), DB::VALID);
+            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), DB::Type::VALID);
                 stream.send(std::move(d));
-                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTHORIZED);
+                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
             }
         }
 
         void verify_invalid(DB::Verify const &v) const {
+            using enum SESSION_DIRECTION;
             if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
             std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
             if (!session) return; // Silently ignore this.
             XMLStream &stream = session->xml_stream();
-            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::REQUESTED) {
-                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), Stanza::forbidden);
+            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
+                std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), Stanza::Error::forbidden);
                 stream.send(std::move(d));
-                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::NONE);
+                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::NONE);
             }
         }
 

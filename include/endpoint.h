@@ -20,17 +20,17 @@ namespace Metre {
     public:
         static Endpoint &endpoint(Jid const &);
 
-        Endpoint(Jid const &);
+        explicit Endpoint(Jid const &);
 
         Jid const &jid() const {
             return m_jid;
         }
 
-        virtual sigslot::tasklet<void> process(Presence const & presence);
+        virtual sigslot::tasklet<void> process(Presence & presence);
 
-        virtual sigslot::tasklet<void> process(Message const & message);
+        virtual sigslot::tasklet<void> process(Message & message);
 
-        virtual sigslot::tasklet<void> process(Iq const & iq);
+        virtual sigslot::tasklet<void> process(Iq & iq);
 
         void process(std::unique_ptr<Stanza> && stanza);
 
@@ -50,15 +50,15 @@ namespace Metre {
         void add_handler(std::string const &xmlns, std::string const &local,
                          std::function<sigslot::tasklet<void>(Iq const &)> &&fn);
 
-        virtual ~Endpoint();
+        ~Endpoint() override;
 
         sigslot::tasklet<Node *> node(std::string const &name, bool create = false);
 
-        std::map<std::string, std::unique_ptr<Node>> const &nodes() const {
+        std::map<std::string, std::unique_ptr<Node>, std::less<>> const &nodes() const {
             return m_nodes;
         };
 
-        void nodes(std::function<void(std::map<std::string, std::unique_ptr<Node>> const &)> &&fn) const;
+        void nodes(std::function<void(std::map<std::string, std::unique_ptr<Node>, std::less<>> const &)> &&fn) const;
 
 #ifdef METRE_TESTING
         sigslot::signal<Stanza &, Jid const &, Jid const &> sent_stanza;
@@ -75,14 +75,14 @@ namespace Metre {
         static const char characters[];
         std::default_random_engine m_random;
         std::uniform_int_distribution<> m_dist;
-        std::map<std::string, std::unique_ptr<Node>> m_nodes;
+        std::map<std::string, std::unique_ptr<Node>, std::less<>> m_nodes;
 
 
     private:
         std::list<std::unique_ptr<process_task>> m_tasks;
         std::set<std::unique_ptr<Capability>> m_capabilities;
         std::map<std::pair<std::string, std::string>, std::function<sigslot::tasklet<void>(Iq const &)>> m_handlers;
-        std::map<std::string, std::function<void(Stanza const &)>> m_stanza_callbacks;
+        std::map<std::string, std::function<void(Stanza const &)>, std::less<>> m_stanza_callbacks;
     };
 }
 

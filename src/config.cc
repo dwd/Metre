@@ -95,7 +95,7 @@ namespace {
     std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, std::string const & domain_name, YAML::Node const & domain, bool external) {
         std::string name;
         bool forward = !external;
-        SESSION_TYPE sess = S2S;
+        SESSION_TYPE sess = SESSION_TYPE::S2S;
         bool tls_required = external;
         bool xmpp_ver = true;
         bool block = false;
@@ -105,7 +105,7 @@ namespace {
         bool dnssec_required = false;
         bool auth_pkix_crls = Config::config().fetch_pkix_status();
         bool auth_host = false;
-        TLS_PREFERENCE tls_preference = PREFER_ANY;
+        TLS_PREFERENCE tls_preference = TLS_PREFERENCE::PREFER_ANY;
         unsigned int stanza_timeout = 20;
         unsigned int connect_timeout = 10;
         std::string dhparam = "auto";
@@ -137,15 +137,15 @@ namespace {
         if (domain["transport"]) {
             auto type = domain["transport"]["type"].as<std::string>("s2s");
             if (type == "s2s") {
-                sess = S2S;
+                sess = SESSION_TYPE::S2S;
             } else if (type == "x2x") {
-                sess = X2X;
+                sess = SESSION_TYPE::X2X;
             } else if (type == "114") {
-                sess = COMP;
+                sess = SESSION_TYPE::COMP;
                 tls_required = false;
                 forward = true;
             } else if (type == "internal") {
-                sess = INTERNAL;
+                sess = SESSION_TYPE::INTERNAL;
                 tls_required = true;
                 forward = true;
             } else {
@@ -158,9 +158,9 @@ namespace {
             if (domain["transport"]["prefer"]) {
                 std::string tls_pref_str = domain["transport"]["prefer"].as<std::string>();
                 if (tls_pref_str == "immediate" || tls_pref_str == "direct") {
-                    tls_preference = PREFER_IMMEDIATE;
+                    tls_preference = TLS_PREFERENCE::PREFER_IMMEDIATE;
                 } else if (tls_pref_str == "starttls") {
-                    tls_preference = PREFER_STARTTLS;
+                    tls_preference = TLS_PREFERENCE::PREFER_STARTTLS;
                 }
             }
             connect_timeout = domain["transport"]["connect-timeout"].as<int>(connect_timeout);
@@ -179,7 +179,7 @@ namespace {
                 auth_secret = domain["auth"]["secret"].as<std::string>();
             }
             auth_host = domain["auth"]["host"].as<bool>(auth_host);
-            if (auth_host && sess == X2X) {
+            if (auth_host && sess == SESSION_TYPE::X2X) {
                 dnssec_required = true;
             }
             if (!(block || auth_pkix || auth_dialback || auth_secret || auth_host)) {
@@ -256,33 +256,33 @@ namespace {
                 DNS::TlsaRR::CertUsage certUsage;
                 std::string certusages = certusagea.as<std::string>();
                 if (certusages == "CAConstraint") {
-                    certUsage = DNS::TlsaRR::CAConstraint;
+                    certUsage = DNS::TlsaRR::CertUsage::CAConstraint;
                 } else if (certusages == "CertConstraint") {
-                    certUsage = DNS::TlsaRR::CertConstraint;
+                    certUsage = DNS::TlsaRR::CertUsage::CertConstraint;
                 } else if (certusages == "TrustAnchorAssertion") {
-                    certUsage = DNS::TlsaRR::TrustAnchorAssertion;
+                    certUsage = DNS::TlsaRR::CertUsage::TrustAnchorAssertion;
                 } else if (certusages == "DomainCert") {
-                    certUsage = DNS::TlsaRR::DomainCert;
+                    certUsage = DNS::TlsaRR::CertUsage::DomainCert;
                 } else {
                     throw std::runtime_error("Unknown certusage in TLSA DNS override");
                 }
                 auto matchtypes = tlsa["matchtype"].as<std::string>("Full");
-                DNS::TlsaRR::MatchType matchType = DNS::TlsaRR::Full;
+                DNS::TlsaRR::MatchType matchType = DNS::TlsaRR::MatchType::Full;
                 if (matchtypes == "Full") {
-                    matchType = DNS::TlsaRR::Full;
+                    matchType = DNS::TlsaRR::MatchType::Full;
                 } else if (matchtypes == "Sha256") {
-                    matchType = DNS::TlsaRR::Sha256;
+                    matchType = DNS::TlsaRR::MatchType::Sha256;
                 } else if (matchtypes == "Sha512") {
-                    matchType = DNS::TlsaRR::Sha512;
+                    matchType = DNS::TlsaRR::MatchType::Sha512;
                 } else {
                     throw std::runtime_error("Unknown matchtype in TLSA DNS override");
                 }
                 auto sel = tlsa["selector"].as<std::string>("FullCert");
-                DNS::TlsaRR::Selector selector = DNS::TlsaRR::FullCert;
+                DNS::TlsaRR::Selector selector = DNS::TlsaRR::Selector::FullCert;
                 if (sel == "FullCert") {
-                    selector = DNS::TlsaRR::FullCert;
+                    selector = DNS::TlsaRR::Selector::FullCert;
                 } else if (sel == "SubjectPublicKeyInfo") {
-                    selector = DNS::TlsaRR::SubjectPublicKeyInfo;
+                    selector = DNS::TlsaRR::Selector::SubjectPublicKeyInfo;
                 } else {
                     throw std::runtime_error("Unknown selector in TLSA DNS override");
                 }
@@ -296,7 +296,7 @@ namespace {
             if (it == Filter::all_filters().end()) {
                 throw std::runtime_error("Unknown filter " + filter_name);
             }
-            auto &filter_desc = (*it).second;
+            auto const &filter_desc = (*it).second;
             dom->filters().emplace_back(filter_desc->create(*dom, filter.second));
         }
         return dom;
@@ -327,6 +327,7 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
 }
 
 sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::span> span, FILTER_DIRECTION dir, Stanza &s) const {
+    using enum FILTER_RESULT;
     if (m_parent) co_return co_await m_parent->filter(span->start_child("filter", "parent"), dir, s);
     for (auto &filter : m_filters) {
         auto filter_result = co_await filter->apply(span->start_child("filter", filter->name()), dir, s);
@@ -553,7 +554,7 @@ void Config::load(std::string const &filename, bool lite) {
                 if (it == Filter::all_filters().end()) {
                     throw std::runtime_error("Unknown filter " + filter_name);
                 }
-                auto &filter_desc = (*it).second;
+                auto const &filter_desc = (*it).second;
                 filter_desc->config(item.second);
             }
         }
@@ -601,9 +602,10 @@ void Config::load(std::string const &filename, bool lite) {
         for (auto listener : listeners) {
             // address : port* : default_domain[*X2X] : session_type : tls_mode
             auto port = listener["port"].as<unsigned short>();
-            SESSION_TYPE stype = S2S;
-            TLS_MODE tls = listener["tls"].as<bool>(false) ? IMMEDIATE : STARTTLS;
+            SESSION_TYPE stype = SESSION_TYPE::S2S;
+            TLS_MODE tls = listener["tls"].as<bool>(false) ? TLS_MODE::IMMEDIATE : TLS_MODE::STARTTLS;
             if (listener["type"]) {
+                using enum SESSION_TYPE;
                 std::string s = listener["type"].as<std::string>();
                 if (s == "s2s") {
                     stype = S2S;
@@ -628,8 +630,8 @@ void Config::load(std::string const &filename, bool lite) {
             }
         }
     } else {
-        m_listeners.emplace_back("", "", "S2S", "::", 5269, STARTTLS, S2S);
-        m_listeners.emplace_back("", "", "XEP-0368", "::", 5270, IMMEDIATE, S2S);
+        m_listeners.emplace_back("", "", "S2S", "::", 5269, TLS_MODE::STARTTLS, SESSION_TYPE::S2S);
+        m_listeners.emplace_back("", "", "XEP-0368", "::", 5270, TLS_MODE::IMMEDIATE, SESSION_TYPE::S2S);
     }
 }
 
@@ -649,7 +651,7 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
     } else {
         throw std::runtime_error("Couldn't understand address syntax " + std::string(address));
     }
-    if (asess == X2X) {
+    if (asess == SESSION_TYPE::X2X) {
         if (local_domain.empty() || remote_domain.empty()) {
             throw std::runtime_error("Missing local or remote domains");
         }
@@ -681,6 +683,7 @@ namespace {
         config["block"] = domain.block();
         config["stanza-timeout"] = domain.stanza_timeout();
         switch (domain.transport_type()) {
+            using enum SESSION_TYPE;
             case INTERNAL:
                 config["transport"]["type"] = "internal";
                 break;
@@ -698,6 +701,7 @@ namespace {
         config["transport"]["multiplex"] = domain.multiplex();
         config["transport"]["tls_required"] = domain.require_tls();
         switch (domain.tls_preference()) {
+            using enum TLS_PREFERENCE;
             case PREFER_IMMEDIATE:
                 config["transport"]["prefer"] = "direct";
                 break;
@@ -739,10 +743,11 @@ namespace {
                 tlsa["hostname"] = hostname;
                 tlsa["port"] = port;
                 switch (rr.matchType) {
-                    case DNS::TlsaRR::Sha256:
+                    using enum DNS::TlsaRR::MatchType;
+                    case Sha256:
                         tlsa["matchtype"] = "Sha256";
                         break;
-                    case DNS::TlsaRR::Sha512:
+                    case Sha512:
                         tlsa["matchtype"] = "Sha512";
                         break;
                     default:
@@ -750,7 +755,8 @@ namespace {
                         break;
                 }
                 switch (rr.selector) {
-                    case DNS::TlsaRR::SubjectPublicKeyInfo:
+                    using enum DNS::TlsaRR::Selector;
+                    case SubjectPublicKeyInfo:
                         tlsa["selector"] = "SubjectPublicKeyInfo";
                         break;
                     default:
@@ -758,20 +764,21 @@ namespace {
                         break;
                 }
                 switch (rr.certUsage) {
-                    case DNS::TlsaRR::CAConstraint:
+                    using enum DNS::TlsaRR::CertUsage;
+                    case CAConstraint:
                         tlsa["certusage"] = "CAConstraint";
                         break;
-                    case DNS::TlsaRR::CertConstraint:
+                    case CertConstraint:
                         tlsa["certusage"] = "CertConstraint";
                         break;
-                    case DNS::TlsaRR::TrustAnchorAssertion:
+                    case TrustAnchorAssertion:
                         tlsa["certusage"] = "TrustAnchorAssertion";
                         break;
                     default:
                         tlsa["certusage"] = "DomainCert";
                         break;
                 }
-                if (rr.matchType == DNS::TlsaRR::Full) {
+                if (rr.matchType == DNS::TlsaRR::MatchType::Full) {
                     // Base64 data (it might have come from a file, but never mind).
                     tlsa["matchdata"] = base64_encode(rr.matchData);
                 } else {
@@ -908,6 +915,7 @@ std::string Config::asString() const {
             listener["port"] = ntohs(sa->sin6_port);
         }
         switch (listen.session_type) {
+            using enum SESSION_TYPE;
             case S2S:
                 listener["type"] = "s2s";
                 break;
@@ -920,7 +928,7 @@ std::string Config::asString() const {
             default:
                 continue;
         };
-        listener["tls"] = listen.tls_mode == IMMEDIATE;
+        listener["tls"] = listen.tls_mode == TLS_MODE::IMMEDIATE;
         config["listeners"].push_back(listener);
     }
 
@@ -1057,8 +1065,8 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
     // Match data. Annoying.
     // If the match type was a hash, it'll be an inline hash.
     switch (matchType) {
-        case DNS::TlsaRR::Sha256:
-        case DNS::TlsaRR::Sha512: {
+        case DNS::TlsaRR::MatchType::Sha256:
+        case DNS::TlsaRR::MatchType::Sha512: {
             unsigned char byte = 0;
             bool flip = false;
             for (auto c : value) {
@@ -1090,7 +1098,7 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
                 if (!rr.matchData.empty()) {
                     read_ok = true;
                 }
-                if (rr.selector == DNS::TlsaRR::FullCert && rr.matchType == DNS::TlsaRR::Full) {
+                if (rr.selector == DNS::TlsaRR::Selector::FullCert && rr.matchType == DNS::TlsaRR::MatchType::Full) {
                     // Full cert matching, so convenient to supply a PEM file as well. Let's check:
                     if (rr.matchData.find("-----BEGIN") == 0) {
                         // Tempting to replace this with a base64_decode call, mind.
@@ -1282,7 +1290,7 @@ DNS::Resolver::srv_callback_t &Config::Resolver::SrvLookup(std::string const &ba
             r.error = "Empty Domain - DNS aborted";
             m_srv_pending.emit(r);
         });
-    } else if (m_domain.transport_type() == X2X) {
+    } else if (m_domain.transport_type() == SESSION_TYPE::X2X) {
         Router::defer([this]() {
             DNS::Srv r;
             r.error = "X2X - DNS aborted";
@@ -1313,7 +1321,7 @@ DNS::Resolver::svcb_callback_t &Config::Resolver::SvcbLookup(std::string const &
             r.error = "Empty Domain - DNS aborted";
             m_svcb_pending.emit(r);
         });
-    } else if (m_domain.transport_type() == X2X) {
+    } else if (m_domain.transport_type() == SESSION_TYPE::X2X) {
         Router::defer([this]() {
             DNS::Svcb r;
             r.error = "X2X - DNS aborted";
@@ -1344,7 +1352,7 @@ DNS::Resolver::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port
             }
         }
     }
-    if (m_domain.transport_type() == X2X) {
+    if (m_domain.transport_type() == SESSION_TYPE::X2X) {
         auto &cb = m_tlsa_pending[domain];
         Router::defer([&cb]() {
             DNS::Tlsa r;

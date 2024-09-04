@@ -43,6 +43,7 @@ namespace {
         }
 
         virtual sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
+            using enum FILTER_RESULT;
             if (dir == FILTER_DIRECTION::FROM) {
                 co_return PASS;
             }

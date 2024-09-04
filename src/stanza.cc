@@ -24,8 +24,6 @@ SOFTWARE.
 ***/
 
 #include "stanza.h"
-#include "xmlstream.h"
-#include "rapidxml_print.hpp"
 #include "rapidxml_iterators.hpp"
 #include "log.h"
 
@@ -110,6 +108,7 @@ void Stanza::render_error(Metre::base::stanza_exception const &ex) {
 
 void Stanza::render_error(Stanza::Error e) {
     switch (e) {
+        using enum Error;
         case remote_server_timeout:
             render_error(stanza_remote_server_timeout());
             return;
@@ -133,6 +132,7 @@ void Stanza::render_error(Stanza::Error e) {
 
 std::unique_ptr<Stanza> Stanza::create_bounce(Stanza::Error e) const {
     switch (e) {
+        using enum Error;
         case remote_server_timeout:
             return create_bounce(stanza_remote_server_timeout());
         case remote_server_not_found:
@@ -185,7 +185,7 @@ const char *Stanza::error_name(Stanza::Error err) {
             "undefined-condition",
             "unexpected-request"
     };
-    return names.at(static_cast<std::vector<const char *>::size_type>(err));
+    return names.at(std::to_underlying(err));
 }
 
 Message::Message() : Stanza(Message::name) {
@@ -212,6 +212,7 @@ std::unique_ptr<Message> Message::create_response() const {
 void Message::type(Message::Type t) {
     m_type = t;
     switch(m_type) {
+        using enum Message::Type;
         case NORMAL:
             type_str(std::optional<std::string>());
             break;
@@ -231,6 +232,7 @@ void Message::type(Message::Type t) {
 }
 
 Message::Type Message::set_type() const {
+    using enum Message::Type;
     if (!type_str()) return NORMAL;
     std::string const &t = *type_str();
     switch (t[0]) {
@@ -262,6 +264,7 @@ Iq::Iq(rapidxml::optional_ptr<rapidxml::xml_node<>> node) : Stanza(name, node) {
 
 const char *Iq::type_toString(Type t) {
     switch (t) {
+        using enum Iq::Type;
         case GET:
             return "get";
         case SET:
@@ -278,6 +281,7 @@ Iq::Type Iq::set_type() const {
     if (!type_str()) throw std::runtime_error("Missing type for Iq");
     std::string const &t = *type_str();
     switch (t[0]) {
+        using enum Iq::Type;
         case 'g':
             if (t == "get") return GET;
             break;
@@ -310,10 +314,11 @@ const char *DB::Result::name = "db:result";
 
 namespace {
     const char * to_string(DB::Type t) {
+        using enum DB::Type;
         switch(t) {
-            case Metre::DB::VALID:
+            case VALID:
                 return "valid";
-            case Metre::DB::INVALID:
+            case INVALID:
                 return "invalid";
             default:
                 break;

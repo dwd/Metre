@@ -31,11 +31,11 @@ void Endpoint::process(std::unique_ptr<Stanza> && stanza_ptr) {
     try {
         task->stanza = std::move(stanza_ptr);
         if (task->stanza->name() == Message::name) {
-            task->task = process(dynamic_cast<Message const &>(*(task->stanza)));
+            task->task = process(dynamic_cast<Message &>(*(task->stanza)));
         } else if (task->stanza->name() == Presence::name) {
-            task->task = process(dynamic_cast<Presence const &>(*(task->stanza)));
+            task->task = process(dynamic_cast<Presence &>(*(task->stanza)));
         } else if (task->stanza->name() == Iq::name) {
-            task->task = process(dynamic_cast<Iq const &>(*(task->stanza)));
+            task->task = process(dynamic_cast<Iq &>(*(task->stanza)));
         } else {
             throw unsupported_stanza_type();
         }
@@ -53,20 +53,21 @@ void Endpoint::process(std::unique_ptr<Stanza> && stanza_ptr) {
     }
 }
 
-sigslot::tasklet<void> Endpoint::process(Presence const & presence) {
+sigslot::tasklet<void> Endpoint::process(Presence & presence) {
     throw stanza_service_unavailable();
     co_return;
 }
 
-sigslot::tasklet<void> Endpoint::process(Message const & message) {
+sigslot::tasklet<void> Endpoint::process(Message & message) {
     throw stanza_service_unavailable();
     co_return;
 }
 
-sigslot::tasklet<void> Endpoint::process(Iq const & iq) {
+sigslot::tasklet<void> Endpoint::process(Iq & iq) {
     switch (iq.type()) {
-        case Iq::GET:
-        case Iq::SET: {
+        using enum Iq::Type;
+        case GET:
+        case SET: {
             auto payload = iq.node()->first_node();
             if (payload != nullptr) {
                 std::string xmlns{payload->xmlns()};
@@ -78,8 +79,8 @@ sigslot::tasklet<void> Endpoint::process(Iq const & iq) {
                 }
             }
         }
-        case Iq::RESULT:
-        case Iq::STANZA_ERROR:
+        case RESULT:
+        case STANZA_ERROR:
             co_return;
     }
     throw stanza_service_unavailable();

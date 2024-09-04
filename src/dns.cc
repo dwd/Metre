@@ -281,8 +281,8 @@ void Metre::DNS::Resolver::tlsa_lookup_done(int err, struct ub_result *result) {
 namespace {
     void srv_sort(Metre::DNS::Srv &srv, Metre::TLS_PREFERENCE pref) {
         std::vector<Metre::DNS::SrvRR> tmp = std::move(srv.rrs);
-        if (pref != Metre::PREFER_ANY) {
-            bool tls = (pref == Metre::PREFER_IMMEDIATE);
+        if (pref != Metre::TLS_PREFERENCE::PREFER_ANY) {
+            bool tls = (pref == Metre::TLS_PREFERENCE::PREFER_IMMEDIATE);
             for (auto &rr : tmp) {
                 rr.priority *= 2;
                 if (rr.tls != tls) {

@@ -23,39 +23,39 @@ SOFTWARE.
 
 ***/
 
-#ifndef DEFS__HPP
-#define DEFS__HPP
+#ifndef DEFS_HPP
+#define DEFS_HPP
 
 namespace Metre {
-    typedef enum {
+    enum class SESSION_TYPE {
         C2S,
         S2S,
         X2X,
         COMP,
         INTERNAL
-    } SESSION_TYPE;
+    };
 
 
-    typedef enum {
+    enum class SESSION_DIRECTION {
         INBOUND,
         OUTBOUND
-    } SESSION_DIRECTION;
+    };
 
-    typedef enum {
+    enum class TLS_MODE {
         IMMEDIATE,
         STARTTLS
-    } TLS_MODE;
+    };
 
-    typedef enum {
+    enum class TLS_PREFERENCE {
         PREFER_IMMEDIATE,
         PREFER_STARTTLS,
         PREFER_ANY
-    } TLS_PREFERENCE;
+    };
 
-    typedef enum {
+    enum class FILTER_RESULT {
         PASS,
         DROP
-    } FILTER_RESULT;
+    };
 
     enum class FILTER_DIRECTION {
         FROM,

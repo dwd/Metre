@@ -51,9 +51,9 @@ namespace Metre {
 
     class XMLStream : public sigslot::has_slots {
     public:
-        typedef enum {
+        enum class AUTH_STATE {
             NONE, REQUESTED, AUTHORIZED
-        } AUTH_STATE;
+        };
 
     private:
         rapidxml::xml_document<> m_stream;
@@ -62,7 +62,7 @@ namespace Metre {
         SESSION_DIRECTION m_dir;
         SESSION_TYPE m_type;
         std::string m_stream_buf; // Sort-of-temporary buffer //
-        std::map<std::string, std::unique_ptr<Feature>> m_features;
+        std::map<std::string, std::unique_ptr<Feature>, std::less<>> m_features;
         std::optional<std::string> m_user;
         std::string m_stream_id;
         std::string m_stream_local;
@@ -76,12 +76,11 @@ namespace Metre {
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_rx;
         std::map<std::pair<std::string, std::string>, AUTH_STATE> m_auth_pairs_tx;
         std::list<std::unique_ptr<Filter>> m_filters;
-        std::map<std::string, struct X509_crl_st *> m_crls;
         bool m_x2x_mode = false;
         bool m_bidi = false;
         bool m_dialback_errors = false;
         bool m_dialback = false;
-        std::map<std::string, sigslot::signal<Stanza const &>> m_response_callbacks;
+        std::map<std::string, sigslot::signal<Stanza const &>, std::less<>> m_response_callbacks;
         std::list<std::shared_ptr<sigslot::tasklet<bool>>> m_tasks;
         int m_in_flight = 0; // Tasks in flight.
         std::shared_ptr<spdlog::logger> m_logger;
@@ -153,7 +152,7 @@ namespace Metre {
             return m_user;
         }
 
-        void user(std::string const &u) {
+        void user(std::string_view const & u) {
             m_user = u;
         }
 
@@ -174,15 +173,15 @@ namespace Metre {
 
         void set_secured() { m_secured = true; }
 
-        bool auth_ready() { return !m_closed && m_authready; }
+        bool auth_ready() const { return !m_closed && m_authready; }
 
         std::string const &local_domain() const { return m_stream_local; }
 
-        void local_domain(std::string const &dom) { m_stream_local = dom; }
+        void local_domain(std::string_view const &dom) { m_stream_local = dom; }
 
         std::string const &remote_domain() const { return m_stream_remote; }
 
-        void remote_domain(std::string const &dom) { m_stream_remote = dom; }
+        void remote_domain(std::string_view const &dom) { m_stream_remote = dom; }
 
         bool x2x_mode() const { return m_x2x_mode; }
 
@@ -195,15 +194,11 @@ namespace Metre {
 
         void check_domain_pair(std::string const &from, std::string const &to) const;
 
-        std::string const &stream_local() const {
-            return m_stream_local;
-        }
-
         NetSession &session() {
             return *m_session;
         }
 
-        std::string const &stream_id() {
+        std::string const &stream_id() const {
             return m_stream_id;
         }
 
@@ -211,13 +206,7 @@ namespace Metre {
 
         void generate_stream_id();
 
-        void fetch_crl(std::string const & uri);
-
-        void add_crl(std::string const &uri, int code, struct X509_crl_st *data);
-
-        void crl(std::function<void(struct X509_crl_st *)> const &);
-
-        Feature &feature(std::string const &);
+        Feature &feature(std::string_view const &);
 
         // Signals:
         sigslot::signal<XMLStream &> auth_state_changed;

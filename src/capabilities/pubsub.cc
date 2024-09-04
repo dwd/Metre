@@ -27,7 +27,7 @@ namespace {
                         std::make_unique<Node::Facet>(*this, pubsub_items, true));
             }
             facet->add_item(item, true);
-            std::unique_ptr<Stanza> reply = std::make_unique<Iq>(iq.to(), iq.from(), Iq::RESULT, iq.id());
+            std::unique_ptr<Stanza> reply = std::make_unique<Iq>(iq.to(), iq.from(), Iq::Type::RESULT, iq.id());
             m_endpoint.send(std::move(reply));
         }
 

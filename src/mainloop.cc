@@ -645,7 +645,7 @@ namespace Metre {
             defer(std::move(fn), {seconds, 0});
         }
 
-        void main(std::function<bool()> const &check_fn) {
+        void run(std::function<bool()> const &check_fn) {
             Metre::Mainloop loop;
             auto & logger = Config::config().logger();
             if (!loop.init()) {

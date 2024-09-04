@@ -23,8 +23,8 @@ SOFTWARE.
 
 ***/
 
-#ifndef METRE_FILTER__H
-#define METRE_FILTER__H
+#ifndef METRE_FILTER_H
+#define METRE_FILTER_H
 
 #include "defs.h"
 #include "config.h"
@@ -65,11 +65,11 @@ namespace Metre {
             explicit Description(std::string &&name) : BaseDescription(std::move(name)) {}
 
             std::unique_ptr<Filter> create(Config::Domain &domain, YAML::Node const & config) override {
-                return std::unique_ptr<Filter>(new T(*this, domain, config));
+                return std::make_unique<T>(*this, domain, config);
             }
         };
 
-        using filter_map = std::map<std::string, Filter::BaseDescription *, std::less<>>;
+        using filter_map = std::map<std::string, std::unique_ptr<Filter::BaseDescription>, std::less<>>;
         static filter_map &all_filters();
 
         explicit Filter(BaseDescription const &b) : m_description(b) {}
@@ -78,7 +78,7 @@ namespace Metre {
         /* Actually do the filter. Tinkering with the stanza is fine. */
         virtual sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &) = 0;
 
-        std::string const & name() const {
+        [[nodiscard]] std::string const & name() const {
             return m_description.name;
         }
     protected:
@@ -95,8 +95,8 @@ namespace Metre {
         template<typename T>
         static bool declare(const char *name) {
             // Bare pointer as this is premain and the object is never freed by design.
-            BaseDescription *bd = new typename T::Description(name);
-            all_filters().try_emplace(bd->name, bd);
+            auto bd = std::make_unique<typename T::Description>(name);
+            all_filters().try_emplace(bd->name, std::move(bd));
             return true;
         }
 

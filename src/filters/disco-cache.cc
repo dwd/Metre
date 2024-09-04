@@ -46,26 +46,26 @@ namespace {
         sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
             if (s.name() == Iq::name) {
                 Iq &iq = dynamic_cast<Iq &>(s);
-                if (iq.type() == Iq::GET) {
+                if (iq.type() == Iq::Type::GET) {
                     auto disco = iq.node()->first_node("query", "http://jabber.org/protocol/disco#info");
                     if (disco) { // It's a disco#info request.
                         auto node = disco->first_attribute("node");
-                        if (!node) co_return PASS;
+                        if (!node) co_return FILTER_RESULT::PASS;
                         auto it = caps_cache().find(std::string{node->value()});
                         if (it != caps_cache().end()) {
-                            std::unique_ptr<Stanza> response(new Iq(iq.to(), iq.from(), Iq::RESULT, iq.id()));
+                            std::unique_ptr<Stanza> response(new Iq(iq.to(), iq.from(), Iq::Type::RESULT, iq.id()));
                             auto & [ key, doc ] = *it;
                             response->node()->append_node(response->node()->document()->clone_node(doc.first_node()));
                             auto route = RouteTable::routeTable(iq.from()).route(iq.to());
                             route->transmit(std::move(response));
-                            co_return DROP;
+                            co_return FILTER_RESULT::DROP;
                         }
                     }
-                } else if (iq.type() == Iq::RESULT) {
+                } else if (iq.type() == Iq::Type::RESULT) {
                     auto disco = iq.node()->first_node("query", "http://jabber.org/protocol/disco#info");
                     if (disco) { // It's a disco#info response.
                         auto node = disco->first_attribute("node");
-                        if (!node) co_return PASS;
+                        if (!node) co_return FILTER_RESULT::PASS;
                         bool client = false;
                         for (auto identity = disco->first_node("identity"); identity; identity = identity->next_sibling(
                                 "identity")) {
@@ -84,7 +84,7 @@ namespace {
                     }
                 }
             }
-            co_return PASS;
+            co_return FILTER_RESULT::PASS;
         }
 
     private:

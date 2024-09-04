@@ -47,14 +47,14 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
     span->containing_transaction().tag("from", m_local.domain());
     m_logger->debug("Verify session spin-up: domain=[{}]", m_domain);
     switch(Config::config().domain(m_domain.domain()).transport_type()) {
-    case INTERNAL:
-        m_logger->debug("Internal domain; won't connect to that.");
-        co_return false;
-    case COMP:
-        m_logger->debug("XEP-0114 hosted domain; won't connect to that.");
-        co_return false;
-    default:
-        break;
+        case SESSION_TYPE::INTERNAL:
+            m_logger->debug("Internal domain; won't connect to that.");
+            co_return false;
+        case SESSION_TYPE::COMP:
+            m_logger->debug("XEP-0114 hosted domain; won't connect to that.");
+            co_return false;
+        default:
+            break;
     }
     auto gathered = co_await Config::config().domain(m_domain.domain()).gather(span->start_child("gather", m_domain.domain()));
 
@@ -97,7 +97,7 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
             auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
                                            reinterpret_cast<sockaddr *>(&rr.sockaddr),
                                            rr.port, Config::config().domain(m_domain.domain()).transport_type(),
-                                           rr.method == DNS::ConnectInfo::Method::DirectTLS ? IMMEDIATE : STARTTLS);
+                                           rr.method == DNS::ConnectInfo::Method::DirectTLS ? TLS_MODE::IMMEDIATE : TLS_MODE::STARTTLS);
             m_logger->trace("Connected verify session: address=[{}:{}] serial=[{}]", rr.hostname, rr.port,
                             session->serial());
             m_logger->trace("Awaiting auth ready on verify session: serial=[{}]", session->serial());
@@ -161,7 +161,7 @@ restart:
     }
     auto span_ = trans->start_child("auth", "Authentication");
     trans->tag("auth", "sasl");
-    switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND)) {
+    switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND)) {
         default: // NONE
             while (!session->xml_stream().auth_ready()) {
                 if (session->xml_stream().closed()) goto restart;
@@ -182,13 +182,13 @@ restart:
                 dbr->value(key);
                 d.append_node(dbr);
                 session->xml_stream().send(d);
-                session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND,
-                                                    XMLStream::REQUESTED);
+                session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND,
+                                                    XMLStream::AUTH_STATE::REQUESTED);
             }
             // Fallthrough
-        case XMLStream::REQUESTED:
+        case XMLStream::AUTH_STATE::REQUESTED:
             m_logger->trace("Awaiting authentication: domain=[{}]");
-            while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::REQUESTED) {
+            while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 m_logger->debug("Authenticating with verify session");
                 if (session->xml_stream().closed()) {
                     if (multiplex) {
@@ -201,7 +201,7 @@ restart:
                 }
                 (void) co_await session->xml_stream().auth_state_changed;
             }
-            if (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), OUTBOUND) == XMLStream::NONE) {
+            if (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::NONE) {
                 // Rejected auth.
                 if (multiplex) {
                     multiplex = false;
@@ -212,7 +212,7 @@ restart:
                     co_return false;
                 }
             }
-        case XMLStream::AUTHORIZED:
+        case XMLStream::AUTH_STATE::AUTHORIZED:
             m_logger->trace("Authorized: domain=[{}]");
             break;
     }
@@ -327,7 +327,7 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
     s->freeze();
     if (m_stanzas.empty())
         Router::defer([this]() {
-            bounce_stanzas(Stanza::remote_server_timeout);
+            bounce_stanzas(Stanza::Error::remote_server_timeout);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_stanzas.push_back(std::move(s));
     m_logger->debug("Queued stanza");
@@ -391,7 +391,7 @@ std::shared_ptr<Route> &RouteTable::route(std::string const & to) {
         return (*it).second;
     }
     // No route: For components, see if there's a route against the component domain.
-    if (m_local_domain != to && Config::config().domain(to).transport_type() == COMP) {
+    if (m_local_domain != to && Config::config().domain(to).transport_type() == SESSION_TYPE::COMP) {
         auto [ it, success ] = m_routes.try_emplace(to, RouteTable::routeTable(to).route(to));
         return it->second;
     }

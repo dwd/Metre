@@ -43,16 +43,16 @@ namespace {
     class SaslExternal : public Feature {
     private:
     public:
-        explicit SaslExternal(XMLStream &s) : Feature(s) {}
+        using Feature::Feature;
 
         class Description : public Feature::Description<SaslExternal> {
         public:
-            Description() : Feature::Description<SaslExternal>(sasl_ns, FEAT_AUTH) {};
+            Description() : Feature::Description<SaslExternal>(sasl_ns, Type::FEAT_AUTH) {};
 
             sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span> span, optional_ptr<xml_node<>> node, XMLStream &stream) override {
                 if (stream.remote_domain().empty()) co_return false;
-                if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), INBOUND) ==
-                    XMLStream::AUTHORIZED)
+                if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), SESSION_DIRECTION::INBOUND) ==
+                    XMLStream::AUTH_STATE::AUTHORIZED)
                     co_return false;
                 std::shared_ptr<Route> &route = RouteTable::routeTable(stream.local_domain()).route(
                         stream.remote_domain());
@@ -105,7 +105,7 @@ namespace {
                 xml_document<> d;
                 d.append_element({sasl_ns, "success"});
                 m_stream.send(d);
-                m_stream.s2s_auth_pair(m_stream.local_domain(), authzid, INBOUND, XMLStream::AUTHORIZED);
+                m_stream.s2s_auth_pair(m_stream.local_domain(), authzid, SESSION_DIRECTION::INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
                 m_stream.set_auth_ready();
                 m_stream.restart();
                 co_return
@@ -124,11 +124,12 @@ namespace {
 
         void success(optional_ptr<rapidxml::xml_node<>> node) {
             // Good-oh.
-            m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), OUTBOUND, XMLStream::AUTHORIZED);
+            m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), SESSION_DIRECTION::OUTBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
             m_stream.restart();
         }
 
         sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> trans, optional_ptr<rapidxml::xml_node<>> node) override {
+            using enum SESSION_DIRECTION;
             METRE_LOG(Metre::Log::DEBUG, "Handle SASL External");
             std::string name{node->name()};
             if ((node->name() == "auth" && m_stream.direction() == INBOUND)) {
