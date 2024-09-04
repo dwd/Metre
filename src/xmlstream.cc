@@ -47,18 +47,19 @@ using namespace Metre;
 
 XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
         : has_slots(), m_session(n), m_dir(dir), m_type(t) {
+    using enum SESSION_TYPE;
     std::ostringstream ss;
     ss << "XmlStream serial=[" << m_session->serial() << "]";
     ss << (dir == SESSION_DIRECTION::INBOUND ? " IN" : " OUT");
     ss << " type=[";
     switch (t) {
-        case SESSION_TYPE::S2S:
+        case S2S:
             ss << "S2S";
             break;
-        case SESSION_TYPE::COMP:
+        case COMP:
             ss << "COMP";
             break;
-        case SESSION_TYPE::X2X:
+        case X2X:
             ss << "X2X";
             break;
         default:
@@ -66,8 +67,8 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
     }
     ss << "]";
     m_logger = Config::config().logger(ss.str());
-    if (t == SESSION_TYPE::X2X) {
-        m_type = SESSION_TYPE::S2S;
+    if (t == X2X) {
+        m_type = S2S;
         m_x2x_mode = true;
         m_bidi = true;
     }
@@ -77,18 +78,19 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
                      std::string const &stream_remote)
         : has_slots(), m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local),
           m_stream_remote(stream_remote) {
+    using enum SESSION_TYPE;
     std::ostringstream ss;
     ss << "XmlStream serial=[" << m_session->serial() << "]";
     ss << (dir == SESSION_DIRECTION::INBOUND ? " IN" : " OUT");
     ss << " type=[";
     switch (t) {
-        case SESSION_TYPE::S2S:
+        case S2S:
             ss << "S2S";
             break;
-        case SESSION_TYPE::COMP:
+        case COMP:
             ss << "COMP";
             break;
-        case SESSION_TYPE::X2X:
+        case X2X:
             ss << "X2X";
             break;
         default:
@@ -96,8 +98,8 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
     }
     ss << "]";
     m_logger = Config::config().logger(ss.str());
-    if (t == SESSION_TYPE::X2X) {
-        m_type = SESSION_TYPE::S2S;
+    if (t == X2X) {
+        m_type = S2S;
         m_x2x_mode = true;
         m_bidi = true;
     }
@@ -294,14 +296,15 @@ void XMLStream::in_context(std::function<void()> &&fn) {
 const char *XMLStream::content_namespace() const {
     const char *p;
     switch (m_type) {
-        case SESSION_TYPE::C2S:
+        using enum SESSION_TYPE;
+        case C2S:
             p = "jabber:client";
             break;
-        case SESSION_TYPE::COMP:
+        case COMP:
             p = "jabber:component:accept";
             break;
         default:
-        case SESSION_TYPE::S2S:
+        case S2S:
             p = "jabber:server";
             break;
     }
@@ -309,11 +312,12 @@ const char *XMLStream::content_namespace() const {
 }
 
 void XMLStream::check_domain_pair(std::string const &from_domain, std::string const &to_domain) const {
+    using enum SESSION_TYPE;
     Config::Domain const &to = Config::config().domain(to_domain);
     if (to.block()) {
         throw Metre::host_unknown("Requested domain is blocked: to=[" + to_domain + "]");
     }
-    if (m_type == SESSION_TYPE::COMP && to.transport_type() != SESSION_TYPE::COMP) {
+    if (m_type == COMP && to.transport_type() != COMP) {
         throw Metre::host_unknown("Component connection protocol mismatch: from=[" + from_domain + "] to=[" + to_domain + "]");
     }
     Config::Domain const &from = Config::config().domain(from_domain);
@@ -321,12 +325,12 @@ void XMLStream::check_domain_pair(std::string const &from_domain, std::string co
         if (from.block()) {
             throw Metre::host_unknown("Requesting domain is blocked: from=[" + from_domain + "]");
         }
-        if ((to.transport_type() != SESSION_TYPE::COMP) &&
-            ((from.forward() == to.forward()) && to.transport_type() != SESSION_TYPE::INTERNAL &&
-             from.transport_type() != SESSION_TYPE::INTERNAL)) {
+        if ((to.transport_type() != COMP) &&
+            ((from.forward() == to.forward()) && to.transport_type() != INTERNAL &&
+             from.transport_type() != INTERNAL)) {
             throw Metre::host_unknown("Will not forward between same domains with non-internal protocol: from=[" + from_domain + "] to=[" + to_domain + "]");
         }
-        if (m_type != SESSION_TYPE::COMP && from.transport_type() == SESSION_TYPE::COMP) {
+        if (m_type != COMP && from.transport_type() == COMP) {
             throw Metre::host_unknown("Attempting to connect to non-component with component protocol:from=[" + from_domain + "] to=[" + to_domain + "]");
         }
     }
@@ -340,15 +344,16 @@ void XMLStream::stream_open() {
     auto stream = m_stream.first_node();
     auto xmlns = stream->first_attribute("xmlns");
     if (xmlns && !xmlns->value().empty()) {
+        using enum SESSION_TYPE;
         if (xmlns->value() == "jabber:client") {
             logger().debug("C2S stream detected.");
-            m_type = SESSION_TYPE::C2S;
+            m_type = C2S;
         } else if (xmlns->value() == "jabber:server") {
             logger().debug("S2S stream detected.");
-            m_type = SESSION_TYPE::S2S;
+            m_type = S2S;
         } else if (xmlns->value() == "jabber:component:accept") {
             logger().debug("114 (component) stream detected.");
-            m_type = SESSION_TYPE::COMP;
+            m_type = COMP;
         } else {
             logger().warn("Unidentified connection.");
         }
@@ -504,12 +509,13 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                     Feature::Type offer_type = Feature::type(offer_ns, *this);
                     logger().debug("Offer type seems to be [{}]", std::to_underlying(offer_type));
                     switch (offer_type) {
-                        case Feature::Type::FEAT_NONE:
+                        using enum Feature::Type;
+                        case FEAT_NONE:
                             continue;
-                        case Feature::Type::FEAT_SECURE:
+                        case FEAT_SECURE:
                             if (m_secured) continue;
                             break;
-                        case Feature::Type::FEAT_COMP:
+                        case FEAT_COMP:
                             if (m_compressed) continue;
                             break;
                         default:
@@ -640,34 +646,36 @@ void XMLStream::generate_stream_id() {
 
 XMLStream::AUTH_STATE
 XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION dir) const {
+    using enum AUTH_STATE;
+    using enum SESSION_DIRECTION;
     if (m_type == SESSION_TYPE::COMP) {
         if (m_user) {
-            if (dir == SESSION_DIRECTION::OUTBOUND && *m_user == remote) {
-                return AUTH_STATE::AUTHORIZED;
-            } else if (dir == SESSION_DIRECTION::INBOUND && *m_user == remote) {
-                return AUTH_STATE::AUTHORIZED;
+            if (dir == OUTBOUND && *m_user == remote) {
+                return AUTHORIZED;
+            } else if (dir == INBOUND && *m_user == remote) {
+                return AUTHORIZED;
             }
         }
     }
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
-    auto &m = (dir == SESSION_DIRECTION::INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
+    auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto it = m.find(std::make_pair(local, remote));
-    AUTH_STATE auth_state = AUTH_STATE::NONE;
+    AUTH_STATE auth_state = NONE;
     if (it != m.end()) {
         auth_state = (*it).second;
     }
-    if (auth_state != AUTH_STATE::AUTHORIZED && x2x_mode()) {
-        if (dir == SESSION_DIRECTION::INBOUND) {
+    if (auth_state != AUTHORIZED && x2x_mode()) {
+        if (dir == INBOUND) {
             if (!secured()) {
                 // TODO : Needs to be checking the host is correct.
                 if (Config::config().domain(remote).auth_host()) {
-                    const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTH_STATE::AUTHORIZED);
-                    return AUTH_STATE::AUTHORIZED;
+                    const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
+                    return AUTHORIZED;
                 }
             }
-        } else if (dir == SESSION_DIRECTION::OUTBOUND) {
-            const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTH_STATE::AUTHORIZED);
-            return AUTH_STATE::AUTHORIZED;
+        } else if (dir == OUTBOUND) {
+            const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
+            return AUTHORIZED;
         }
     }
     return auth_state;
