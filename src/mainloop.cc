@@ -41,7 +41,6 @@ SOFTWARE.
 #include <event2/listener.h>
 #include <event2/bufferevent.h>
 #include <memory>
-#include "router.h"
 #include <unbound.h>
 #include <cerrno>
 #include <cstring>
@@ -53,6 +52,7 @@ SOFTWARE.
 #include "event2/thread.h"
 #include "event2/http.h"
 #include "event2/buffer.h"
+#include "sockaddr-cast.h"
 
 namespace {
     class task_sleep {
@@ -374,10 +374,10 @@ namespace Metre {
             char addrbuf[1024];
             addrbuf[0] = '\0';
             if (sin->sa_family == AF_INET) {
-                inet_ntop(AF_INET, reinterpret_cast<void *>(&reinterpret_cast<struct sockaddr_in *>(sin)->sin_addr),
+                inet_ntop(AF_INET, &(sockaddr_cast<AF_INET>(sin)->sin_addr),
                           addrbuf, 1024);
             } else if (sin->sa_family == AF_INET6) {
-                inet_ntop(AF_INET6, reinterpret_cast<void *>(&reinterpret_cast<struct sockaddr_in6 *>(sin)->sin6_addr),
+                inet_ntop(AF_INET6, &(sockaddr_cast<AF_INET6>(sin)->sin6_addr),
                           addrbuf, 1024);
             }
             m_logger->info("New session on {} port from {}", listen->name, addrbuf);
@@ -390,11 +390,11 @@ namespace Metre {
                 unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
             void *inx_addr;
             if (addr->sa_family == AF_INET) {
-                auto sin = reinterpret_cast<struct sockaddr_in *>(addr);
+                auto * sin = sockaddr_cast<AF_INET>(addr);
                 sin->sin_port = htons(port);
                 inx_addr = &sin->sin_addr;
             } else {
-                auto sin6 = reinterpret_cast<struct sockaddr_in6 *>(addr);
+                auto * sin6 = sockaddr_cast<AF_INET6>(addr);
                 sin6->sin6_port = htons(port);
                 inx_addr = &sin6->sin6_addr;
             }
