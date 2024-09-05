@@ -565,8 +565,8 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
         }
 
         bool handled = false;
-        auto & feat = fit->second;
-        if (feat) {
+
+        if (auto const & feat = fit->second; feat) {
             std::string clark_name = "{";
             clark_name += element->xmlns();
             clark_name += "}";
@@ -643,21 +643,20 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     return auth_state;
 }
 
-XMLStream::AUTH_STATE
-XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION dir,
-                         XMLStream::AUTH_STATE state) {
+XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION dir, XMLStream::AUTH_STATE state) {
+    using enum SESSION_DIRECTION;
     if (state == AUTH_STATE::AUTHORIZED && !m_secured && Config::config().domain(remote).require_tls()) {
         throw Metre::not_authorized("Authorization attempt without TLS");
     }
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
-    auto &m = (dir == SESSION_DIRECTION::INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
+    auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto key = std::make_pair(local, remote);
     if (auto current = m[key]; current < state) {
         m[key] = state;
         if (state == XMLStream::AUTH_STATE::AUTHORIZED) {
-            logger().info("Authorized {} session local: {} remote: {}", (dir == SESSION_DIRECTION::INBOUND ? "INBOUND" : "OUTBOUND"),
+            logger().info("Authorized {} session local: {} remote: {}", (dir == INBOUND ? "INBOUND" : "OUTBOUND"),
                           local, remote);
-            if (m_bidi && dir == SESSION_DIRECTION::INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
+            if (m_bidi && dir == INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
             auth_state_changed.emit(*this);
         }
     }

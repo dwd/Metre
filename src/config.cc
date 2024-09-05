@@ -981,10 +981,10 @@ std::string Config::random_identifier() const {
 }
 
 std::string Config::dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const {
-    std::array<unsigned char, 20> binoutput = {};
+    std::array<unsigned char, 256/8> binoutput = {};
     std::string const &key = dialback_secret();
     std::string concat = id + '|' + local_domain + '|' + remote_domain;
-    HMAC(EVP_sha1(), reinterpret_cast<const unsigned char *>(key.data()), static_cast<int>(key.length()),
+    HMAC(EVP_sha256(), reinterpret_cast<const unsigned char *>(key.data()), static_cast<int>(key.length()),
          reinterpret_cast<const unsigned char *>(concat.data()), concat.length(),
          binoutput.data(), nullptr);
     std::string hexoutput;
@@ -994,7 +994,7 @@ std::string Config::dialback_key(std::string const &id, std::string const &local
         hexoutput += static_cast<char>(((high < 0x0A) ? '0' : ('a' - 10)) + high);
         hexoutput += static_cast<char>(((low < 0x0A) ? '0' : ('a' - 10)) + low);
     }
-    assert(hexoutput.length() == 40);
+    assert(hexoutput.length() == binoutput.size() * 2);
     m_logger->debug("Dialback key id {} :: {} | {}", id, local_domain, remote_domain);
     return hexoutput;
 }
