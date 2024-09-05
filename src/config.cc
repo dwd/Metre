@@ -494,6 +494,10 @@ SSL_CTX *Config::Domain::ssl_ctx() const {
     return ctx;
 }
 
+std::list<struct x509_st *> Config::Domain::pkix_tas() const {
+    return {};
+}
+
 Config::Config(std::string const &filename, bool lite) : m_dialback_secret(random_identifier()) {
     if (!lite) {
         s_config = this;
