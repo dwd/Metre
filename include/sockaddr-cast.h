@@ -6,6 +6,7 @@
 #define METRE_SOCKADDR_CAST_H
 
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <type_traits>
 
 namespace Metre {
@@ -32,6 +33,13 @@ namespace Metre {
             using base_type = struct sockaddr_in6;
             using type = constlike<T, base_type>::type;
         };
+
+        template<typename A, typename B, typename C, typename D, typename R>
+        D fourth_param(R (*)(A, B, C, D)) {
+            return D{};
+        }
+
+        using inet_ntop_len_t = decltype(fourth_param(inet_ntop));
     }
 
     template<decltype(sockaddr::sa_family) AF, typename SOCKADDR, typename SOCKADDR_OUT = typename detail::sockaddr_family<SOCKADDR, AF>::type>
@@ -53,7 +61,7 @@ namespace Metre {
             auto * const sin = sockaddr_cast<AF_INET>(sa);
             std::string buf;
             buf.resize(INET_ADDRSTRLEN + 1);
-            if (auto l = inet_ntop(AF_INET, &(sin->sin_addr), buf.data(), buf.size()); l) {
+            if (auto l = inet_ntop(AF_INET, &(sin->sin_addr), buf.data(), static_cast<detail::inet_ntop_len_t >(buf.size())); l) {
                 buf.resize(buf.find('\0'));
                 return buf;
             }
@@ -63,7 +71,7 @@ namespace Metre {
             auto * const sin6 = sockaddr_cast<AF_INET6>(sa);
             std::string buf;
             buf.resize(INET6_ADDRSTRLEN + 1);
-            if (auto l = inet_ntop(AF_INET6, &(sin6->sin6_addr), buf.data(), buf.size()); l) {
+            if (auto l = inet_ntop(AF_INET6, &(sin6->sin6_addr), buf.data(), static_cast<detail::inet_ntop_len_t>(buf.size())); l) {
                 buf.resize(buf.find('\0'));
                 return buf;
             }
