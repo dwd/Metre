@@ -154,14 +154,14 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                         m_stream_buf.assign(buf.data(), end.ptr());
                         m_session->used(end.ptr() - buf.data());
                         buf.remove_prefix(end.ptr() - buf.data());
-                        m_stream.parse<parse_open_only>(const_cast<char *>(m_stream_buf.c_str()));
+                        m_stream.parse<parse_open_only>(m_stream_buf);
                         stream_open();
                     } else {
                         m_stream_buf.clear();
                     }
-                } catch (rapidxml::eof_error & e) {
+                } catch (rapidxml::eof_error &) {
                     throw;
-                } catch (rapidxml::parse_error & e) {
+                } catch (rapidxml::parse_error &) {
                     m_logger->info("Parse error; could be TLS handshake");
                     if (m_first_read && !m_secured) {
                         if (!start_tls(*this, false)) {
@@ -202,7 +202,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
             }
         } catch (Metre::base::xmpp_exception &) {
             throw;
-        } catch (rapidxml::eof_error &e) {
+        } catch (rapidxml::eof_error &) {
             return spaces + len - buf.length();
         } catch (rapidxml::parse_error &e) {
             if (buf == "</stream:stream>") {
@@ -222,14 +222,14 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
     return spaces + len - buf.length();
 }
 
-void XMLStream::handle_exception(Metre::base::xmpp_exception & e) {
+void XMLStream::handle_exception(Metre::base::xmpp_exception const & e) {
     using namespace rapidxml;
     logger().error("Raising error: [{}]", e.what());
     xml_document<> d;
     auto error = d.append_element("stream:error");
     auto specific = error->append_element({"urn:ietf:params:xml:ns:xmpp-streams", e.element_name()});
     error->append_element({"urn:ietf:params:xml:ns:xmpp-streams", e.element_name()}, e.what());
-    if (dynamic_cast<Metre::undefined_condition *>(&e)) {
+    if (dynamic_cast<Metre::undefined_condition const *>(&e)) {
         specific->append_element({"http://cridland.im/xmlns/metre", "unhandled-exception"});
     }
     close(error);
@@ -257,39 +257,32 @@ void XMLStream::close(rapidxml::optional_ptr<rapidxml::xml_node<>> error) {
     auth_state_changed(*this);
 }
 
-void XMLStream::in_context(std::function<void()> &&fn, Stanza &s) {
+void XMLStream::in_context(std::function<void()> const &fn, Stanza const &s) {
     try {
-        try {
-            fn();
-        } catch (Metre::base::xmpp_exception &) {
-            throw;
-        } catch (Metre::base::stanza_exception &) {
-            throw;
-        } catch (std::runtime_error &e) {
-            throw Metre::stanza_undefined_condition(e.what());
-        }
-    } catch (Metre::base::stanza_exception const &stanza_error) {
+        fn();
+    } catch (Metre::base::xmpp_exception &e) {
+        handle_exception(e);
+    } catch (Metre::base::stanza_exception &stanza_error) {
         std::unique_ptr<Stanza> st = s.create_bounce(stanza_error);
         std::shared_ptr<Route> route = RouteTable::routeTable(st->from()).route(st->to());
         route->transmit(std::move(st));
-    } catch (Metre::base::xmpp_exception &e) {
-        handle_exception(e);
+    } catch (std::runtime_error &e) {
+        Metre::stanza_undefined_condition stanza_error(e.what());
+        std::unique_ptr<Stanza> st = s.create_bounce(stanza_error);
+        std::shared_ptr<Route> route = RouteTable::routeTable(st->from()).route(st->to());
+        route->transmit(std::move(st));
     }
 }
 
-void XMLStream::in_context(std::function<void()> &&fn) {
+void XMLStream::in_context(std::function<void()> const &fn) {
     try {
-        try {
-            fn();
-        } catch (Metre::base::xmpp_exception &) {
-            throw;
-        } catch (Metre::base::stanza_exception &e) {
-            throw Metre::undefined_condition(std::string("Uncaught stanza error: ") + e.what());
-        } catch (std::runtime_error &e) {
-            throw Metre::undefined_condition(e.what());
-        }
+        fn();
     } catch (Metre::base::xmpp_exception &e) {
         handle_exception(e);
+    } catch (Metre::base::stanza_exception &e) {
+        handle_exception(Metre::undefined_condition(std::string("Uncaught stanza error: ") + e.what()));
+    } catch (std::runtime_error &e) {
+        handle_exception(Metre::undefined_condition(e.what()));
     }
 }
 
@@ -304,7 +297,6 @@ const char *XMLStream::content_namespace() const {
             p = "jabber:component:accept";
             break;
         default:
-        case S2S:
             p = "jabber:server";
             break;
     }
@@ -342,8 +334,7 @@ void XMLStream::stream_open() {
      * by looking at the default namespace.
      */
     auto stream = m_stream.first_node();
-    auto xmlns = stream->first_attribute("xmlns");
-    if (xmlns && !xmlns->value().empty()) {
+    if (auto xmlns = stream->first_attribute("xmlns"); xmlns && !xmlns->value().empty()) {
         using enum SESSION_TYPE;
         if (xmlns->value() == "jabber:client") {
             logger().debug("C2S stream detected.");
@@ -358,9 +349,9 @@ void XMLStream::stream_open() {
             logger().warn("Unidentified connection.");
         }
     }
-    auto domainat = stream->first_attribute("to");
+
     std::string domainname;
-    if (domainat && !domainat->value().empty()) {
+    if (auto domainat = stream->first_attribute("to"); domainat && !domainat->value().empty()) {
         domainname.assign(domainat->value());
         logger().debug("Requested contact domain [{}]", domainname);
     } else if (m_dir == SESSION_DIRECTION::OUTBOUND) {
@@ -371,12 +362,9 @@ void XMLStream::stream_open() {
     std::string from;
     if (auto fromat = stream->first_attribute("from")) {
         from = Jid(fromat->value()).domain();
-        if (m_dir == SESSION_DIRECTION::OUTBOUND) {
-            if (from != m_stream_remote) {
-                // throw Metre::host_unknown("You're not who I was expecting.");
-                logger().warn("Remote server responded with {}, not {}", from, m_stream_remote);
-                from = m_stream_remote;
-            }
+        if (m_dir == SESSION_DIRECTION::OUTBOUND && from != m_stream_remote) {
+            logger().warn("Remote server responded with {}, not {}", from, m_stream_remote);
+            from = m_stream_remote;
         }
         logger().debug("Requesting domain is {}", from);
         check_domain_pair(from, domainname);
@@ -503,9 +491,9 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                 Feature::Type feature_type = Feature::Type::FEAT_NONE;
                 std::string feature_xmlns;
                 for (auto feat_ad = element->first_node(); feat_ad; feat_ad = feat_ad->next_sibling()) {
-                    auto const & offer_ns =feat_ad->xmlns();
+                    auto const & offer_ns = feat_ad->xmlns();
                     logger().debug("Got feature offer: [{}:{}]", feat_ad->xmlns(), feat_ad->name());
-                    if (m_features.find(offer_ns) != m_features.end()) continue; // Already negotiated.
+                    if (m_features.contains(offer_ns)) continue; // Already negotiated.
                     Feature::Type offer_type = Feature::type(offer_ns, *this);
                     logger().debug("Offer type seems to be [{}]", std::to_underlying(offer_type));
                     switch (offer_type) {
@@ -530,7 +518,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                 }
                 m_logger->debug("Processing feature [{}]", feature_xmlns);
                 if (feature_type == Feature::Type::FEAT_NONE) {
-                    if (m_features.find("urn:xmpp:features:dialback") == m_features.end()) {
+                    if (!m_features.contains("urn:xmpp:features:dialback")) {
                         auto so = m_stream.first_node();
                         auto dbatt = so->first_attribute("xmlns:db");
                         if (dbatt && dbatt->value() == std::string("jabber:server:dialback")) {
@@ -543,10 +531,10 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                     return;
                 }
                 try_feature:
-                std::unique_ptr<Feature> f(Feature::feature(feature_xmlns, *this));
+                auto f = Feature::feature(feature_xmlns, *this);
                 assert(f.get());
                 bool escape = f->negotiate(feature_offer);
-                m_features.emplace(feature_xmlns, std::move(f));
+                m_features.try_emplace(feature_xmlns, std::move(f));
                 m_logger->debug("Feature negotiated, stream restart is [{}]", escape);
                 if (escape) return; // We've done a stream restart or something.
             }
@@ -554,18 +542,11 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
             const std::string err_ns = "urn:ietf:params:xml:ns:xmpp-streams";
             auto err_type = element->first_node({}, err_ns);
             auto err_text = element->first_node("text", err_ns);
-            if (err_type->name() != "connection-timeout") {
-                if (err_text) {
-                    m_logger->error("Received {} over stream: {}", err_type->name(), err_text->value());
-                } else {
-                    m_logger->error("Received {} over stream", err_type->name());
-                }
+            auto level = err_type->name() == "connection-timeout" ? spdlog::level::debug : spdlog::level::err;
+            if (err_text) {
+                m_logger->log(level, "Received {} over stream: {}", err_type->name(), err_text->value());
             } else {
-                if (err_text) {
-                    m_logger->debug("Received {} over stream: {}", err_type->name(), err_text->value());
-                } else {
-                    m_logger->debug("Received {} over stream", err_type->name());
-                }
+                m_logger->log(level,"Received {} over stream", err_type->name());
             }
             m_session->close();
             return;
@@ -573,26 +554,24 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
             throw Metre::unsupported_stanza_type("Unknown stream element");
         }
     } else {
-        std::string xmlns{element->xmlns()};
+        auto const & xmlns = element->xmlns();
         auto fit = m_features.find(xmlns);
-        Feature *f = nullptr;
         m_logger->debug("Hunting handling feature for [{}]", xmlns);
-        if (fit != m_features.end()) {
-            f = (*fit).second.get();
-        } else {
-            std::unique_ptr<Feature> feat(Feature::feature(xmlns, *this));
-            f = feat.get();
-            if (f) m_features.emplace(xmlns, std::move(feat));
+        if (fit == m_features.end()) {
+            auto feat = Feature::feature(xmlns, *this);
+            auto [new_it, success] = m_features.try_emplace(std::string{xmlns}, std::move(feat));
+            fit = new_it;
             m_logger->debug("Created new feature [{}]", xmlns);
         }
 
         bool handled = false;
-        if (f) {
+        auto & feat = fit->second;
+        if (feat) {
             std::string clark_name = "{";
             clark_name += element->xmlns();
             clark_name += "}";
             clark_name += element->name();
-            auto task = start_task("XMLStream handle element", f->handle(std::make_shared<sentry::transaction>("element", clark_name), element));
+            auto task = start_task("XMLStream handle element", feat->handle(std::make_shared<sentry::transaction>("element", clark_name), element));
             if (task->running()) {
                 return;
             } else {
@@ -604,14 +583,6 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
             throw Metre::unsupported_stanza_type();
         }
     }
-}
-
-Feature &XMLStream::feature(const std::string_view &ns) {
-    auto i = m_features.find(ns);
-    if (i == m_features.end()) {
-        throw std::runtime_error(std::string("Expected feature ") + std::string(ns) + " not found");
-    }
-    return *(i->second);
 }
 
 void XMLStream::restart() {
@@ -633,9 +604,6 @@ void XMLStream::do_restart() {
     }
 }
 
-XMLStream::~XMLStream() {
-}
-
 void XMLStream::generate_stream_id() {
     if (!m_stream_id.empty()) {
         Router::unregister_stream_id(m_stream_id);
@@ -648,33 +616,27 @@ XMLStream::AUTH_STATE
 XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION dir) const {
     using enum AUTH_STATE;
     using enum SESSION_DIRECTION;
-    if (m_type == SESSION_TYPE::COMP) {
-        if (m_user) {
-            if (dir == OUTBOUND && *m_user == remote) {
-                return AUTHORIZED;
-            } else if (dir == INBOUND && *m_user == remote) {
-                return AUTHORIZED;
-            }
+    if (m_type == SESSION_TYPE::COMP && m_user) {
+        if (dir == OUTBOUND && *m_user == remote) {
+            return AUTHORIZED;
+        } else if (dir == INBOUND && *m_user == remote) {
+            return AUTHORIZED;
         }
     }
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
     auto &m = (dir == INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
-    auto it = m.find(std::make_pair(local, remote));
     AUTH_STATE auth_state = NONE;
-    if (it != m.end()) {
+    if (auto it = m.find(std::make_pair(local, remote)); it != m.end()) {
         auth_state = (*it).second;
     }
     if (auth_state != AUTHORIZED && x2x_mode()) {
         if (dir == INBOUND) {
-            if (!secured()) {
+            if (!secured()
                 // TODO : Needs to be checking the host is correct.
-                if (Config::config().domain(remote).auth_host()) {
-                    const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
-                    return AUTHORIZED;
-                }
+                && Config::config().domain(remote).auth_host()) {
+                return AUTHORIZED;
             }
         } else if (dir == OUTBOUND) {
-            const_cast<XMLStream *>(this)->s2s_auth_pair(local, remote, dir, AUTHORIZED);
             return AUTHORIZED;
         }
     }
@@ -690,8 +652,7 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
     if (m_bidi) dir = m_dir; // For XEP-0288, only consider the primary direction.
     auto &m = (dir == SESSION_DIRECTION::INBOUND ? m_auth_pairs_rx : m_auth_pairs_tx);
     auto key = std::make_pair(local, remote);
-    AUTH_STATE current = m[key];
-    if (current < state) {
+    if (auto current = m[key]; current < state) {
         m[key] = state;
         if (state == XMLStream::AUTH_STATE::AUTHORIZED) {
             logger().info("Authorized {} session local: {} remote: {}", (dir == SESSION_DIRECTION::INBOUND ? "INBOUND" : "OUTBOUND"),
@@ -706,10 +667,9 @@ XMLStream::s2s_auth_pair(std::string const &local, std::string const &remote, SE
 bool XMLStream::bidi(bool b) {
     m_bidi = b;
     if (m_bidi && m_dir == SESSION_DIRECTION::INBOUND) {
-        for (auto const &p : m_auth_pairs_rx) {
-            if (p.second == XMLStream::AUTH_STATE::AUTHORIZED) {
-                auto &local = p.first.first;
-                auto &remote = p.first.second;
+        for (auto const & [domains, state] : m_auth_pairs_rx) {
+            if (state == XMLStream::AUTH_STATE::AUTHORIZED) {
+                auto const & [local, remote] = domains;
                 RouteTable::routeTable(local).route(remote)->outbound(m_session);
             }
         }
