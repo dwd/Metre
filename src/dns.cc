@@ -443,7 +443,7 @@ void Metre::DNS::Resolver::a_lookup_done(int err, struct ub_result *result) {
                 auto& a = m_current_arec.addr.emplace_back();
                 auto * sin = sockaddr_cast<AF_INET>(&a);
                 sin->sin_family = AF_INET;
-                sin->sin_addr.s_addr = *reinterpret_cast<decltype(sin->sin_addr.s_addr) *>(result->data[i]);
+                memcpy(reinterpret_cast<void *>(sin->sin_addr.s_addr), result->data[i], sizeof(decltype(sin->sin_addr.s_addr)));
             }
         } else if (result->qtype == 28) {
             m_current_arec.ipv6 = true;

@@ -380,11 +380,11 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
             auto crldp = crldp_ptr.get();
             if (crldp) {
                 for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-                    auto *const dp = sk_DIST_POINT_value(crldp, i);
+                    auto const *const dp = sk_DIST_POINT_value(crldp, i);
                     if (dp->distpoint->type == 0) { // Full Name
                         auto names = dp->distpoint->name.fullname;
                         for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-                            auto *name = sk_GENERAL_NAME_value(names, ii);
+                            auto const * const name = sk_GENERAL_NAME_value(names, ii);
                             if (name->type == GEN_URI) {
                                 ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
                                 std::string uristr{reinterpret_cast<char *>(uri->data),
@@ -405,7 +405,7 @@ namespace {
     int ssl_servername_cb(SSL *ssl, int *, void *) {
         const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
         if (!servername) return SSL_TLSEXT_ERR_OK;
-        SSL_CTX * const old_ctx = SSL_get_SSL_CTX(ssl);
+        SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
         SSL_CTX *new_ctx = Config::config().domain(Jid(servername).domain()).ssl_ctx();
         if (!new_ctx) new_ctx = Config::config().domain("").ssl_ctx();
         if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
@@ -668,8 +668,9 @@ namespace {
             case TLS1_2_VERSION:
                 return "TLSv1.2";
             case TLS1_3_VERSION:
-            default: // If we don't know, assume latest we support.
                 return "TLSv1.3";
+            default:
+                return nullptr;
         }
         return nullptr;
     }
@@ -799,11 +800,7 @@ namespace {
         }
         for (auto const &[hostname, address]: domain.address_overrides()) {
             YAML::Node host;
-            host["name"] = hostname;
-            std::array<char, 1024> buf{};
-            auto * sin = sockaddr_cast<AF_INET>(address->addr.data());
-            inet_ntop(AF_INET, &sin->sin_addr, buf.data(), buf.size());
-            host["a"] = buf.data();
+            host["a"] = address_tostring(address->addr.data());
             config["dns"]["host"].push_back(host);
         }
         {
@@ -824,7 +821,7 @@ namespace {
                 if (SSL_CTX_get0_chain_certs(ctx, &chain) && chain) {
                     FILE *fp = fopen(chainfile.c_str(), "w");
                     for (int i = 0; i < sk_X509_num(chain); ++i) {
-                        auto * const item = sk_X509_value(chain, i);
+                        auto const * const item = sk_X509_value(chain, i);
                         PEM_write_X509(fp, item);
                     }
                     fclose(fp);
@@ -898,19 +895,8 @@ std::string Config::asString() const {
             listener["remote-domain"] = listen.remote_domain;
         }
         listener["name"] = listen.name;
-        if (listen.sockaddr()->sa_family == AF_INET) {
-            auto *sa = sockaddr_cast<AF_INET>(listen.sockaddr());
-            std::array<char, 1024> buf = {};
-            inet_ntop(AF_INET, &sa->sin_addr, buf.data(), buf.size());
-            listener["address"] = buf;
-            listener["port"] = ntohs(sa->sin_port);
-        } else if (listen.sockaddr()->sa_family == AF_INET6) {
-            auto *sa = sockaddr_cast<AF_INET6>(listen.sockaddr());
-            std::array<char, 1024> buf = {};
-            inet_ntop(AF_INET6, &sa->sin6_addr, buf.data(), buf.size());
-            listener["address"] = buf;
-            listener["port"] = ntohs(sa->sin6_port);
-        }
+        listener["address"] = address_tostring(listen.sockaddr());
+        listener["port"] = address_toport(listen.sockaddr());
         switch (listen.session_type) {
             using enum SESSION_TYPE;
             case S2S:

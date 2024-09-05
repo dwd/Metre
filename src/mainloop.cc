@@ -371,16 +371,7 @@ namespace Metre {
                 m_logger->critical("Session already in ownership table; corruption.");
                 assert(false);
             }
-            char addrbuf[1024];
-            addrbuf[0] = '\0';
-            if (sin->sa_family == AF_INET) {
-                inet_ntop(AF_INET, &(sockaddr_cast<AF_INET>(sin)->sin_addr),
-                          addrbuf, 1024);
-            } else if (sin->sa_family == AF_INET6) {
-                inet_ntop(AF_INET6, &(sockaddr_cast<AF_INET6>(sin)->sin6_addr),
-                          addrbuf, 1024);
-            }
-            m_logger->info("New session on {} port from {}", listen->name, addrbuf);
+            m_logger->info("New session on {} port from {}", listen->name, address_tostring(sin));
             m_sessions[session->serial()] = session;
             session->onClosed.connect(this, &Mainloop::session_closed);
         }
@@ -388,18 +379,14 @@ namespace Metre {
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
                 unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
-            void *inx_addr;
             if (addr->sa_family == AF_INET) {
                 auto * sin = sockaddr_cast<AF_INET>(addr);
                 sin->sin_port = htons(port);
-                inx_addr = &sin->sin_addr;
             } else {
                 auto * sin6 = sockaddr_cast<AF_INET6>(addr);
                 sin6->sin6_port = htons(port);
-                inx_addr = &sin6->sin6_addr;
             }
-            char buf[INET6_ADDRSTRLEN + 1];
-            m_logger->debug("Connecting to {}:{}", inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN), port);
+            m_logger->debug("Connecting to {}:{}", address_tostring(addr), port);
             auto sesh = connect(fromd, tod, hostname, addr,
                                 sizeof(struct sockaddr_storage), port, stype, tls_mode);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
