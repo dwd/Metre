@@ -59,7 +59,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_definitions(-DSIGSLOT_COROUTINES)
 
 if(UNIX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O0 -g -fcoroutines")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O3 -g -fcoroutines")
     add_definitions(-DMETRE_UNIX)
 else()
     add_definitions(-DMETRE_WINDOWS)
@@ -326,6 +326,8 @@ add_executable(metre-test
 target_compile_definitions(metre-test PUBLIC
     METRE_TESTING=1
 )
+target_compile_options(metre-test PRIVATE -g -O0 --coverage)
+target_link_options(metre-test PRIVATE -g -O0 --coverage)
 
 # These are all duplicated, because we're not actually linking against a 'libmetre', like we should
 
