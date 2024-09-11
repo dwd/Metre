@@ -20,7 +20,7 @@ namespace Metre::Router {
 
     std::shared_ptr<NetSession> session_by_domain(std::string const &remote_addr);
 
-    void register_session_domain(std::string const &dom, NetSession &);
+    void register_session_domain(std::string const &dom, NetSession const &);
 
     std::shared_ptr<NetSession>
     connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
@@ -30,7 +30,7 @@ namespace Metre::Router {
 
     std::shared_ptr<NetSession> session_by_serial(long long int);
 
-    void register_stream_id(std::string const &, NetSession &);
+    void register_stream_id(std::string const &, NetSession const &);
 
     void unregister_stream_id(std::string const &);
 

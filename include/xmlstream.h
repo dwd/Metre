@@ -97,11 +97,11 @@ namespace Metre {
 
         size_t process(unsigned char *, size_t);
 
-        void handle_exception(Metre::base::xmpp_exception &e);
+        void handle_exception(Metre::base::xmpp_exception const &e);
 
-        void in_context(std::function<void()> &&, Stanza &s);
+        void in_context(std::function<void()> const &, Stanza const &s);
 
-        void in_context(std::function<void()> &&);
+        void in_context(std::function<void()> const &);
 
         void task_completed();
 
@@ -202,11 +202,7 @@ namespace Metre {
             return m_stream_id;
         }
 
-        ~XMLStream() final;
-
         void generate_stream_id();
-
-        Feature &feature(std::string_view const &);
 
         // Signals:
         sigslot::signal<XMLStream &> auth_state_changed;

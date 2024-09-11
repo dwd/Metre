@@ -90,38 +90,32 @@ EAhurLOF+ETqJav393WOQH5lwm/Eorr6lfl1kwQhpNUEAsLWYz0y46e7CO31tzIf
 TjuAW7Ho3gCaeg7QiGpGiwr+2Yt4j8hl7wIBAg==
 -----END DH PARAMETERS-----
 )";
-    std::string dh_str_1024 = R"(-----BEGIN DH PARAMETERS-----
+    std::string const dh_str_1024 = R"(-----BEGIN DH PARAMETERS-----
 MIGHAoGBAILtTtZQdevX4/JhgmxuMRRTEQlFtp491NLc7nkykFrGIOIhnLhQEXaj
 ZPvubjYBNqfMEkPAefyNEwVrIL9Wg9+K4D130Lqt//qLUJlWT60+LlbdLUdBmeMh
 EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
 -----END DH PARAMETERS-----
 )";
     EVP_PKEY * get_builtin_dh(int keylength) {
-        const char * keydata = dh_str_2236.data();
-        size_t keylen = dh_str_2236.size();
+        std::string const * dh_str = &dh_str_2236;
         int actual_keylen = 2236;
         static std::map<int,EVP_PKEY *> s_cache;
         if (keylength == 0) {
             // Defaults as above.
         } else if (keylength < 2048) {
-            keydata = dh_str_1024.data();
-            keylen = dh_str_1024.size();
+            dh_str = &dh_str_1024;
             actual_keylen = 1024;
         } else if (keylength < 2236) {
-            keydata = dh_str_2048.data();
-            keylen = dh_str_2048.size();
+            dh_str = &dh_str_2048;
             actual_keylen = 2048;
         } else if (keylength < 3072) {
-            keydata = dh_str_2236.data();
-            keylen = dh_str_2236.size();
+            dh_str = &dh_str_2236;
             actual_keylen = 2236;
         } else if (keylength < 4096) {
-            keydata = dh_str_3072.data();
-            keylen = dh_str_3072.size();
+            dh_str = &dh_str_3072;
             actual_keylen = 3072;
         } else if (keylength == 4096) {
-            keydata = dh_str_4096.data();
-            keylen = dh_str_4096.size();
+            dh_str = &dh_str_4096;
             actual_keylen = 4096;
         } else {
             throw std::runtime_error("Don't have a packages DH key that size, sorry.");
@@ -130,8 +124,11 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
             return s_cache[actual_keylen];
         }
         EVP_PKEY * evp = nullptr;
-        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", nullptr, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, NULL, NULL);
-        if(OSSL_DECODER_from_data(dctx, reinterpret_cast<const unsigned char **>(&keydata), &keylen)) {
+        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", nullptr, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, nullptr, nullptr);
+        std::vector<unsigned char> tmp(dh_str->begin(), dh_str->end());
+        const auto * keydata = tmp.data();
+        auto keylen = tmp.size();
+        if(OSSL_DECODER_from_data(dctx, &keydata, &keylen)) {
             EVP_PKEY_up_ref(evp);
             s_cache[actual_keylen] = evp;
             return evp;
@@ -141,10 +138,13 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
     }
     EVP_PKEY * get_file_dh(std::string const & filename) {
         EVP_PKEY * evp = nullptr;
-        static std::map<std::string,EVP_PKEY *> s_cache;
-        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", nullptr, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, NULL, NULL);
-        auto * fp = fopen(filename.c_str(), "rb");
-        if(OSSL_DECODER_from_fp(dctx, fp)) {
+        static std::map<std::string,EVP_PKEY *,std::less<>> s_cache;
+        auto * dctx = OSSL_DECODER_CTX_new_for_pkey(&evp, "PEM", nullptr, "DH", OSSL_KEYMGMT_SELECT_ALL_PARAMETERS, nullptr, nullptr);
+        auto fclose_wrapper = [](FILE * fp) {
+            if (fp) fclose(fp);
+        };
+        std::unique_ptr<FILE, decltype(fclose_wrapper)> fp{fopen(filename.c_str(), "rb"), fclose_wrapper};
+        if(OSSL_DECODER_from_fp(dctx, fp.get())) {
             EVP_PKEY_up_ref(evp);
             s_cache[filename] = evp;
             return evp;
@@ -174,7 +174,7 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
             try {
                 int keylen = std::stoi(dhparam);
                 evp = get_builtin_dh(keylen);
-            } catch (std::invalid_argument & e) {
+            } catch (std::invalid_argument &) {
                 // Pass
             }
             if (!evp) {
@@ -198,7 +198,7 @@ namespace {
 
             sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (s.secured()) co_return false;
-                SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
+                const SSL_CTX *ctx = Config::config().domain(s.local_domain()).ssl_ctx();
                 if (!ctx) co_return false;
                 auto feature = node->append_element({tls_ns, "starttls"});
                 if (Config::config().domain(s.local_domain()).require_tls()) {
@@ -234,7 +234,7 @@ namespace {
                 m_stream.logger().warn("Remote is offering TLS but we already have it?");
                 return false;
             }
-            SSL_CTX *ctx = Config::config().domain(m_stream.local_domain()).ssl_ctx();
+            const SSL_CTX *ctx = Config::config().domain(m_stream.local_domain()).ssl_ctx();
             if (ctx) {
                 xml_document<> d;
                 d.append_element({tls_ns, "starttls"});
@@ -262,7 +262,7 @@ namespace {
 namespace Metre {
     sigslot::tasklet<void> fetch_crls(std::shared_ptr<sentry::span> span, spdlog::logger & logger, const SSL *ssl, X509 *cert) {
         STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
-        SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+        const SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *store = SSL_CTX_get_cert_store(ctx);
         X509_STORE_CTX *st = X509_STORE_CTX_new();
         X509_STORE_CTX_init(st, store, cert, chain);
@@ -277,17 +277,17 @@ namespace Metre {
             if (crldp_ptr) {
                 auto crldp = crldp_ptr.get();
                 for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-                    DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
+                    const auto *dp = sk_DIST_POINT_value(crldp, i);
                     if (dp->distpoint->type == 0) { // Full Name
                         auto names = dp->distpoint->name.fullname;
                         for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-                            GENERAL_NAME *name = sk_GENERAL_NAME_value(names, ii);
+                            const auto *name = sk_GENERAL_NAME_value(names, ii);
                             if (name->type == GEN_URI) {
-                                ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
+                                const auto *uri = name->d.uniformResourceIdentifier;
                                 std::string uristr{reinterpret_cast<char *>(uri->data),
                                                    static_cast<std::size_t>(uri->length)};
                                 logger.info("verify_tls: Fetching CRL - {}", uristr);
-                                all_crls.push_back(std::make_pair(uristr, span->start_child("http.client", uristr)));
+                                all_crls.emplace_back(std::make_pair(uristr, span->start_child("http.client", uristr)));
                                 Http::crl(uristr);
                                 // We don't await here, just get them going in parallel.
                             }
@@ -340,7 +340,7 @@ namespace Metre {
         SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
         auto & domain = Config::config().domain(route.domain());
         if (!ssl) co_return false; // No TLS.
-        X509 *cert = SSL_get_peer_certificate(ssl);
+        auto *cert = SSL_get_peer_certificate(ssl);
         if (!cert) {
             stream.logger().info("verify_tls: No cert, so no auth");
             co_return false;
@@ -349,11 +349,11 @@ namespace Metre {
             stream.logger().info("verify_tls: Cert failed verification but rechecking anyway.");
         } // TLS failed basic verification.
         stream.logger().debug("verify_tls: [Re]verifying TLS for {}", domain.domain());
-        STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
-        SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
+        auto *chain = SSL_get_peer_cert_chain(ssl);
+        const auto *ctx = SSL_get_SSL_CTX(ssl);
         X509_STORE *free_store = nullptr;
-        X509_STORE *store = SSL_CTX_get_cert_store(ctx);
-        X509_VERIFY_PARAM *vpm = X509_VERIFY_PARAM_new();
+        auto *store = SSL_CTX_get_cert_store(ctx);
+        auto *vpm = X509_VERIFY_PARAM_new();
         if (domain.auth_pkix_status()) {
             co_await fetch_crls(span->start_child("tls", "fetch_crls"), stream.logger(), ssl, cert);
             X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CRL_CHECK_ALL);
@@ -365,13 +365,13 @@ namespace Metre {
             stream.logger().debug("Adding gathered hostname {}", host);
             X509_VERIFY_PARAM_add1_host(vpm, host.c_str(), host.size());
         }
-        X509_STORE_CTX *st = X509_STORE_CTX_new();
-//        if (!domain.pkix_tas().empty()) {
-//            store = free_store = X509_STORE_new();
-//            for (auto * ta : domain.pkix_tas()) {
-//                X509_STORE_add_cert(store, ta);
-//            }
-//        }
+        auto *st = X509_STORE_CTX_new();
+        if (!domain.pkix_tas().empty()) {
+            store = free_store = X509_STORE_new();
+            for (auto * ta : domain.pkix_tas()) {
+                X509_STORE_add_cert(store, ta);
+            }
+        }
         X509_STORE_CTX_set0_param(st, vpm); // Hands ownership to st.
         // Fun fact: We can only add these to SSL_DANE via the connection.
         for (auto const & rr : gathered.gathered_tlsa) {
@@ -398,8 +398,8 @@ namespace Metre {
         } else {
             auto error = X509_STORE_CTX_get_error(st);
             auto depth = X509_STORE_CTX_get_error_depth(st);
-            char buf[1024];
-            stream.logger().warn("verify_tls: Chain failed validation: {} (at depth {})", ERR_error_string(error, buf),
+            std::array<char, 1024> buf;
+            stream.logger().warn("verify_tls: Chain failed validation: {} (at depth {})", ERR_error_string(error, buf.data()),
                                  depth);
         }
         X509_STORE_CTX_free(st);

@@ -234,6 +234,7 @@ set(SOURCE_FILES
         include/send.h
         src/send.cc
         src/send.cc
+        include/sockaddr-cast.h
 )
 
 if(UNIX)

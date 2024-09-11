@@ -53,6 +53,7 @@ SOFTWARE.
 #include <base64.h>
 
 #include "log.h"
+#include "sockaddr-cast.h"
 #include <rapidxml_print.hpp>
 #include <http.h>
 #include <iomanip>
@@ -135,8 +136,7 @@ namespace {
         }
         block = domain["block"].as<bool>(block);
         if (domain["transport"]) {
-            auto type = domain["transport"]["type"].as<std::string>("s2s");
-            if (type == "s2s") {
+            if (auto type = domain["transport"]["type"].as<std::string>("s2s"); type == "s2s") {
                 sess = SESSION_TYPE::S2S;
             } else if (type == "x2x") {
                 sess = SESSION_TYPE::X2X;
@@ -254,8 +254,7 @@ namespace {
                 auto certusagea = tlsa["certusage"];
                 if (!certusagea) throw std::runtime_error("Missing certusage in TLSA DNS override");
                 DNS::TlsaRR::CertUsage certUsage;
-                std::string certusages = certusagea.as<std::string>();
-                if (certusages == "CAConstraint") {
+                if (std::string certusages = certusagea.as<std::string>(); certusages == "CAConstraint") {
                     certUsage = DNS::TlsaRR::CertUsage::CAConstraint;
                 } else if (certusages == "CertConstraint") {
                     certUsage = DNS::TlsaRR::CertUsage::CertConstraint;
@@ -311,8 +310,7 @@ Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, b
                        bool block, bool multiplex, bool auth_pkix, bool auth_dialback, bool auth_host,
                        std::optional<std::string> &&auth_secret)
         : m_domain(domain), m_type(transport_type), m_xmpp_ver(xmpp_ver), m_forward(forward), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
-          m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(auth_secret),
-          m_ssl_ctx(nullptr) {
+          m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(std::move(auth_secret)) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
 }
 
@@ -322,7 +320,7 @@ Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
           m_tls_preference(any.m_tls_preference), m_min_tls_version(any.m_min_tls_version), m_max_tls_version(any.m_max_tls_version),
           m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist), m_auth_secret(any.m_auth_secret),
-          m_ssl_ctx(nullptr), m_parent(&any) {
+          m_parent(&any) {
     m_logger = Config::config().logger("domain <" + m_domain + ">");
 }
 
@@ -339,7 +337,6 @@ sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::s
 
 
 Config::Domain::~Domain() {
-    logger().warn("Domain {} destroyed", m_domain);
     if (m_ssl_ctx) {
         SSL_CTX_free(m_ssl_ctx);
         m_ssl_ctx = nullptr;
@@ -353,7 +350,7 @@ void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
     address->dnssec = true;
     address->hostname = hostname;
     auto& a = address->addr.emplace_back();
-    struct sockaddr_in *sin = reinterpret_cast<struct sockaddr_in *>(&a);
+    auto *sin = sockaddr_cast<AF_INET>(&a);
     sin->sin_family = AF_INET;
     sin->sin_addr.s_addr = inaddr;
     m_host_arecs[hostname] = std::move(address);
@@ -365,7 +362,7 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
         std::string cert_name;
         cert_name.resize(name_sz);
         X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
-                          const_cast<char *>(cert_name.data()), name_sz);
+                          cert_name.data(), name_sz);
         cert_name.resize(cert_name.find('\0'));
         Config::config().m_logger->info("Cert failed basic verification: {}", cert_name);
         Config::config().m_logger->info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
@@ -374,20 +371,20 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
         std::string cert_name;
         cert_name.resize(name_sz);
         X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
-                          const_cast<char *>(cert_name.data()), name_sz);
+                          cert_name.data(), name_sz);
         cert_name.resize(cert_name.find('\0'));
         Config::config().m_logger->debug("Cert passed basic verification: {}", cert_name);
         if (Config::config().m_fetch_crls) {
             auto cert = X509_STORE_CTX_get_current_cert(st);
-            std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, NULL, NULL),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
+            std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, nullptr, nullptr),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
             auto crldp = crldp_ptr.get();
             if (crldp) {
                 for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-                    DIST_POINT *dp = sk_DIST_POINT_value(crldp, i);
+                    auto const *const dp = sk_DIST_POINT_value(crldp, i);
                     if (dp->distpoint->type == 0) { // Full Name
                         auto names = dp->distpoint->name.fullname;
                         for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-                            GENERAL_NAME *name = sk_GENERAL_NAME_value(names, ii);
+                            auto const * const name = sk_GENERAL_NAME_value(names, ii);
                             if (name->type == GEN_URI) {
                                 ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
                                 std::string uristr{reinterpret_cast<char *>(uri->data),
@@ -405,10 +402,10 @@ int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
 }
 
 namespace {
-    int ssl_servername_cb(SSL *ssl, int *ad, void *arg) {
+    int ssl_servername_cb(SSL *ssl, int *, void *) {
         const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
         if (!servername) return SSL_TLSEXT_ERR_OK;
-        SSL_CTX *old_ctx = SSL_get_SSL_CTX(ssl);
+        SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
         SSL_CTX *new_ctx = Config::config().domain(Jid(servername).domain()).ssl_ctx();
         if (!new_ctx) new_ctx = Config::config().domain("").ssl_ctx();
         if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
@@ -497,6 +494,10 @@ SSL_CTX *Config::Domain::ssl_ctx() const {
     return ctx;
 }
 
+std::list<struct x509_st *> Config::Domain::pkix_tas() const {
+    return {};
+}
+
 Config::Config(std::string const &filename, bool lite) : m_dialback_secret(random_identifier()) {
     if (!lite) {
         s_config = this;
@@ -542,7 +543,7 @@ void Config::load(std::string const &filename, bool lite) {
             m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>(m_healthcheck_address);
             if (globals["healthcheck"]["checks"]) {
                 for (auto const & from : globals["healthcheck"]["checks"]) {
-                    m_healthchecks.emplace(std::make_pair(from.first.as<std::string>(), from.second.as<std::string>()));
+                    m_healthchecks.emplace(from.first.as<std::string>(), from.second.as<std::string>());
                 }
             }
         }
@@ -576,9 +577,9 @@ void Config::load(std::string const &filename, bool lite) {
         block["block"] = true;
         auto const & any_node = external["any"] ? external["any"] : block;
         // This will 'parse' a non-existent domain if any isn't explicitly set, but that's OK.
-        std::unique_ptr<Config::Domain> dom = parse_domain(nullptr, "any", any_node, true);
-        any_domain = dom.get(); // Save this pointer.
-        m_domains[dom->domain()] = std::move(dom);
+        std::unique_ptr<Config::Domain> any_dom = parse_domain(nullptr, "any", any_node, true);
+        any_domain = any_dom.get(); // Save this pointer.
+        m_domains[any_dom->domain()] = std::move(any_dom);
         for (auto const & item : external) {
             auto name = item.first.as<std::string>();
             if (name == "any") {
@@ -640,21 +641,20 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
                            SESSION_TYPE asess)
         : session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
     std::memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
-    if (1 == inet_pton(AF_INET6, address.c_str(), &(reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr)->sin6_addr))) {
-        struct sockaddr_in6 *sa = reinterpret_cast<struct sockaddr_in6 *>(&m_sockaddr);
+    if (1 == inet_pton(AF_INET6, address.c_str(), &(sockaddr_cast<AF_INET6>(&m_sockaddr)->sin6_addr))) {
+        auto *sa = sockaddr_cast<AF_INET6>(&m_sockaddr);
         sa->sin6_family = AF_INET6;
         sa->sin6_port = htons(port);
-    } else if (1 == inet_pton(AF_INET, address.c_str(), &(reinterpret_cast<struct sockaddr_in *>(&m_sockaddr)->sin_addr))) {
-        struct sockaddr_in *sa = reinterpret_cast<struct sockaddr_in *>(&m_sockaddr);
+    } else if (1 == inet_pton(AF_INET, address.c_str(), &(sockaddr_cast<AF_INET>(&m_sockaddr)->sin_addr))) {
+        auto *sa = sockaddr_cast<AF_INET>(&m_sockaddr);
         sa->sin_family = AF_INET;
         sa->sin_port = htons(port);
     } else {
         throw std::runtime_error("Couldn't understand address syntax " + std::string(address));
     }
-    if (asess == SESSION_TYPE::X2X) {
-        if (local_domain.empty() || remote_domain.empty()) {
-            throw std::runtime_error("Missing local or remote domains");
-        }
+    if (asess == SESSION_TYPE::X2X
+        && (local_domain.empty() || remote_domain.empty())) {
+        throw std::runtime_error("Missing local or remote domains");
     }
 }
 
@@ -673,6 +673,8 @@ namespace {
                 return "TLSv1.2";
             case TLS1_3_VERSION:
                 return "TLSv1.3";
+            default:
+                return nullptr;
         }
         return nullptr;
     }
@@ -722,7 +724,7 @@ namespace {
         }
         config["dns"]["dnssec_required"] = domain.dnssec_required();
         if (domain.srv_override()) {
-            for (auto &rr: domain.srv_override()->rrs) {
+            for (auto const &rr: domain.srv_override()->rrs) {
                 YAML::Node srv;
                 srv["host"] = rr.hostname;
                 srv["port"] = rr.port;
@@ -802,11 +804,7 @@ namespace {
         }
         for (auto const &[hostname, address]: domain.address_overrides()) {
             YAML::Node host;
-            host["name"] = hostname;
-            std::array<char, 32> buf{};
-            auto sin = reinterpret_cast<struct sockaddr_in *>(address->addr.data());
-            inet_ntop(AF_INET, &sin->sin_addr, buf.data(), buf.size());
-            host["a"] = buf.data();
+            host["a"] = address_tostring(address->addr.data());
             config["dns"]["host"].push_back(host);
         }
         {
@@ -827,7 +825,7 @@ namespace {
                 if (SSL_CTX_get0_chain_certs(ctx, &chain) && chain) {
                     FILE *fp = fopen(chainfile.c_str(), "w");
                     for (int i = 0; i < sk_X509_num(chain); ++i) {
-                        X509 *item = sk_X509_value(chain, i);
+                        auto const * const item = sk_X509_value(chain, i);
                         PEM_write_X509(fp, item);
                     }
                     fclose(fp);
@@ -901,19 +899,8 @@ std::string Config::asString() const {
             listener["remote-domain"] = listen.remote_domain;
         }
         listener["name"] = listen.name;
-        if (listen.sockaddr()->sa_family == AF_INET) {
-            const struct sockaddr_in *sa = reinterpret_cast<const struct sockaddr_in *>(listen.sockaddr());
-            char buf[1024];
-            inet_ntop(AF_INET, &sa->sin_addr, buf, sizeof(struct sockaddr_in));
-            listener["address"] = buf;
-            listener["port"] = ntohs(sa->sin_port);
-        } else if (listen.sockaddr()->sa_family == AF_INET6) {
-            const struct sockaddr_in6 *sa = reinterpret_cast<const struct sockaddr_in6 *>(listen.sockaddr());
-            char buf[1024];
-            inet_ntop(AF_INET6, &sa->sin6_addr, buf, sizeof(struct sockaddr_in6));
-            listener["address"] = buf;
-            listener["port"] = ntohs(sa->sin6_port);
-        }
+        listener["address"] = address_tostring(listen.sockaddr());
+        listener["port"] = address_toport(listen.sockaddr());
         switch (listen.session_type) {
             using enum SESSION_TYPE;
             case S2S:
@@ -927,7 +914,7 @@ std::string Config::asString() const {
                 break;
             default:
                 continue;
-        };
+        }
         listener["tls"] = listen.tls_mode == TLS_MODE::IMMEDIATE;
         config["listeners"].push_back(listener);
     }
@@ -966,8 +953,7 @@ void Config::create_domain(std::string const &dom) {
     while (it == m_domains.end()) {
         it = m_domains.find("*." + search);
         if (it == m_domains.end()) {
-            auto dot = search.find('.');
-            if (dot == std::string::npos) {
+            if (auto dot = search.find('.'); dot == std::string::npos) {
                 search = "";
             } else {
                 search = search.substr(dot + 1);
@@ -990,7 +976,7 @@ Config::Domain const &Config::domain(std::string const &dom) const {
 
 std::string Config::random_identifier() const {
     const size_t id_len = 16;
-    char characters[] = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
+    std::string characters = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
     std::default_random_engine random(std::random_device{}());
     std::uniform_int_distribution<> dist(0, sizeof(characters) - 2);
     std::string id(id_len, char{});
@@ -999,21 +985,20 @@ std::string Config::random_identifier() const {
 }
 
 std::string Config::dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const {
-    std::string binoutput;
-    binoutput.resize(20);
+    std::array<unsigned char, 256/8> binoutput = {};
     std::string const &key = dialback_secret();
     std::string concat = id + '|' + local_domain + '|' + remote_domain;
-    HMAC(EVP_sha1(), reinterpret_cast<const unsigned char *>(key.data()), key.length(),
+    HMAC(EVP_sha256(), reinterpret_cast<const unsigned char *>(key.data()), static_cast<int>(key.length()),
          reinterpret_cast<const unsigned char *>(concat.data()), concat.length(),
-         const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(binoutput.data())), nullptr);
+         binoutput.data(), nullptr);
     std::string hexoutput;
     for (unsigned char c : binoutput) {
         int low = c & 0x0F;
         int high = (c & 0xF0) >> 4;
-        hexoutput += ((high < 0x0A) ? '0' : ('a' - 10)) + high;
-        hexoutput += ((low < 0x0A) ? '0' : ('a' - 10)) + low;
+        hexoutput += static_cast<char>(((high < 0x0A) ? '0' : ('a' - 10)) + high);
+        hexoutput += static_cast<char>(((low < 0x0A) ? '0' : ('a' - 10)) + low);
     }
-    assert(hexoutput.length() == 40);
+    assert(hexoutput.length() == binoutput.size() * 2);
     m_logger->debug("Dialback key id {} :: {} | {}", id, local_domain, remote_domain);
     return hexoutput;
 }
@@ -1092,25 +1077,26 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
             break;
         default: {
             bool read_ok = false;
-            if (value.find('\n') == std::string::npos && value.find('/') != std::string::npos) {
+            if (!value.contains('\n') && !value.contains('/')) {
                 std::ifstream in(value);
                 rr.matchData.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
                 if (!rr.matchData.empty()) {
                     read_ok = true;
                 }
-                if (rr.selector == DNS::TlsaRR::Selector::FullCert && rr.matchType == DNS::TlsaRR::MatchType::Full) {
-                    // Full cert matching, so convenient to supply a PEM file as well. Let's check:
-                    if (rr.matchData.find("-----BEGIN") == 0) {
-                        // Tempting to replace this with a base64_decode call, mind.
-                        std::string tmp = rr.matchData;
-                        BIO * b = BIO_new_mem_buf(tmp.data(), static_cast<int>(tmp.size()));
-                        auto cert = PEM_read_bio_X509(b, nullptr, nullptr, nullptr);
-                        if (!cert) throw std::runtime_error("Invalid PEM certificate");
-                        unsigned char * buf = nullptr;
-                        auto len = i2d_X509(cert, &buf);
-                        if (len < 0) throw std::runtime_error("Cannot re-encode to DER");
-                        rr.matchData.assign(reinterpret_cast<const char *>(buf), len);
-                    }
+                // If full cert matching, convenient to supply a PEM file as well. Let's check:
+                if (rr.selector == DNS::TlsaRR::Selector::FullCert
+                    && rr.matchType == DNS::TlsaRR::MatchType::Full
+                    && rr.matchData.starts_with("-----BEGIN")) {
+                    // Tempting to replace this with a base64_decode call, mind.
+                    std::string tmp = rr.matchData;
+                    BIO * b = BIO_new_mem_buf(tmp.data(), static_cast<int>(tmp.size()));
+                    auto cert = PEM_read_bio_X509(b, nullptr, nullptr, nullptr);
+                    if (!cert) throw std::runtime_error("Invalid PEM certificate");
+                    unsigned char * buf = nullptr;
+                    auto len = i2d_X509(cert, &buf);
+                    if (len < 0) throw std::runtime_error("Cannot re-encode to DER");
+                    rr.matchData.assign(reinterpret_cast<const char *>(buf), len);
+                    OPENSSL_free(buf);
                 }
             }
             if (!read_ok) {
@@ -1147,7 +1133,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
     m_srvrec->rrs.push_back(rr);
 }
 
-sigslot::tasklet<void> Config::Domain::gather_host(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string const & host, uint16_t port, DNS::ConnectInfo::Method method) const {
+sigslot::tasklet<void> Config::Domain::gather_host(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string host, uint16_t port, DNS::ConnectInfo::Method method) const {
     auto addr_recs = co_await r.AddressLookup(host);
     if (!addr_recs.error.empty()) co_return; // Interesting case: a DNSSEC-signed SVCB/SRV record pointing to a non-existent host still adds that host to the X.509-acceptable names.
     if (!addr_recs.dnssec && m_dnssec_required) co_return;
@@ -1159,16 +1145,16 @@ sigslot::tasklet<void> Config::Domain::gather_host(std::shared_ptr<sentry::span>
         conn_info.hostname = host;
         if (conn_info.sockaddr.ss_family == AF_INET) {
             span->containing_transaction().tag("gather.ipv4", "yes");
-            reinterpret_cast<sockaddr_in *>(&conn_info.sockaddr)->sin_port = port;
+            sockaddr_cast<AF_INET>(&conn_info.sockaddr)->sin_port = port;
         } else if (conn_info.sockaddr.ss_family == AF_INET6) {
             span->containing_transaction().tag("gather.ipv6", "yes");
-            reinterpret_cast<sockaddr_in6 *>(&conn_info.sockaddr)->sin6_port = port;
+            sockaddr_cast<AF_INET6>(&conn_info.sockaddr)->sin6_port = port;
         }
         g.gathered_connect.push_back(conn_info);
     }
 }
 
-sigslot::tasklet<void> Config::Domain::gather_tlsa(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string const & host, uint16_t port) const {
+sigslot::tasklet<void> Config::Domain::gather_tlsa(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string host, uint16_t port) const {
     auto recs = co_await r.TlsaLookup(port, host);
     if (!recs.error.empty()) co_return;
     if (!recs.dnssec) co_return;

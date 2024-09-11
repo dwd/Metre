@@ -41,7 +41,6 @@ SOFTWARE.
 #include <event2/listener.h>
 #include <event2/bufferevent.h>
 #include <memory>
-#include "router.h"
 #include <unbound.h>
 #include <cerrno>
 #include <cstring>
@@ -53,6 +52,7 @@ SOFTWARE.
 #include "event2/thread.h"
 #include "event2/http.h"
 #include "event2/buffer.h"
+#include "sockaddr-cast.h"
 
 namespace {
     class task_sleep {
@@ -66,13 +66,13 @@ namespace {
             });
         }
 
-        task_sleep(long secs) {
+        explicit task_sleep(long secs) {
             Metre::Router::defer([this]() {
                 wake();
             }, secs);
         }
 
-        task_sleep(struct timeval secs) {
+        explicit task_sleep(struct timeval secs) {
             Metre::Router::defer([this]() {
                 wake();
             }, secs);
@@ -83,7 +83,7 @@ namespace {
         }
 
 
-        bool await_ready() {
+        bool await_ready() const {
             return ready;
         }
 
@@ -92,7 +92,7 @@ namespace {
             awaiting = h;
         }
 
-        void await_resume() {}
+        void await_resume() const {}
 
     private:
         void wake() {
@@ -100,10 +100,6 @@ namespace {
             ::sigslot::resume_switch(awaiting);
         }
     };
-
-//    constexpr bool operator < (struct timeval const & t1, struct timeval const & t2) {
-//        return t1.tv_sec < t2.tv_sec && t1.tv_usec < t2.tv_usec;
-//    }
 }
 
 template<>
@@ -120,8 +116,8 @@ namespace Metre {
         struct event_base *m_event_base = nullptr;
         struct evhttp * m_healthcheck_server = nullptr;
         std::map<unsigned long long, std::shared_ptr<NetSession>> m_sessions;
-        std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_id;
-        std::map<std::string, std::weak_ptr<NetSession>> m_sessions_by_domain;
+        std::map<std::string, std::weak_ptr<NetSession>, std::less<>> m_sessions_by_id;
+        std::map<std::string, std::weak_ptr<NetSession>, std::less<>> m_sessions_by_domain;
         std::map<std::pair<std::string, unsigned short>, std::weak_ptr<NetSession>> m_sessions_by_address;
         struct event *m_ub_event = nullptr;
         std::list<struct evconnlistener *> m_listeners;
@@ -137,7 +133,7 @@ namespace Metre {
         std::set<std::coroutine_handle<>> coro_handles;
         static Mainloop *s_mainloop;
 
-        Mainloop() : m_sessions() {
+        Mainloop() {
             s_mainloop = this;
         }
 
@@ -192,7 +188,7 @@ namespace Metre {
 
             evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "application/json");
             std::ostringstream body;
-            body << "{\"status\":\"ok\"";
+            body << R"({"status":"ok")";
             std::list<sigslot::tasklet<Iq const *>> pings;
             for (auto const & [from, to] : Config::config().healthchecks()) {
                 std::string name = from + " -> ";
@@ -211,7 +207,7 @@ namespace Metre {
                 co_await task_sleep({0, 500}); // Pause until activity.
                 auto it = pings.begin();
                 while (it != pings.end()) {
-                    auto & task = *it;
+                    auto const & task = *it;
                     if (!task.running()) {
                         try {
                             co_await task;
@@ -229,7 +225,7 @@ namespace Metre {
                     break;
                 }
             }
-            for (auto & task : pings) {
+            for (auto const & task : pings) {
                 body << ",\"" << task.coro.promise().name << "\":false";
             }
             body << '}' << std::endl;
@@ -278,16 +274,14 @@ namespace Metre {
         }
 
         std::shared_ptr<NetSession> session_by_serial(long long int id) {
-            auto it = m_sessions.find(id);
-            if (it != m_sessions.end()) {
+            if (auto it = m_sessions.find(id);it != m_sessions.end()) {
                 return (*it).second;
             }
             return nullptr;
         }
 
         std::shared_ptr<NetSession> session_by_id(std::string const &id) {
-            auto it = m_sessions_by_id.find(id);
-            if (it != m_sessions_by_id.end()) {
+            if (auto it = m_sessions_by_id.find(id); it != m_sessions_by_id.end()) {
                 std::shared_ptr<NetSession> s((*it).second.lock());
                 return s;
             }
@@ -295,8 +289,7 @@ namespace Metre {
         }
 
         std::shared_ptr<NetSession> session_by_domain(std::string const &id) {
-            auto it = m_sessions_by_domain.find(id);
-            if (it != m_sessions_by_domain.end()) {
+            if (auto it = m_sessions_by_domain.find(id); it != m_sessions_by_domain.end()) {
                 std::shared_ptr<NetSession> s((*it).second.lock());
                 return s;
             }
@@ -304,8 +297,7 @@ namespace Metre {
         }
 
         std::shared_ptr<NetSession> session_by_address(std::string const &host, unsigned short port) {
-            auto it = m_sessions_by_address.find(std::make_pair(host, port));
-            if (it != m_sessions_by_address.end()) {
+            if (auto it = m_sessions_by_address.find(std::make_pair(host, port)); it != m_sessions_by_address.end()) {
                 std::shared_ptr<NetSession> s((*it).second.lock());
                 return s;
             }
@@ -317,8 +309,7 @@ namespace Metre {
             if (it == m_sessions.end()) {
                 return;
             }
-            auto it2 = m_sessions_by_id.find(id);
-            if (it2 != m_sessions_by_id.end()) {
+            if (auto it2 = m_sessions_by_id.find(id); it2 != m_sessions_by_id.end()) {
                 std::shared_ptr<NetSession> old = it2->second.lock();
                 if (!old) {
                     m_sessions_by_id.erase(it2);
@@ -327,12 +318,11 @@ namespace Metre {
                     throw std::runtime_error("Duplicate session id - loopback?");
                 }
             }
-            m_sessions_by_id.insert(std::make_pair(id, (*it).second));
+            m_sessions_by_id.try_emplace(id, (*it).second);
         }
 
         void unregister_stream_id(std::string const &id) {
-            auto it2 = m_sessions_by_id.find(id);
-            if (it2 != m_sessions_by_id.end()) {
+            if (auto it2 = m_sessions_by_id.find(id); it2 != m_sessions_by_id.end()) {
                 m_sessions_by_id.erase(it2);
             }
         }
@@ -342,17 +332,16 @@ namespace Metre {
             if (it == m_sessions.end()) {
                 return;
             }
-            auto it2 = m_sessions_by_domain.find(dom);
-            if (it2 != m_sessions_by_domain.end()) {
+            if (auto it2 = m_sessions_by_domain.find(dom); it2 != m_sessions_by_domain.end()) {
                 m_sessions_by_domain.erase(it2);
             }
-            m_sessions_by_domain.insert(std::make_pair(dom, (*it).second));
+            m_sessions_by_domain.try_emplace(dom, (*it).second);
         }
 
         static void
         new_session_cb(struct evconnlistener *, evutil_socket_t newsock, struct sockaddr *addr, int len,
                        void *arg) {
-            Config::Listener const *listen = reinterpret_cast<Config::Listener *>(arg);
+            auto const *listen = static_cast<Config::Listener const *>(arg);
             Mainloop::s_mainloop->new_session_inbound(newsock, addr, len, listen);
         }
 
@@ -363,24 +352,13 @@ namespace Metre {
                 return;
             }
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, sock, BEV_OPT_CLOSE_ON_FREE);
-            std::shared_ptr<NetSession> session(
-                    new NetSession(std::atomic_fetch_add(&s_serial, 1ull), bev, listen));
-            auto it = m_sessions.find(session->serial());
-            if (it != m_sessions.end()) {
+            auto session = std::make_shared<NetSession>(std::atomic_fetch_add(&s_serial, 1ULL), bev, listen);
+            if (m_sessions.contains(session->serial())) {
                 // We already have one for this socket. This seems unlikely to be safe.
                 m_logger->critical("Session already in ownership table; corruption.");
                 assert(false);
             }
-            char addrbuf[1024];
-            addrbuf[0] = '\0';
-            if (sin->sa_family == AF_INET) {
-                inet_ntop(AF_INET, reinterpret_cast<void *>(&reinterpret_cast<struct sockaddr_in *>(sin)->sin_addr),
-                          addrbuf, 1024);
-            } else if (sin->sa_family == AF_INET6) {
-                inet_ntop(AF_INET6, reinterpret_cast<void *>(&reinterpret_cast<struct sockaddr_in6 *>(sin)->sin6_addr),
-                          addrbuf, 1024);
-            }
-            m_logger->info("New session on {} port from {}", listen->name, addrbuf);
+            m_logger->info("New session on {} port from {}", listen->name, address_tostring(sin));
             m_sessions[session->serial()] = session;
             session->onClosed.connect(this, &Mainloop::session_closed);
         }
@@ -388,23 +366,18 @@ namespace Metre {
         std::shared_ptr<NetSession>
         connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
                 unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
-            void *inx_addr;
             if (addr->sa_family == AF_INET) {
-                auto sin = reinterpret_cast<struct sockaddr_in *>(addr);
+                auto * sin = sockaddr_cast<AF_INET>(addr);
                 sin->sin_port = htons(port);
-                inx_addr = &sin->sin_addr;
             } else {
-                auto sin6 = reinterpret_cast<struct sockaddr_in6 *>(addr);
+                auto * sin6 = sockaddr_cast<AF_INET6>(addr);
                 sin6->sin6_port = htons(port);
-                inx_addr = &sin6->sin6_addr;
             }
-            char buf[INET6_ADDRSTRLEN + 1];
-            m_logger->debug("Connecting to {}:{}", inet_ntop(addr->sa_family, inx_addr, buf, INET6_ADDRSTRLEN), port);
+            m_logger->debug("Connecting to {}:{}", address_tostring(addr), port);
             auto sesh = connect(fromd, tod, hostname, addr,
                                 sizeof(struct sockaddr_storage), port, stype, tls_mode);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
-            auto it = m_sessions_by_domain.find(tod);
-            if (it == m_sessions_by_domain.end() ||
+            if (auto it = m_sessions_by_domain.find(tod); it == m_sessions_by_domain.end() ||
                 (*it).second.expired()) {
                 m_sessions_by_domain[tod] = sesh;
             }
@@ -412,7 +385,7 @@ namespace Metre {
         }
 
         std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &, struct sockaddr *sin,
+        connect(std::string const &fromd, std::string const &tod, std::string const &, const struct sockaddr *sin,
                 size_t addrlen, unsigned short, SESSION_TYPE stype, TLS_MODE tls_mode) {
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
             if (!bev) {
@@ -429,10 +402,9 @@ namespace Metre {
             struct timeval tv = {0, 0};
             tv.tv_sec = Config::config().domain(tod).connect_timeout();
             bufferevent_set_timeouts(bev, nullptr, &tv);
-            auto session = std::make_shared<NetSession>(std::atomic_fetch_add(&s_serial, 1ull), bev, fromd, tod, stype,
+            auto session = std::make_shared<NetSession>(std::atomic_fetch_add(&s_serial, 1ULL), bev, fromd, tod, stype,
                                                         tls_mode);
-            auto it = m_sessions.find(session->serial());
-            if (it != m_sessions.end()) {
+            if (m_sessions.contains(session->serial())) {
                 // We already have one for this socket. This seems unlikely to be safe.
                 m_logger->critical("Session already in ownership table; corruption.");
                 assert(false);
@@ -474,16 +446,16 @@ namespace Metre {
                     }
                     m_listeners.clear();
                     m_logger->info("Closing {} sessions", m_sessions.size());
-                    for (auto &it : m_sessions) {
-                        it.second->send(
+                    for (auto const & [serial, session] : m_sessions) {
+                        session->send(
                                 "<stream:error><system-shutdown xmlns='urn:ietf:params:xml:ns:xmpp-streams'/></stream:error></stream:close>");
-                        it.second->close();
+                        session->close();
                     }
                     m_shutdown_now = true;
                     event_base_loopexit(m_event_base, nullptr);
                     m_logger->info("Closed all sessions");
                 } else {
-                    std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
+                    std::scoped_lock l_(m_scheduler_mutex);
                     if (!m_pending_actions.empty()) {
                         next_break();
                     }
@@ -495,7 +467,7 @@ namespace Metre {
                 for (;;) {
                     std::list<std::function<void()>> run_now;
                     {
-                        std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
+                        std::scoped_lock l_(m_scheduler_mutex);
                         struct timeval now;
                         gettimeofday(&now, nullptr);
                         while (!m_pending_actions.empty()) {
@@ -509,7 +481,7 @@ namespace Metre {
                         }
                     }
                     if (run_now.empty()) break;
-                    for (auto & fn : run_now) {
+                    for (auto const & fn : run_now) {
                         fn();
                     }
                 }
@@ -530,7 +502,7 @@ namespace Metre {
         }
 
         void do_later(std::function<void()> &&fn, struct timeval seconds) {
-            std::lock_guard<std::recursive_mutex> l_(m_scheduler_mutex);
+            std::scoped_lock l_(m_scheduler_mutex);
             struct timeval now;
             gettimeofday(&now, nullptr);
             struct timeval when = now;
@@ -554,8 +526,8 @@ namespace Metre {
         }
 
         static void unbound_cb(evutil_socket_t, short, void *arg) {
-            while (ub_poll(reinterpret_cast<struct ub_ctx *>(arg))) {
-                ub_process(reinterpret_cast<struct ub_ctx *>(arg));
+            while (ub_poll(static_cast<struct ub_ctx *>(arg))) {
+                ub_process(static_cast<struct ub_ctx *>(arg));
             }
         }
 
@@ -579,8 +551,7 @@ namespace Metre {
 
         void session_closed(NetSession &ns) {
             m_logger->debug("NS{} - Session closed.", ns.serial());
-            auto it = m_sessions.find(ns.serial());
-            if (it != m_sessions.end()) {
+            if (auto it = m_sessions.find(ns.serial()); it != m_sessions.end()) {
                 m_closed_sessions.push_back((*it).second);
                 event_base_loopexit(m_event_base, nullptr);
                 m_sessions.erase(it);
@@ -592,13 +563,12 @@ namespace Metre {
     std::atomic<unsigned long long> Mainloop::s_serial{0};
 
     namespace Router {
-        std::shared_ptr<NetSession>
-        connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
+        std::shared_ptr<NetSession> connect(std::string const &fromd, std::string const &tod, std::string const &hostname, struct sockaddr *addr,
                 unsigned short port, SESSION_TYPE stype, TLS_MODE tls_mode) {
             return Mainloop::s_mainloop->connect(fromd, tod, hostname, addr, port, stype, tls_mode);
         }
 
-        void register_stream_id(std::string const &id, NetSession &session) {
+        void register_stream_id(std::string const &id, NetSession const &session) {
             Mainloop::s_mainloop->register_stream_id(id, session.serial());
         }
 
@@ -606,7 +576,7 @@ namespace Metre {
             Mainloop::s_mainloop->unregister_stream_id(id);
         }
 
-        void register_session_domain(std::string const &domain, NetSession &session) {
+        void register_session_domain(std::string const &domain, NetSession const &session) {
             Mainloop::s_mainloop->register_session_domain(domain, session.serial());
         }
 
@@ -656,7 +626,6 @@ namespace Metre {
                 loop.do_later(std::move(fn), seconds);
             }
             early_defer.clear();
-            //Config::config().dns_init();
             loop.run(check_fn);
             logger.info("Shutdown complete");
         }
@@ -682,7 +651,7 @@ namespace sigslot {
             coro.resume();
             return;
         }
-        Metre::Router::defer([=]() {
+        Metre::Router::defer([coro]() {
             std::coroutine_handle<> c = coro;
             if (c && Metre::Mainloop::s_mainloop->coro_handles.contains(c) && !c.done()) {
                 c.resume();
