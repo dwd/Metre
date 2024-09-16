@@ -514,9 +514,8 @@ Config::Config(std::string const &filename, bool lite) : m_dialback_secret(rando
     }
 }
 
-Config::~Config() {
-    // TODO: Should really do this, but need to shut it down first: ub_ctx_delete(m_ub_ctx);
-}
+Config::~Config() = default;
+// TODO: Should really do this, but need to shut it down first: ub_ctx_delete(m_ub_ctx);
 
 void Config::write_runtime_config() const {
     std::string tmp = asString();

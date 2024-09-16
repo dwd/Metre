@@ -60,10 +60,10 @@ namespace {
             std::string binoutput;
             binoutput.resize(20);
             SHA1(reinterpret_cast<const unsigned char *>(concat.data()), concat.length(),
-                 const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(binoutput.data())));
+                 reinterpret_cast<unsigned char *>(binoutput.data()));
             std::string hexoutput;
             for (char sc : binoutput) {
-                auto c = reinterpret_cast<unsigned char &>(sc);
+                auto c = std::bit_cast<unsigned char>(sc);
                 int low = c & 0x0F;
                 int high = (c & 0xF0) >> 4;
                 hexoutput += static_cast<char>(((high < 0x0A) ? '0' : ('a' - 10)) + high);
@@ -73,7 +73,7 @@ namespace {
             return hexoutput;
         }
 
-        void send_handshake(XMLStream &s) {
+        void send_handshake(XMLStream &) {
             std::string hexoutput(handshake_content());
             xml_document<> d;
             d.append_element("handshake", hexoutput);
@@ -116,39 +116,38 @@ namespace {
                 throw Metre::unsupported_stanza_type(std::string(node->name()));
             }
             try {
-                try {
-                    Jid const &from = s->from();
-                    Jid const &to = s->to();
-                    // Check auth state.
-                    if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTH_STATE::AUTHORIZED) {
-                        throw not_authorized();
-                    }
-                    m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
-                    if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
-                        m_stream.logger().info("Stanza discarded by FROM filters");
-                        co_return true;
-                    }
-                    m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
-                    if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
-                        m_stream.logger().info("Stanza discarded by TO filters");
-                        co_return true;
-                    }
-                    m_stream.logger().info("Applied all stanza filters");
-                    if (Config::config().domain(to.domain()).transport_type() == SESSION_TYPE::INTERNAL) {
-                        Endpoint::endpoint(to).process(std::move(s));
-                    } else {
-                        METRE_LOG(Metre::Log::DEBUG, "Component creating route: from=[" << from.domain() << "] to=[" << to.domain() << "]");
-                        std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
-                        route->transmit(std::move(s));
-                    }
-                } catch (Metre::base::xmpp_exception &) {
-                    throw;
-                } catch (Metre::base::stanza_exception &) {
-                    throw;
-                } catch (std::runtime_error &e) {
-                    throw Metre::stanza_undefined_condition(e.what());
+                Jid const &from = s->from();
+                Jid const &to = s->to();
+                // Check auth state.
+                if (m_stream.s2s_auth_pair(to.domain(), from.domain(), SESSION_DIRECTION::INBOUND) != XMLStream::AUTH_STATE::AUTHORIZED) {
+                    throw not_authorized();
                 }
-            } catch (Metre::base::stanza_exception const &stanza_error) {
+                m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
+                if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
+                    m_stream.logger().info("Stanza discarded by FROM filters");
+                    co_return true;
+                }
+                m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
+                if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
+                    m_stream.logger().info("Stanza discarded by TO filters");
+                    co_return true;
+                }
+                m_stream.logger().info("Applied all stanza filters");
+                if (Config::config().domain(to.domain()).transport_type() == SESSION_TYPE::INTERNAL) {
+                    Endpoint::endpoint(to).process(std::move(s));
+                } else {
+                    METRE_LOG(Metre::Log::DEBUG, "Component creating route: from=[" << from.domain() << "] to=[" << to.domain() << "]");
+                    std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
+                    route->transmit(std::move(s));
+                }
+            } catch (Metre::base::xmpp_exception &) {
+                throw;
+            } catch (Metre::base::stanza_exception & stanza_error) {
+                std::unique_ptr<Stanza> st = s->create_bounce(stanza_error);
+                std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
+                route->transmit(std::move(st));
+            } catch (std::runtime_error &e) {
+                auto stanza_error = Metre::stanza_undefined_condition(e.what());
                 std::unique_ptr<Stanza> st = s->create_bounce(stanza_error);
                 std::shared_ptr<Route> route = RouteTable::routeTable(st->to()).route(st->to());
                 route->transmit(std::move(st));
