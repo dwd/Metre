@@ -181,7 +181,7 @@ namespace Metre {
             ~Domain();
 
             sigslot::tasklet<FILTER_RESULT> filter(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) const;
-            TLSContext & tls_context() const {
+            [[nodiscard]] TLSContext & tls_context() const {
                 return *m_tls_context;
             }
             TLSContext & tls_context(std::unique_ptr<TLSContext> && tls_context) {
@@ -189,7 +189,7 @@ namespace Metre {
                 return *m_tls_context;
             }
 
-            PKIXValidator & pkix_validator() const {
+            [[nodiscard]] PKIXValidator & pkix_validator() const {
                 return *m_pkix_validator;
             }
             PKIXValidator & pkix_validator(std::unique_ptr<PKIXValidator> && pkix_validator) {

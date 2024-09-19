@@ -1,6 +1,6 @@
 /***
 
-Copyright 2016 Dave Cridland
+Copyright 2016-2024 Dave Cridland
 Copyright 2016 Surevine Ltd
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -47,7 +47,7 @@ namespace Metre {
 
         void operator=(PKIXIdentity const &) = delete;
         void apply(SSL_CTX *) const;
-        YAML::Node write() const;
+        [[nodiscard]] YAML::Node write() const;
 
     private:
         std::string m_cert_chain_file;
@@ -60,10 +60,10 @@ namespace Metre {
         PKIXValidator() = delete;
         PKIXValidator(PKIXValidator const &) = delete;
         explicit PKIXValidator(YAML::Node const & config);
-        sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span> span, SSL *, std::string const &);
+        sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span> span, SSL *, std::string);
         sigslot::tasklet<void> fetch_crls(std::shared_ptr<sentry::span>, const SSL *, X509 * cert);
         void load();
-        YAML::Node write() const;
+        [[nodiscard]] YAML::Node write() const;
 
     private:
         bool m_crls;
@@ -76,6 +76,7 @@ namespace Metre {
     public:
         TLSContext() = delete;
         TLSContext(TLSContext const &) = delete;
+        void operator = (TLSContext const &) = delete;
         TLSContext(YAML::Node const & config, std::string const & domain);
         SSL_CTX* context();
         SSL * instantiate(bool connecting, std::string const & remote_domain);
@@ -90,8 +91,24 @@ namespace Metre {
         int m_min_version;
         int m_max_version;
         std::set<std::unique_ptr<PKIXIdentity>> m_identities;
-        SSL_CTX * m_ssl_ctx;
+        SSL_CTX * m_ssl_ctx = nullptr;
         spdlog::logger m_log;
+    };
+
+    class pkix_error : public std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
+    class pkix_config_error : public pkix_error {
+        using pkix_error::pkix_error;
+    };
+
+    class pkix_identity_load_error : public pkix_config_error {
+        using pkix_config_error::pkix_config_error;
+    };
+
+    class dhparam_error : public pkix_error {
+        using pkix_error::pkix_error;
     };
 }
 

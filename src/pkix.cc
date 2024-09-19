@@ -90,7 +90,7 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
             dh_str = &dh_str_4096;
             actual_keylen = 4096;
         } else {
-            throw std::runtime_error("Don't have a packages DH key that size, sorry.");
+            throw dhparam_error("Don't have a packages DH key that size, sorry.");
         }
         if (s_cache.contains(actual_keylen)) {
             return s_cache[actual_keylen];
@@ -105,7 +105,7 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
             s_cache[actual_keylen] = evp;
             return evp;
         } else {
-            throw std::runtime_error("Decoding of internal DH params failed");
+            throw dhparam_error("Decoding of internal DH params failed");
         }
     }
     EVP_PKEY * get_file_dh(std::string const & filename) {
@@ -121,15 +121,11 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
             s_cache[filename] = evp;
             return evp;
         } else {
-            throw std::runtime_error("Decoding of external DH params failed");
+            throw dhparam_error("Decoding of external DH params failed");
         }
     }
 
-}
-
-
-namespace {
-    constexpr int yaml_to_tls(YAML::Node const &tls_version_node, int def) {
+    int yaml_to_tls(YAML::Node const &tls_version_node, int def) {
         auto version_string = tls_version_node.as<std::string>();
         int version = def;
         std::ranges::transform(version_string, version_string.begin(), [](unsigned char c) {
@@ -170,7 +166,6 @@ namespace {
             default:
                 return nullptr;
         }
-        return nullptr;
     }
 }
 
@@ -191,7 +186,7 @@ YAML::Node PKIXIdentity::write() const {
 PKIXValidator::PKIXValidator(const YAML::Node &config) : m_log(Config::config().logger("pkix")) {
     m_crls = config["crls"].as<bool>(Config::config().fetch_pkix_status());
     if (m_crls && !Config::config().fetch_pkix_status()) {
-        throw std::runtime_error("Cannot check status without fetching status");
+        throw pkix_config_error("Cannot check status without fetching status");
     }
     for (auto const & ta : config["trust-anchors"]) {
         m_trust_anchors.insert(ta.as<std::string>());
@@ -314,7 +309,7 @@ namespace {
  * @param route
  * @return true if TLS verified correctly.
  */
-sigslot::tasklet<bool> PKIXValidator::verify_tls(std::shared_ptr<sentry::span> span, SSL * ssl, std::string const & remote_domain) {
+sigslot::tasklet<bool> PKIXValidator::verify_tls(std::shared_ptr<sentry::span> span, SSL * ssl, std::string remote_domain) {
     if (!ssl) co_return false; // No TLS.
     auto *cert = SSL_get_peer_certificate(ssl);
     if (!cert) {
@@ -387,6 +382,7 @@ sigslot::tasklet<bool> PKIXValidator::verify_tls(std::shared_ptr<sentry::span> s
 SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
     SSL_CTX *ctx = context();
     SSL *ssl = SSL_new(ctx);
+    if (!ssl) throw pkix_error("Failure to initiate TLS, sorry!");
     SSL_dane_enable(ssl, domain.c_str());
     // Cipherlist
     SSL_set_cipher_list(ssl, m_cipherlist.c_str());
@@ -413,7 +409,6 @@ SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
         }
         SSL_set0_tmp_dh_pkey(ssl, evp);
     }
-    if (!ssl) throw std::runtime_error("Failure to initiate TLS, sorry!");
     if (!connecting) {
         SSL_set_accept_state(ssl);
     } else { //m_stream.direction() == OUTBOUND
@@ -435,9 +430,7 @@ namespace {
         if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
         return SSL_TLSEXT_ERR_OK;
     }
-}
 
-namespace {
     int verify_callback_cb(int preverify_ok, X509_STORE_CTX *st) {
         if (!preverify_ok) {
             const int name_sz = 256;
@@ -520,19 +513,19 @@ void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
             Config::config().logger().error("OpenSSL Error (chain): {}", ERR_reason_error_string(e));
         }
-        throw std::runtime_error("Couldn't load chain file: " + m_cert_chain_file);
+        throw pkix_identity_load_error("Couldn't load chain file: " + m_cert_chain_file);
     }
     if (SSL_CTX_use_PrivateKey_file(ssl_ctx, m_pkey_file.c_str(), SSL_FILETYPE_PEM) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
             Config::config().logger().error("OpenSSL Error (pkey): {}", ERR_reason_error_string(e));
         }
-        throw std::runtime_error("Couldn't load keyfile: " + m_pkey_file);
+        throw pkix_identity_load_error("Couldn't load keyfile: " + m_pkey_file);
     }
     if (SSL_CTX_check_private_key(ssl_ctx) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
             Config::config().logger().error("OpenSSL Error (check): {}", ERR_reason_error_string(e));
         }
-        throw std::runtime_error("Private key mismatch");
+        throw pkix_config_error("Private key mismatch");
     }
 }
 
@@ -545,24 +538,23 @@ void TLSContext::add_identity(std::unique_ptr<PKIXIdentity> &&identity) {
 }
 
 void PKIXValidator::load() {
-    if (m_trust_anchors.size() != m_trust_blobs.size()) {
-        for (auto const & filename : m_trust_anchors) {
-            std::ifstream in(filename);
-            std::string value;
-            value.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-            if (value.starts_with("-----BEGIN")) {
-                struct raii {
-                    BIO * b;
-                    ~raii() { BIO_free(b);}
-                } bio = {BIO_new_mem_buf(value.data(), static_cast<int>(value.size()))};
-                auto cert = PEM_read_bio_X509(bio.b, nullptr, nullptr, nullptr);
-                if (!cert) throw std::runtime_error("Invalid PEM certificate");
-                m_trust_blobs.push_back(cert);
-            } else {
-                auto * cert = d2i_X509(nullptr, reinterpret_cast<const unsigned char **>(value.data()), value.size());
-                if (!cert) throw std::runtime_error("Invalid DER certificate");
-                m_trust_blobs.push_back(cert);
-            }
+    if (m_trust_anchors.size() == m_trust_blobs.size()) {
+        return;
+    }
+    for (auto const & filename : m_trust_anchors) {
+        std::ifstream in(filename);
+        std::string value;
+        value.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        if (value.starts_with("-----BEGIN")) {
+            std::unique_ptr<BIO,decltype(&BIO_free)> bio{BIO_new_mem_buf(value.data(), static_cast<int>(value.size())), &BIO_free};
+            auto cert = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
+            if (!cert) throw pkix_config_error("Invalid PEM certificate");
+            m_trust_blobs.push_back(cert);
+        } else {
+            const unsigned char * ptr = reinterpret_cast<unsigned char *>(value.data());
+            auto * cert = d2i_X509(nullptr, &ptr, value.size());
+            if (!cert) throw pkix_config_error("Invalid DER certificate");
+            m_trust_blobs.push_back(cert);
         }
     }
 }
