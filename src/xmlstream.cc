@@ -86,7 +86,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
     }
     (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
     size_t spaces = 0;
-    for (unsigned char *sp{p}; len != 0; ++sp, --len, ++spaces) {
+    for (const unsigned char *sp{p}; len != 0; ++sp, --len, ++spaces) {
         switch (*sp) {
             default:
                 break;
@@ -385,15 +385,8 @@ sigslot::tasklet<bool> XMLStream::send_stream_open(std::shared_ptr<sentry::trans
                 throw host_unknown("Cannot authenticate host");
             }
         }
-        std::string stream_buf;
-        stream_buf = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='";
-        stream_buf += content_namespace();
-        stream_buf += "' to='";
-        stream_buf += m_stream_local;
-        stream_buf += "' from='";
-        stream_buf += m_stream_remote;
-        stream_buf += "'>";
-        process(reinterpret_cast<unsigned char *>(const_cast<char *>(stream_buf.data())), stream_buf.size());
+        std::string stream_buf = fmt::format("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='{}' to='{}' from='{}'>", content_namespace(), m_stream_local, m_stream_remote);
+        process(reinterpret_cast<unsigned char *>(stream_buf.data()), stream_buf.size());
         set_auth_ready();
     } else {
         /*

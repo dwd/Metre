@@ -412,6 +412,7 @@ SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
             int keylen = std::stoi(m_dhparam);
             evp = get_builtin_dh(keylen);
         } catch (std::invalid_argument &) {
+            m_log.debug("Assuming dhparam: '{}' is a filename", m_dhparam);
             // Pass
         }
         if (!evp) {
@@ -436,8 +437,7 @@ namespace {
         SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
         SSL_CTX  * new_ctx = nullptr;
         std::string domain_name = Jid(servername).domain();
-        auto const & domain = Config::config().domain(domain_name);
-        if (domain.tls_enabled()) {
+        if (auto const & domain = Config::config().domain(domain_name); domain.tls_enabled()) {
             auto &tls_context = domain.tls_context();
             new_ctx = tls_context.context();
         }

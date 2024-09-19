@@ -10,13 +10,17 @@
 #include <event2/http.h>
 
 namespace {
-    bool healthcheck_response = false;
+    struct callback_arg {
+        struct event_base * base;
+        bool healthcheck_response;
+    };
 
     void request_callback(struct evhttp_request *req, void *arg) {
+        auto * cb = static_cast<callback_arg *>(arg);
         if (req) {
             int response_code = evhttp_request_get_response_code(req);
             if (response_code == HTTP_OK) {
-                healthcheck_response = true;
+                cb->healthcheck_response = true;
                 std::cerr << "Healthcheck is happy bunny" << std::endl;
             } else {
                 std::cerr << "Healthcheck failure, status code " << response_code << std::endl;
@@ -24,7 +28,7 @@ namespace {
         } else {
             std::cerr << "Healthcheck received no response." << std::endl;
         }
-        event_base_loopbreak((struct event_base *) arg);
+        event_base_loopbreak(cb->base);
     }
 }
 
@@ -41,7 +45,8 @@ bool Metre::Config::run_healthcheck(unsigned short port, bool tls) {
     } else {
         conn = evhttp_connection_base_new(base, nullptr, "127.0.0.1", port);
     }
-    struct evhttp_request* req = evhttp_request_new(request_callback, base);
+    struct callback_arg cb = {base, false};
+    struct evhttp_request* req = evhttp_request_new(request_callback, &cb);
 
     // Set the request path (e.g., "/api/status")
     evhttp_make_request(conn, req, EVHTTP_REQ_GET, "/api/status");
@@ -51,5 +56,5 @@ bool Metre::Config::run_healthcheck(unsigned short port, bool tls) {
     evhttp_connection_free(conn);
     event_base_free(base);
 
-    return healthcheck_response;
+    return cb.healthcheck_response;
 }

@@ -35,7 +35,7 @@ SOFTWARE.
 
 
 namespace Metre {
-    sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span>, XMLStream &stream, Route &route);
+    sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span>, XMLStream &stream, Route const &route);
 
     bool start_tls(XMLStream &stream, bool send_proceed);
 

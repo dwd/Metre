@@ -54,15 +54,10 @@ SOFTWARE.
 
 #include "log.h"
 #include "sockaddr-cast.h"
-#include <rapidxml_print.hpp>
 #include <http.h>
 #include <iomanip>
-#if defined(HAVE_ICU) || defined(HAVE_ICU2)
-#include <unicode/uidna.h>
-#endif
 #include <filter.h>
 #include <cstring>
-#include <unbound-event.h>
 #include <yaml-cpp/yaml.h>
 
 using namespace Metre;
@@ -122,7 +117,7 @@ namespace {
             tls_required = tls_sec.as<bool>(tls_required);
             xmpp_ver = domain["transport"]["xmpp_ver"].as<bool>(xmpp_ver);
             if (domain["transport"]["prefer"]) {
-                std::string tls_pref_str = domain["transport"]["prefer"].as<std::string>();
+                auto tls_pref_str = domain["transport"]["prefer"].as<std::string>();
                 if (tls_pref_str == "immediate" || tls_pref_str == "direct") {
                     tls_preference = TLS_PREFERENCE::PREFER_IMMEDIATE;
                 } else if (tls_pref_str == "starttls") {
@@ -184,7 +179,7 @@ namespace {
             for (auto hostt : dnst["host"]) {
                 auto hosta = hostt["name"];
                 if (!hosta) throw std::runtime_error("Missing name in host DNS override");
-                std::string host = hosta.as<std::string>();
+                auto host = hosta.as<std::string>();
                 auto aa = hostt["a"];
                 if (!aa) throw std::runtime_error("Missing a in host DNS override");
                 struct in_addr ina;
@@ -196,17 +191,17 @@ namespace {
             for (auto srvt : dnst["srv"]) {
                 auto hosta = srvt["host"];
                 if (!hosta) throw std::runtime_error("Missing host in SRV DNS override");
-                std::string host = hosta.as<std::string>();
+                auto host = hosta.as<std::string>();
                 auto tls = srvt["tls"].as<bool>(false);
-                unsigned short port = srvt["port"].as<unsigned short>(tls ? 5270 : 5269);
-                unsigned short weight = srvt["weight"].as<unsigned short>(0);
-                unsigned short prio = srvt["priority"].as<unsigned short>(0);
+                auto port = srvt["port"].as<unsigned short>(tls ? 5270 : 5269);
+                auto weight = srvt["weight"].as<unsigned short>(0);
+                auto prio = srvt["priority"].as<unsigned short>(0);
                 dom->srv(host, prio, weight, port, tls);
             }
             for (auto tlsa : dnst["tlsa"]) {
                 auto hosta = tlsa["hostname"];
                 if (!hosta) throw std::runtime_error("Missing hostname in TLSA DNS override");
-                std::string host = hosta.as<std::string>();
+                auto host = hosta.as<std::string>();
                 auto port = tlsa["port"].as<unsigned short>(5269);
                 auto certusagea = tlsa["certusage"];
                 if (!certusagea) throw std::runtime_error("Missing certusage in TLSA DNS override");
@@ -411,8 +406,8 @@ void Config::load(std::string const &filename, bool lite) {
         auto const & any_node = external["any"] ? external["any"] : block;
         // This will 'parse' a non-existent domain if any isn't explicitly set, but that's OK.
         std::unique_ptr<Config::Domain> any_dom = parse_domain(nullptr, "any", any_node, true);
-        any_domain = any_dom.get(); // Save this pointer.
         m_domains[any_dom->domain()] = std::move(any_dom);
+        any_domain = m_domains[""].get();
         for (auto const & item : external) {
             auto name = item.first.as<std::string>();
             if (name == "any") {
