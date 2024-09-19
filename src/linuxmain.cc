@@ -312,7 +312,10 @@ int main(int argc, char *argv[]) {
             pidfile << child << std::endl;
             return 0;
         }
-        chdir(config->runtime_dir().c_str());
+        if (0 > chdir(config->runtime_dir().c_str())) {
+            METRE_LOG(Metre::Log::CRIT, "chdir() failed with " << strerror(errno));
+            exit(1);
+        }
         signal(SIGPIPE, SIG_IGN);
         signal(SIGHUP, hup_handler);
         signal(SIGTERM, term_handler);

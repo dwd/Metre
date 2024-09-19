@@ -69,30 +69,6 @@ using namespace Metre;
 using namespace rapidxml;
 
 namespace {
-    int yaml_to_tls(YAML::Node const & tls_version_node) {
-        auto version_string = tls_version_node.as<std::string>();
-        int version = 0;
-        std::ranges::transform(version_string, version_string.begin(), [](unsigned char c) {
-            return static_cast<unsigned char>(std::tolower(c));
-        });
-        std::erase(version_string, 'v');
-        std::erase(version_string, '.');
-        if (version_string == "ssl2") {
-            version = SSL2_VERSION;
-        } else if (version_string == "ssl3") {
-            version = SSL3_VERSION;
-        } else if (version_string == "tls1" || version_string == "tls10") {
-            version = TLS1_VERSION;
-        } else if (version_string == "tls11") {
-            version = TLS1_1_VERSION;
-        } else if (version_string == "tls12") {
-            version = TLS1_2_VERSION;
-        } else if (version_string == "tls13") {
-            version = TLS1_3_VERSION;
-        }
-        return version;
-    }
-
     std::unique_ptr<Config::Domain> parse_domain(Config::Domain const *any, std::string const & domain_name, YAML::Node const & domain, bool external) {
         std::string name;
         bool forward = !external;
@@ -104,16 +80,11 @@ namespace {
         bool auth_pkix = true;
         bool auth_dialback = !external;
         bool dnssec_required = false;
-        bool auth_pkix_crls = Config::config().fetch_pkix_status();
         bool auth_host = false;
         TLS_PREFERENCE tls_preference = TLS_PREFERENCE::PREFER_ANY;
         unsigned int stanza_timeout = 20;
         unsigned int connect_timeout = 10;
-        std::string dhparam = "auto";
-        std::string cipherlist = "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"; // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
         std::optional<std::string> auth_secret;
-        int min_tls_version = TLS1_2_VERSION;
-        int max_tls_version = 0;
         if (any) {
             auth_pkix = any->auth_pkix();
             auth_dialback = any->auth_dialback();
@@ -121,13 +92,8 @@ namespace {
             tls_preference = any->tls_preference();
             xmpp_ver = any->xmpp_ver();
             dnssec_required = any->dnssec_required();
-            dhparam = any->dhparam();
-            cipherlist = any->cipherlist();
-            auth_pkix_crls = any->auth_pkix_status();
             stanza_timeout = any->stanza_timeout();
             connect_timeout = any->connect_timeout();
-            min_tls_version = any->min_tls_version();
-            max_tls_version = any->max_tls_version();
         }
         if (domain_name == "any") {
             name = "";
@@ -170,10 +136,6 @@ namespace {
 
         if(domain["auth"]) {
             auth_pkix = domain["auth"]["pkix"].as<bool>(auth_pkix);
-            auth_pkix_crls = domain["auth"]["check-status"].as<bool>(auth_pkix_crls);
-            if (auth_pkix_crls && !Config::config().fetch_pkix_status()) {
-                throw std::runtime_error("Cannot check status without fetching status.");
-            }
             auth_dialback = domain["auth"]["dialback"].as<bool>(auth_dialback);
             if (domain["auth"]["secret"]) {
                 auth_secret = domain["auth"]["secret"].as<std::string>();
@@ -188,38 +150,24 @@ namespace {
         }
         auto dom = std::make_unique<Config::Domain>(name, sess, xmpp_ver, forward, tls_required, block, multiplex, auth_pkix, auth_dialback,
                                                     auth_host, std::move(auth_secret));
-        dom->auth_pkix_status(auth_pkix_crls);
         dom->stanza_timeout(stanza_timeout);
         dom->connect_timeout(connect_timeout);
         dom->tls_preference(tls_preference);
         if (auto tls = domain["tls"]; tls) {
+            if (tls["config"]) {
+                dom->tls_context(std::make_unique<TLSContext>(tls["config"], name));
+            } else {
+                dom->tls_context(std::make_unique<TLSContext>(tls, name));
+            }
             if (tls["x509"]) {
-                if (auto chain_a = tls["x509"]["chain"]; chain_a) {
-                    auto chain = chain_a.as<std::string>();
-                    auto pkey_a = tls["x509"]["pkey"];
-                    if (pkey_a) {
-                        auto pkey = pkey_a.as<std::string>();
-                        dom->x509(chain, pkey);
-                    } else {
-                        throw std::runtime_error("Missing pkey for x509");
-                    }
-                } else {
-                    throw std::runtime_error("Missing chain for x509");
-                }
+                dom->tls_context().add_identity(std::make_unique<PKIXIdentity>(tls["x509"]));
             }
-            dhparam = tls["dhparam"].as<std::string>(dhparam);
-            cipherlist = tls["ciphers"].as<std::string>(cipherlist);
-            if (tls["min_version"]) {
-                min_tls_version = yaml_to_tls(tls["min_version"]);
-            }
-            if (tls["max_version"]) {
-                max_tls_version = yaml_to_tls(tls["max_version"]);
+            dom->tls_context().enabled(); // Force everything to get instantiated here.
+            if (tls["validation"]) {
+                dom->pkix_validator(std::make_unique<PKIXValidator>(tls["validation"]));
+                dom->pkix_validator().load(); // Force loading here.
             }
         }
-        dom->dhparam(dhparam);
-        dom->cipherlist(cipherlist);
-        dom->min_tls_version(min_tls_version);
-        dom->max_tls_version(max_tls_version);
 
         if (auto dnst = domain["dns"]; dnst) {
             auto dnssec = dnst["dnssec_required"] ? dnst["dnssec_required"] : dnst["dnssec"];
@@ -310,19 +258,17 @@ Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, b
                        bool block, bool multiplex, bool auth_pkix, bool auth_dialback, bool auth_host,
                        std::optional<std::string> &&auth_secret)
         : m_domain(domain), m_type(transport_type), m_xmpp_ver(xmpp_ver), m_forward(forward), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
-          m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(std::move(auth_secret)) {
-    m_logger = Config::config().logger("domain <" + m_domain + ">");
-}
+          m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(std::move(auth_secret)),
+          m_logger(Config::config().logger("domain <{}>", m_domain)) {}
 
 Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
         : m_domain(domain), m_type(any.m_type), m_xmpp_ver(any.m_xmpp_ver), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
-          m_block(any.m_block), m_multiplex(any.m_multiplex), m_auth_pkix(any.m_auth_pkix), m_auth_crls(any.m_auth_crls),
+          m_block(any.m_block), m_multiplex(any.m_multiplex), m_auth_pkix(any.m_auth_pkix),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
-          m_tls_preference(any.m_tls_preference), m_min_tls_version(any.m_min_tls_version), m_max_tls_version(any.m_max_tls_version),
-          m_stanza_timeout(any.m_stanza_timeout), m_dhparam(any.m_dhparam), m_cipherlist(any.m_cipherlist), m_auth_secret(any.m_auth_secret),
-          m_parent(&any) {
-    m_logger = Config::config().logger("domain <" + m_domain + ">");
-}
+          m_tls_preference(any.m_tls_preference),
+          m_stanza_timeout(any.m_stanza_timeout), m_auth_secret(any.m_auth_secret),
+          m_parent(&any),
+          m_logger(Config::config().logger("domain <{}>", m_domain)) {}
 
 sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::span> span, FILTER_DIRECTION dir, Stanza &s) const {
     using enum FILTER_RESULT;
@@ -336,12 +282,7 @@ sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::s
 
 
 
-Config::Domain::~Domain() {
-    if (m_ssl_ctx) {
-        SSL_CTX_free(m_ssl_ctx);
-        m_ssl_ctx = nullptr;
-    }
-}
+Config::Domain::~Domain() = default;
 
 void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
     auto address = std::make_unique<DNS::Address>();
@@ -356,115 +297,6 @@ void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
     m_host_arecs[hostname] = std::move(address);
 }
 
-int Config::verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *st) {
-    if (!preverify_ok) {
-        const int name_sz = 256;
-        std::string cert_name;
-        cert_name.resize(name_sz);
-        X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
-                          cert_name.data(), name_sz);
-        cert_name.resize(cert_name.find('\0'));
-        Config::config().m_logger->info("Cert failed basic verification: {}", cert_name);
-        Config::config().m_logger->info("Error is {}", X509_verify_cert_error_string(X509_STORE_CTX_get_error(st)));
-    } else {
-        const int name_sz = 256;
-        std::string cert_name;
-        cert_name.resize(name_sz);
-        X509_NAME_oneline(X509_get_subject_name(X509_STORE_CTX_get_current_cert(st)),
-                          cert_name.data(), name_sz);
-        cert_name.resize(cert_name.find('\0'));
-        Config::config().m_logger->debug("Cert passed basic verification: {}", cert_name);
-        if (Config::config().m_fetch_crls) {
-            auto cert = X509_STORE_CTX_get_current_cert(st);
-            std::unique_ptr<STACK_OF(DIST_POINT),std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{(STACK_OF(DIST_POINT)*)X509_get_ext_d2i(cert, NID_crl_distribution_points, nullptr, nullptr),[](STACK_OF(DIST_POINT) * crldp){ sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
-            auto crldp = crldp_ptr.get();
-            if (crldp) {
-                for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-                    auto const *const dp = sk_DIST_POINT_value(crldp, i);
-                    if (dp->distpoint->type == 0) { // Full Name
-                        auto names = dp->distpoint->name.fullname;
-                        for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-                            auto const * const name = sk_GENERAL_NAME_value(names, ii);
-                            if (name->type == GEN_URI) {
-                                ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
-                                std::string uristr{reinterpret_cast<char *>(uri->data),
-                                                   static_cast<std::size_t>(uri->length)};
-                                Config::config().m_logger->info("Prefetching CRL for {} - {}", cert_name, uristr);
-                                Http::crl(uristr);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return 1;
-}
-
-namespace {
-    int ssl_servername_cb(SSL *ssl, int *, void *) {
-        const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-        if (!servername) return SSL_TLSEXT_ERR_OK;
-        SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
-        SSL_CTX *new_ctx = Config::config().domain(Jid(servername).domain()).ssl_ctx();
-        if (!new_ctx) new_ctx = Config::config().domain("").ssl_ctx();
-        if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
-        return SSL_TLSEXT_ERR_OK;
-    }
-}
-
-void Config::Domain::x509(std::string const &chain, std::string const &pkey) {
-    if (!openssl_init) {
-        SSL_library_init();
-        ERR_load_crypto_strings();
-        SSL_load_error_strings();
-        OpenSSL_add_all_algorithms();
-        if (RAND_poll() == 0) {
-            throw std::runtime_error("OpenSSL init failed");
-        }
-        openssl_init = true;
-    }
-    if (m_ssl_ctx) {
-        SSL_CTX_free(m_ssl_ctx);
-        m_ssl_ctx = nullptr;
-    }
-    m_ssl_ctx = SSL_CTX_new(TLS_method());
-    SSL_CTX_dane_enable(m_ssl_ctx);
-    SSL_CTX_dane_set_flags(m_ssl_ctx, DANE_FLAG_NO_DANE_EE_NAMECHECKS);
-    SSL_CTX_set_options(m_ssl_ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_ALL);
-    SSL_CTX_set_verify(m_ssl_ctx, SSL_VERIFY_PEER, Config::verify_callback_cb);
-    if (SSL_CTX_use_certificate_chain_file(m_ssl_ctx, chain.c_str()) != 1) {
-        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-            Config::config().logger().error("OpenSSL Error (chain): {}", ERR_reason_error_string(e));
-        }
-        throw std::runtime_error("Couldn't load chain file: " + chain);
-    }
-    if (SSL_CTX_use_PrivateKey_file(m_ssl_ctx, pkey.c_str(), SSL_FILETYPE_PEM) != 1) {
-        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-            Config::config().logger().error("OpenSSL Error (pkey): {}", ERR_reason_error_string(e));
-        }
-        throw std::runtime_error("Couldn't load keyfile: " + pkey);
-    }
-    if (SSL_CTX_check_private_key(m_ssl_ctx) != 1) {
-        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-            Config::config().logger().error("OpenSSL Error (check): {}", ERR_reason_error_string(e));
-        }
-        throw std::runtime_error("Private key mismatch");
-    }
-    SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
-//    if(SSL_CTX_set_default_verify_paths(m_ssl_ctx) == 0) {
-    if(SSL_CTX_load_verify_locations(m_ssl_ctx, nullptr, "/etc/ssl/certs") == 0) {
-        m_logger->warn("Loading default verify paths failed:");
-        for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
-            m_logger->error("OpenSSL Error (default_verify_paths): {}", ERR_reason_error_string(e));
-        }
-    }
-    SSL_CTX_set_tlsext_servername_callback(m_ssl_ctx, ssl_servername_cb);
-    std::string ctx = "Metre::" + m_domain;
-    SSL_CTX_set_session_id_context(m_ssl_ctx, reinterpret_cast<const unsigned char *>(ctx.c_str()),
-                                   static_cast<unsigned int>(ctx.size()));
-}
-
 Filter * Config::Domain::filter_by_name(const std::string &name) const {
     if (m_parent) return m_parent->filter_by_name(name);
     for (auto &f: m_filters) {
@@ -475,30 +307,17 @@ Filter * Config::Domain::filter_by_name(const std::string &name) const {
     return nullptr;
 }
 
-void Config::Domain::max_tls_version(int ver) {
-    m_max_tls_version = ver;
-}
-
-void Config::Domain::min_tls_version(int ver) {
-    m_min_tls_version = ver;
-}
-
-SSL_CTX *Config::Domain::ssl_ctx() const {
-    SSL_CTX *ctx = m_ssl_ctx;
-    if (!ctx) {
-        for (Domain const *d = this; d; d = d->m_parent) {
-            ctx = d->m_ssl_ctx;
-            if (ctx) break;
-        }
-    }
-    return ctx;
-}
-
-std::list<struct x509_st *> Config::Domain::pkix_tas() const {
-    return {};
-}
-
 Config::Config(std::string const &filename, bool lite) : m_dialback_secret(random_identifier()) {
+    if (!openssl_init) {
+        SSL_library_init();
+        ERR_load_crypto_strings();
+        SSL_load_error_strings();
+        OpenSSL_add_all_algorithms();
+        if (RAND_poll() == 0) {
+            throw std::runtime_error("OpenSSL init failed");
+        }
+        openssl_init = true;
+    }
     if (!lite) {
         s_config = this;
     }
@@ -659,26 +478,6 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
 }
 
 namespace {
-    const char * tls_version_to_string(int ver) {
-        switch (ver) {
-            case SSL2_VERSION:
-                return "SSLv2";
-            case SSL3_VERSION:
-                return "SSLv3";
-            case TLS1_VERSION:
-                return "TLSv1.0";
-            case TLS1_1_VERSION:
-                return "TLSv1.1";
-            case TLS1_2_VERSION:
-                return "TLSv1.2";
-            case TLS1_3_VERSION:
-                return "TLSv1.3";
-            default:
-                return nullptr;
-        }
-        return nullptr;
-    }
-
     YAML::Node domain_to_yaml(Config::Domain const &domain) {
         YAML::Node config;
         config["forward"] = domain.forward();
@@ -717,7 +516,6 @@ namespace {
         config["transport"]["xmpp_ver"] = domain.xmpp_ver();
         config["transport"]["connect-timeout"] = domain.connect_timeout();
         config["auth"]["pkix"] = domain.auth_pkix();
-        config["auth"]["check-status"] = domain.auth_pkix_status();
         config["auth"]["dialback"] = domain.auth_dialback();
         if (domain.auth_secret()) {
             config["auth"]["secret"] = *domain.auth_secret();
@@ -807,49 +605,8 @@ namespace {
             host["a"] = address_tostring(address->addr.data());
             config["dns"]["host"].push_back(host);
         }
-        {
-            SSL_CTX *ctx = domain.ssl_ctx();
-            if (!ctx && domain.parent()) {
-                ctx = domain.parent()->ssl_ctx();
-            }
-            if (ctx) {
-                std::string prefix;
-                if (domain.domain().empty()) {
-                    prefix = "any_";
-                } else {
-                    prefix = domain.domain() + "_";
-                    std::ranges::replace(prefix, '*', '_');
-                }
-                STACK_OF(X509) *chain = nullptr;
-                std::string chainfile = Config::config().data_dir() + "/" + prefix + "chain.pem";
-                if (SSL_CTX_get0_chain_certs(ctx, &chain) && chain) {
-                    FILE *fp = fopen(chainfile.c_str(), "w");
-                    for (int i = 0; i < sk_X509_num(chain); ++i) {
-                        auto const * const item = sk_X509_value(chain, i);
-                        PEM_write_X509(fp, item);
-                    }
-                    fclose(fp);
-                    config["tls"]["x509"]["chain"] = chainfile;
-                }
-                std::string keyfile = Config::config().data_dir() + "/" + prefix + "key.pem";
-                if (SSL_CTX_get0_privatekey(ctx)) {
-                    FILE *fp = fopen(keyfile.c_str(), "w");
-                    PEM_write_PKCS8PrivateKey(fp, SSL_CTX_get0_privatekey(ctx), nullptr, nullptr, 0,
-                                              nullptr,
-                                              nullptr);
-                    fclose(fp);
-                    config["tls"]["x509"]["pkey"] = keyfile;
-                }
-            }
-        }
-        config["tls"]["dhparam"] = domain.dhparam();
-        config["tls"]["ciphers"] = domain.cipherlist();
-        if (auto const * s = tls_version_to_string(domain.min_tls_version()); s) {
-            config["tls"]["min_version"] = s;
-        }
-        if (auto const * s = tls_version_to_string(domain.max_tls_version()); s) {
-            config["tls"]["max_version"] = s;
-        }
+        config["tls"]["config"] = domain.tls_context().write();
+        config["tls"]["validation"] = domain.pkix_validator().write();
 
         for (auto const &filter: domain.filters()) {
             config["filter-in"][filter->name()] = filter->dump_config();
@@ -943,7 +700,7 @@ void Config::log_init(bool systemd) {
     }
     m_root_logger->flush_on(spdlog::level::from_str(m_log_flush));
     m_root_logger->set_level(spdlog::level::from_str(m_log_level));
-    m_logger = logger("config");
+    m_logger = std::make_shared<spdlog::logger>(logger("config"));
 }
 
 void Config::create_domain(std::string const &dom) {
@@ -1010,14 +767,6 @@ Config const &Config::config() {
 void Config::dns_init() const {
     // Libunbound initialization.
     const_cast<Config *>(this)->m_ub_ctx = DNS::Utils::dns_init(m_dns_keys);
-}
-
-std::shared_ptr<spdlog::logger> Config::logger(std::string const & logger_name) const {
-    auto sinks = m_root_logger->sinks();
-    auto logger = std::make_shared<spdlog::logger>(logger_name, begin(sinks), end(sinks));
-    logger->flush_on(spdlog::level::from_str(m_log_flush));
-    logger->set_level(spdlog::level::from_str(m_log_level));
-    return logger;
 }
 
 /*
@@ -1089,8 +838,11 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
                     && rr.matchData.starts_with("-----BEGIN")) {
                     // Tempting to replace this with a base64_decode call, mind.
                     std::string tmp = rr.matchData;
-                    BIO * b = BIO_new_mem_buf(tmp.data(), static_cast<int>(tmp.size()));
-                    auto cert = PEM_read_bio_X509(b, nullptr, nullptr, nullptr);
+                    struct raii {
+                        BIO * b;
+                        ~raii() { BIO_free(b);}
+                    } bio = {BIO_new_mem_buf(tmp.data(), static_cast<int>(tmp.size()))};
+                    auto cert = PEM_read_bio_X509(bio.b, nullptr, nullptr, nullptr);
                     if (!cert) throw std::runtime_error("Invalid PEM certificate");
                     unsigned char * buf = nullptr;
                     auto len = i2d_X509(cert, &buf);
@@ -1107,9 +859,7 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
     tlsa->rrs.push_back(rr);
 }
 
-Config::Resolver::Resolver(Domain const &d) : Metre::DNS::Resolver(d.domain(), d.dnssec_required(), d.tls_preference()), m_domain(d) {
-    m_logger = Config::config().logger("Resolver <" + m_domain.domain() + ">");
-}
+Config::Resolver::Resolver(Domain const &d) : Metre::DNS::Resolver(d.domain(), d.dnssec_required(), d.tls_preference()), m_domain(d), m_logger(Config::config().logger("Resolver <{}>", m_domain.domain())) {}
 
 Config::Resolver::~Resolver() = default;
 
@@ -1259,7 +1009,7 @@ DNS::Resolver::addr_callback_t &Config::Resolver::AddressLookup(std::string cons
 DNS::Resolver::srv_callback_t &Config::Resolver::SrvLookup(std::string const &base_domain) {
     std::string domain = DNS::Utils::toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = DNS::Utils::toASCII("_xmpps-server._tcp." + base_domain + ".");
-    m_logger->debug("SRV lookup: domain=[{}]", base_domain);
+    m_logger.debug("SRV lookup: domain=[{}]", base_domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
         if (domain_override->srv_override()) {
             logger().debug("Found domain_override at {}", domain_override->domain());
@@ -1290,7 +1040,7 @@ DNS::Resolver::srv_callback_t &Config::Resolver::SrvLookup(std::string const &ba
 
 DNS::Resolver::svcb_callback_t &Config::Resolver::SvcbLookup(std::string const &base_domain) {
     std::string domain = DNS::Utils::toASCII("_xmpp-server." + base_domain + ".");
-    m_logger->debug("SVCB lookup: domain=[{}]", base_domain);
+    m_logger.debug("SVCB lookup: domain=[{}]", base_domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
         if (domain_override->svcb_override()) {
             logger().debug("Found domain_override at {}", domain_override->domain());

@@ -39,15 +39,8 @@ SOFTWARE.
 #include "spdlog/spdlog.h"
 #include "sigslot.h"
 #include "sentry-wrap.h"
+#include "pkix.h"
 #include <sigslot/tasklet.h>
-
-/**
- * OpenSSL forward declarations.
-*/
-
-struct ssl_ctx_st; // This is an SSL_CTX
-struct x509_store_ctx_st; // This is a X509_STORE_CTX
-struct x509_st;
 
 /**
  * Lib unbound.
@@ -76,36 +69,23 @@ namespace Metre {
 
             tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname) override;
 
-            spdlog::logger & logger() const {
-                return *m_logger;
+            spdlog::logger & logger() {
+                return m_logger;
             }
 
         private:
             Domain const &m_domain;
-            std::shared_ptr<spdlog::logger> m_logger;
-        };
-
-        class PKIXIdentity {
-        public:
-            PKIXIdentity() = delete;
-            PKIXIdentity(PKIXIdentity const &) = delete;
-            PKIXIdentity(std::string const & certfile, std::string const & pkeyfile); // Simple keypair.
-            void operator=(PKIXIdentity const &) = delete;
-        };
-
-        class PKIXContext {
-        public:
-            PKIXContext();
-
-            void add_identity(PKIXIdentity const &);
-
-            struct ssl_ctx_st * instantiate(std::string const & name);
+            spdlog::logger m_logger;
         };
 
         class Domain {
         public:
             [[nodiscard]] std::unique_ptr<::Metre::Config::Resolver> resolver() const {
                 return std::make_unique<Resolver>(*this);
+            }
+
+            [[nodiscard]] bool tls_enabled() const {
+                return tls_context().enabled();
             }
 
             [[nodiscard]] std::string const &domain() const {
@@ -134,14 +114,6 @@ namespace Metre {
 
             [[nodiscard]] bool auth_pkix() const {
                 return m_auth_pkix;
-            }
-
-            [[nodiscard]] bool auth_pkix_status() const {
-                return m_auth_crls;
-            }
-
-            bool auth_pkix_status(bool crls) {
-                return m_auth_crls = crls;
             }
 
             [[nodiscard]] bool auth_dialback() const {
@@ -186,31 +158,9 @@ namespace Metre {
                 return p;
             }
 
-            [[nodiscard]] std::string const &dhparam() const {
-                return m_dhparam;
-            }
-
-            std::string const &dhparam(std::string_view d) {
-                return m_dhparam = d;
-            }
-
-            [[nodiscard]] std::string const &cipherlist() const {
-                return m_cipherlist;
-            }
-
-            std::string const &cipherlist(std::string_view c) {
-                return m_cipherlist = c;
-            }
-
             [[nodiscard]] std::optional<std::string> const &auth_secret() const {
                 return m_auth_secret;
             }
-
-            [[nodiscard]] struct ssl_ctx_st *ssl_ctx() const;
-            [[nodiscard]] std::list<struct x509_st *> pkix_tas() const;
-
-            /* Loading functions */
-            void x509(std::string const &chain, std::string const &key);
 
             void host(std::string const &hostname, uint32_t inaddr);
 
@@ -231,6 +181,21 @@ namespace Metre {
             ~Domain();
 
             sigslot::tasklet<FILTER_RESULT> filter(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) const;
+            TLSContext & tls_context() const {
+                return *m_tls_context;
+            }
+            TLSContext & tls_context(std::unique_ptr<TLSContext> && tls_context) {
+                m_tls_context = std::move(tls_context);
+                return *m_tls_context;
+            }
+
+            PKIXValidator & pkix_validator() const {
+                return *m_pkix_validator;
+            }
+            PKIXValidator & pkix_validator(std::unique_ptr<PKIXValidator> && pkix_validator) {
+                m_pkix_validator = std::move(pkix_validator);
+                return *m_pkix_validator;
+            }
 
             std::list<std::unique_ptr<Filter>> &filters() {
                 return m_filters;
@@ -249,8 +214,8 @@ namespace Metre {
                 return m_auth_host;
             }
 
-            [[nodiscard]] spdlog::logger &logger() const {
-                return *m_logger;
+            [[nodiscard]] spdlog::logger const &logger() const {
+                return m_logger;
             }
 
             [[nodiscard]] Domain const *parent() const {
@@ -273,16 +238,6 @@ namespace Metre {
                 return m_svcbrec;
             }
 
-            [[nodiscard]] auto min_tls_version() const {
-                return m_min_tls_version;
-            }
-            void min_tls_version(int);
-
-            [[nodiscard]] auto max_tls_version() const {
-                return m_max_tls_version;
-            }
-            void max_tls_version(int);
-
             class GatheredData {
             public:
                 std::set<std::string, std::less<>> gathered_hosts; // verified possible hostnames.
@@ -296,7 +251,8 @@ namespace Metre {
             [[nodiscard]] sigslot::tasklet<void> gather_tlsa(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string, uint16_t) const;
 
         private:
-            std::shared_ptr<spdlog::logger> m_logger;
+            std::unique_ptr<TLSContext> m_tls_context;
+            std::unique_ptr<PKIXValidator> m_pkix_validator;
             std::string m_domain;
             SESSION_TYPE m_type;
             bool m_xmpp_ver;
@@ -305,19 +261,13 @@ namespace Metre {
             bool m_block = false;
             bool m_multiplex = true;
             bool m_auth_pkix = true;
-            bool m_auth_crls = true;
             bool m_auth_dialback = false;
             bool m_auth_host = false;
             bool m_dnssec_required = false;
             TLS_PREFERENCE m_tls_preference = TLS_PREFERENCE::PREFER_ANY;
-            int m_min_tls_version = 0;
-            int m_max_tls_version = 0;
             unsigned m_stanza_timeout = 20;
             unsigned m_connect_timeout = 10;
-            std::string m_dhparam;
-            std::string m_cipherlist;
             std::optional<std::string> m_auth_secret;
-            struct ssl_ctx_st *m_ssl_ctx = nullptr;
             // DNS Overrides:
             std::map<std::string, std::unique_ptr<DNS::Address>, std::less<>> m_host_arecs;
             std::unique_ptr<DNS::Srv> m_srvrec;
@@ -326,6 +276,7 @@ namespace Metre {
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;
             Domain const *m_parent = nullptr;
+            spdlog::logger m_logger;
         };
 
         explicit Config(std::string const &filename, bool lite=false);
@@ -407,7 +358,15 @@ namespace Metre {
             return *m_root_logger;
         }
 
-        [[nodiscard]] std::shared_ptr<spdlog::logger> logger(std::string const &) const;
+        template<typename ...Args>
+        [[nodiscard]] spdlog::logger constexpr logger(fmt::format_string<Args...> fmt_str, Args... args) const {
+            std::string logger_name = fmt::vformat(fmt_str, fmt::make_format_args(args...));
+            auto const & sinks = m_root_logger->sinks();
+            spdlog::logger logger{logger_name, begin(sinks), end(sinks)};
+            logger.flush_on(spdlog::level::from_str(m_log_flush));
+            logger.set_level(spdlog::level::from_str(m_log_level));
+            return logger;
+        }
 
         [[nodiscard]] std::string const &database() const {
             return m_database;

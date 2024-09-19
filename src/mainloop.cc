@@ -127,13 +127,13 @@ namespace Metre {
         bool m_shutdown = false;
         bool m_shutdown_now = false;
         std::recursive_mutex m_scheduler_mutex;
-        std::shared_ptr<spdlog::logger> m_logger;
+        spdlog::logger m_logger;
         std::list<sigslot::tasklet<void>> m_coroutines;
     public:
         std::set<std::coroutine_handle<>> coro_handles;
         static Mainloop *s_mainloop;
 
-        Mainloop() {
+        Mainloop():  m_logger("mainloop") {
             s_mainloop = this;
         }
 
@@ -169,7 +169,7 @@ namespace Metre {
             auto headers = evhttp_request_get_input_headers(req);
             auto trace = evhttp_find_header(headers, "sentry-trace");
             if (trace) {
-                s_mainloop->m_logger->trace("Found sentry-trace header, injecting {}", trace);
+                s_mainloop->m_logger.trace("Found sentry-trace header, injecting {}", trace);
             }
             auto trans = std::make_shared<sentry::transaction>("http.server", transaction_name.str(), trace ? trace : std::optional<std::string>{});
             s_mainloop->m_coroutines.push_back(s_mainloop->healthcheck(trans, req));
@@ -258,15 +258,15 @@ namespace Metre {
                                                         LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, -1,
                                                         listen.sockaddr(), sizeof(struct sockaddr_storage));
                 if (!listener) {
-                    m_logger->critical("Cannot bind to {} service port: {}", listen.name, strerror(errno));
+                    m_logger.critical("Cannot bind to {} service port: {}", listen.name, strerror(errno));
                     continue;
                 }
                 m_listeners.push_back(listener);
-                m_logger->info("Listening to {}", listen.name);
+                m_logger.info("Listening to {}", listen.name);
             }
             auto port = Config::config().healthcheck_port();
             auto address = Config::config().healthcheck_address();
-            m_logger->info("Starting healthcheck service on {}:{}", address, port);
+            m_logger.info("Starting healthcheck service on {}:{}", address, port);
             m_healthcheck_server = evhttp_new(m_event_base);
             evhttp_bind_socket(m_healthcheck_server, address, port);
             evhttp_set_gencb(m_healthcheck_server, healthcheck_cb, nullptr);
@@ -355,10 +355,10 @@ namespace Metre {
             auto session = std::make_shared<NetSession>(std::atomic_fetch_add(&s_serial, 1ULL), bev, listen);
             if (m_sessions.contains(session->serial())) {
                 // We already have one for this socket. This seems unlikely to be safe.
-                m_logger->critical("Session already in ownership table; corruption.");
+                m_logger.critical("Session already in ownership table; corruption.");
                 assert(false);
             }
-            m_logger->info("New session on {} port from {}", listen->name, address_tostring(sin));
+            m_logger.info("New session on {} port from {}", listen->name, address_tostring(sin));
             m_sessions[session->serial()] = session;
             session->onClosed.connect(this, &Mainloop::session_closed);
         }
@@ -373,7 +373,7 @@ namespace Metre {
                 auto * sin6 = sockaddr_cast<AF_INET6>(addr);
                 sin6->sin6_port = htons(port);
             }
-            m_logger->debug("Connecting to {}:{}", address_tostring(addr), port);
+            m_logger.debug("Connecting to {}:{}", address_tostring(addr), port);
             auto sesh = connect(fromd, tod, hostname, addr,
                                 sizeof(struct sockaddr_storage), port, stype, tls_mode);
             m_sessions_by_address[std::make_pair(hostname, port)] = sesh;
@@ -389,16 +389,16 @@ namespace Metre {
                 size_t addrlen, unsigned short, SESSION_TYPE stype, TLS_MODE tls_mode) {
             struct bufferevent *bev = bufferevent_socket_new(m_event_base, -1, BEV_OPT_CLOSE_ON_FREE);
             if (!bev) {
-                m_logger->critical("Error creating BEV");
+                m_logger.critical("Error creating BEV");
                 throw std::runtime_error("Connection failed: cannot create BEV");
             }
             if (0 > bufferevent_socket_connect(bev, sin, static_cast<int>(addrlen))) {
-                m_logger->error("Error connecting BEV");
+                m_logger.error("Error connecting BEV");
                 // TODO Something bad happened.
                 bufferevent_free(bev);
                 throw std::runtime_error("Connection failed: Socket connect failed");
             }
-            m_logger->debug("BEV fd is {}", bufferevent_getfd(bev));
+            m_logger.debug("BEV fd is {}", bufferevent_getfd(bev));
             struct timeval tv = {0, 0};
             tv.tv_sec = Config::config().domain(tod).connect_timeout();
             bufferevent_set_timeouts(bev, nullptr, &tv);
@@ -406,7 +406,7 @@ namespace Metre {
                                                         tls_mode);
             if (m_sessions.contains(session->serial())) {
                 // We already have one for this socket. This seems unlikely to be safe.
-                m_logger->critical("Session already in ownership table; corruption.");
+                m_logger.critical("Session already in ownership table; corruption.");
                 assert(false);
             }
             m_sessions[session->serial()] = session;
@@ -439,13 +439,13 @@ namespace Metre {
             dns_setup();
             while (true) {
                 if (m_shutdown) {
-                    m_logger->info("Shutting down; closing listeners");
+                    m_logger.info("Shutting down; closing listeners");
                     for (auto listener : m_listeners) {
                         evconnlistener_disable(listener);
                         evconnlistener_free(listener);
                     }
                     m_listeners.clear();
-                    m_logger->info("Closing {} sessions", m_sessions.size());
+                    m_logger.info("Closing {} sessions", m_sessions.size());
                     for (auto const & [serial, session] : m_sessions) {
                         session->send(
                                 "<stream:error><system-shutdown xmlns='urn:ietf:params:xml:ns:xmpp-streams'/></stream:error></stream:close>");
@@ -453,7 +453,7 @@ namespace Metre {
                     }
                     m_shutdown_now = true;
                     event_base_loopexit(m_event_base, nullptr);
-                    m_logger->info("Closed all sessions");
+                    m_logger.info("Closed all sessions");
                 } else {
                     std::scoped_lock l_(m_scheduler_mutex);
                     if (!m_pending_actions.empty()) {
@@ -550,7 +550,7 @@ namespace Metre {
         }
 
         void session_closed(NetSession &ns) {
-            m_logger->debug("NS{} - Session closed.", ns.serial());
+            m_logger.debug("NS{} - Session closed.", ns.serial());
             if (auto it = m_sessions.find(ns.serial()); it != m_sessions.end()) {
                 m_closed_sessions.push_back((*it).second);
                 event_base_loopexit(m_event_base, nullptr);

@@ -27,6 +27,7 @@ SOFTWARE.
 #define METRE_DNS_H
 
 #include "defs.h"
+#include "fmt-enum.h"
 #include "sigslot.h"
 #include <sstream>
 #include <string>
@@ -235,57 +236,22 @@ namespace Metre::DNS {
     };
 }
 
+METRE_ENUM_FORMATTER(Metre::DNS::TlsaRR::CertUsage,
+                     METRE_ENUM_ENTRY_TXT(CertConstraint, "CertConstraint (PKIX-EE)")
+                     METRE_ENUM_ENTRY_TXT(CAConstraint, "CAConstraint (PKIX-CA)")
+                     METRE_ENUM_ENTRY_TXT(DomainCert, "DomainCert (DANE-EE)")
+                     METRE_ENUM_ENTRY_TXT(TrustAnchorAssertion, "TrustAnchorAssertion (DANE-TA)")
+ );
 
-template <>
-struct fmt::formatter<Metre::DNS::TlsaRR::CertUsage> : fmt::formatter<std::string> {
-    auto format(const Metre::DNS::TlsaRR::CertUsage c, fmt::format_context& ctx) const {
-        switch (c) {
-            using enum Metre::DNS::TlsaRR::CertUsage;
-            case CertConstraint:
-                return fmt::formatter<std::string>::format("CertConstraint (PKIX-EE)", ctx);
-            case CAConstraint:
-                return fmt::formatter<std::string>::format("CAConstraint (PKIX-CA)", ctx);
-            case DomainCert:
-                return fmt::formatter<std::string>::format("DomainCert (DANE-EE)", ctx);
-            case TrustAnchorAssertion:
-                return fmt::formatter<std::string>::format("TrustAnchorAssertion (DANE-TA)", ctx);
-            default:
-                return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
-        }
-    }
-};
+METRE_ENUM_FORMATTER(Metre::DNS::TlsaRR::Selector,
+                     METRE_ENUM_ENTRY(SubjectPublicKeyInfo)
+                     METRE_ENUM_ENTRY(FullCert)
+);
 
-template <>
-struct fmt::formatter<Metre::DNS::TlsaRR::Selector> : fmt::formatter<std::string> {
-    auto format(const Metre::DNS::TlsaRR::Selector c, fmt::format_context& ctx) const {
-        switch (c) {
-            using enum Metre::DNS::TlsaRR::Selector;
-            case SubjectPublicKeyInfo:
-                return fmt::formatter<std::string>::format("SubjectPublicKeyInfo", ctx);
-            case FullCert:
-                return fmt::formatter<std::string>::format("FullCert", ctx);
-            default:
-                return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
-        }
-    }
-};
-
-template <>
-struct fmt::formatter<Metre::DNS::TlsaRR::MatchType> : fmt::formatter<std::string> {
-    auto format(const Metre::DNS::TlsaRR::MatchType c, fmt::format_context& ctx) const {
-        switch (c) {
-            using enum Metre::DNS::TlsaRR::MatchType;
-            case Sha256:
-                return fmt::formatter<std::string>::format("SHA-256", ctx);
-            case Sha512:
-                return fmt::formatter<std::string>::format("SHA-512", ctx);
-            case Full:
-                return fmt::formatter<std::string>::format("Full", ctx);
-            default:
-                return fmt::formatter<std::string>::format("[Unknown enum value]", ctx);
-        }
-    }
-};
-
+METRE_ENUM_FORMATTER(Metre::DNS::TlsaRR::MatchType,
+                     METRE_ENUM_ENTRY_TXT(Sha256, "SHA-256")
+                     METRE_ENUM_ENTRY_TXT(Sha512, "SHA-512")
+                     METRE_ENUM_ENTRY(Full)
+);
 
 #endif

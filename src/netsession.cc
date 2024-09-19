@@ -27,7 +27,7 @@ SOFTWARE.
 #include "xmlstream.h"
 #include "router.h"
 #include "log.h"
-#include "tls.h"
+#include "pkix.h"
 
 #include "rapidxml_print.hpp"
 
@@ -40,7 +40,8 @@ using namespace Metre;
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Config::Listener const *listen)
         : m_serial(serial), m_bev(nullptr),
-          m_xml_stream(std::make_unique<XMLStream>(this, SESSION_DIRECTION::INBOUND, listen->session_type)) {
+          m_xml_stream(std::make_unique<XMLStream>(this, SESSION_DIRECTION::INBOUND, listen->session_type)),
+          m_logger(Config::config().logger("NetSession serial={} IN type=[{}] from=[{}] to=[{}]", serial, listen->name, m_xml_stream->local_domain(), m_xml_stream->remote_domain())) {
     bufferevent(bev);
     if (listen->session_type == SESSION_TYPE::X2X) {
         m_xml_stream->remote_domain(listen->remote_domain);
@@ -60,24 +61,19 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
                               stream_buf.size());
         m_xml_stream->set_auth_ready();
     }
-    std::ostringstream ss;
-    ss << "NetSession serial=[" << serial << "] IN type=[" << listen->name << "] from=[" << m_xml_stream->local_domain() << "] to=[" << m_xml_stream->remote_domain() << "]";
-    m_logger = Config::config().logger(ss.str());
-    m_logger->info("New INBOUND");
+    m_logger.info("New INBOUND");
 }
 
 NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, std::string const &stream_from,
                        std::string const &stream_to, SESSION_TYPE stype, TLS_MODE tls_mode)
         : m_serial(serial), m_bev(nullptr),
-          m_xml_stream(std::make_unique<XMLStream>(this, SESSION_DIRECTION::OUTBOUND, stype, stream_from, stream_to)) {
+          m_xml_stream(std::make_unique<XMLStream>(this, SESSION_DIRECTION::OUTBOUND, stype, stream_from, stream_to)),
+          m_logger(Config::config().logger("NetSession serial={} OUT from=[{}] to=[{}]", serial, m_xml_stream->local_domain(), m_xml_stream->remote_domain())) {
     bufferevent(bev);
     if (tls_mode == TLS_MODE::IMMEDIATE) {
         start_tls(*m_xml_stream, false);
     }
-    std::ostringstream ss;
-    ss << "NetSession serial=" << serial << " OUT from=" << m_xml_stream->local_domain() << " to=" << m_xml_stream->remote_domain();
-    m_logger = Config::config().logger(ss.str());
-    m_logger->info("New OUTBOUND");
+    m_logger.info("New OUTBOUND");
 }
 
 void NetSession::bufferevent(struct bufferevent *bev) {
@@ -109,7 +105,7 @@ namespace {
 }
 
 bool NetSession::drain() {
-    m_logger->trace("Drain");
+    m_logger.trace("Drain");
     if (m_in_progress) return false;
     auto latch = std::make_unique<Latch>(m_in_progress);
     // While there is data, see how much we can consume with the XMLStream.
@@ -132,7 +128,7 @@ bool NetSession::drain() {
             m_xml_stream->process(evbuffer_pullup(buf, -1), len);
         } else {
             if (len > 0)
-                m_logger->warn("Stuff left after close: {}", len);
+                m_logger.warn("Stuff left after close: {}", len);
             return true;
         }
     }
@@ -157,7 +153,7 @@ void NetSession::send(rapidxml::xml_node<> &d) {
     if (!buf) {
         return;
     }
-    m_logger->debug("Send: {}", tmp);
+    m_logger.debug("Send: {}", tmp);
     evbuffer_add(buf, tmp.data(),
                  tmp.length()); // Crappy and inefficient; we want to generate a char *, write directly to it, and dump it into an iovec.
 }
@@ -167,7 +163,7 @@ void NetSession::send(std::string const &s) {
         return;
     }
     struct evbuffer *buf = bufferevent_get_output(m_bev);
-    m_logger->debug("Send string {}", s);
+    m_logger.debug("Send string {}", s);
     if (!buf) {
         return;
     }
@@ -181,9 +177,9 @@ void NetSession::send(const char *p) {
 }
 
 void NetSession::read() {
-    m_logger->trace("Read");
+    m_logger.trace("Read");
     if (drain()) {
-        m_logger->debug("Closing during read");
+        m_logger.debug("Closing during read");
         onClosed.emit(*this);
     }
 }
@@ -194,7 +190,7 @@ void NetSession::read_cb(struct bufferevent *, void *arg) {
 }
 
 void NetSession::bev_closed() {
-    m_logger->trace("BEV closed");
+    m_logger.trace("BEV closed");
     // TODO : I had this here, but I think it's useless. It causes a nasty wait-free loop, though.
     /*if (m_xml_stream->frozen()) {
         Router::defer([this]() {
@@ -206,7 +202,7 @@ void NetSession::bev_closed() {
 }
 
 void NetSession::bev_connected() {
-    m_logger->trace("BEV connected");
+    m_logger.trace("BEV connected");
     onConnected.emit(*this);
     if (m_xml_stream->direction() == SESSION_DIRECTION::OUTBOUND) {
         m_xml_stream->restart();
@@ -218,22 +214,22 @@ void NetSession::bev_connected() {
 
 void NetSession::event_cb(struct bufferevent *b, short events, void *arg) {
     NetSession &ns = *reinterpret_cast<NetSession *>(arg);
-    ns.m_logger->trace("Event callback");
+    ns.m_logger.trace("Event callback");
     if (b != ns.m_bev) {
-        ns.m_logger->debug("No, my BEV");
+        ns.m_logger.debug("No, my BEV");
         return;
     }
     if (events & BEV_EVENT_EOF) {
-        ns.m_logger->debug("BEV EOF");
+        ns.m_logger.debug("BEV EOF");
         ns.bev_closed();
     } else if (events & BEV_EVENT_TIMEOUT) {
-        ns.m_logger->info("Timed out, closing");
+        ns.m_logger.info("Timed out, closing");
         ns.bev_closed();
     } else if (events & BEV_EVENT_ERROR) {
-        ns.m_logger->info("BEV Error {}: {}", events, strerror(EVUTIL_SOCKET_ERROR()));
+        ns.m_logger.info("BEV Error {}: {}", events, strerror(EVUTIL_SOCKET_ERROR()));
         while (unsigned long ssl_err = bufferevent_get_openssl_error(b)) {
             char buf[1024];
-            ns.m_logger->info("OpenSSL: {}", ERR_error_string(ssl_err, buf));
+            ns.m_logger.info("OpenSSL: {}", ERR_error_string(ssl_err, buf));
         }
         ns.bev_closed();
     } else if (events & BEV_EVENT_CONNECTED) {
@@ -248,7 +244,7 @@ void NetSession::close() {
         });
         return;
     }*/
-    m_logger->trace("Close");
+    m_logger.trace("Close");
     if (!m_bev) {
         return;
     }
