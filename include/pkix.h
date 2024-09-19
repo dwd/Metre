@@ -85,6 +85,7 @@ namespace Metre {
         YAML::Node write() const;
 
     private:
+        bool m_enabled = true;
         std::string m_domain;
         std::string m_dhparam;
         std::string m_cipherlist;

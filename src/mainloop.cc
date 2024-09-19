@@ -45,6 +45,7 @@ SOFTWARE.
 #include <cerrno>
 #include <cstring>
 #include <atomic>
+#include <event2/bufferevent_ssl.h>
 #include "sigslot.h"
 #include "config.h"
 #include "log.h"
@@ -133,7 +134,7 @@ namespace Metre {
         std::set<std::coroutine_handle<>> coro_handles;
         static Mainloop *s_mainloop;
 
-        Mainloop():  m_logger("mainloop") {
+        Mainloop():  m_logger(Config::config().logger("mainloop")) {
             s_mainloop = this;
         }
 
@@ -144,6 +145,16 @@ namespace Metre {
             }
             if (m_event_base) {
                 event_base_free(m_event_base);
+            }
+        }
+
+        static struct bufferevent * healthcheck_tls_cb(struct event_base * base, void *) {
+            auto & tls_context = Config::config().healthcheck_tls();
+            if (tls_context.enabled()) {
+                return bufferevent_openssl_socket_new(base, -1, tls_context.instantiate(false, "healthcheck"), BUFFEREVENT_SSL_ACCEPTING,
+                                                      BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
+            } else {
+                return bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE | BEV_OPT_DEFER_CALLBACKS);
             }
         }
 
@@ -250,7 +261,6 @@ namespace Metre {
             }
             evthread_use_pthreads();
             m_event_base = event_base_new();
-            m_logger = Config::config().logger("loop");
             bool ok = true;
             for (auto &listen : Config::config().listeners()) {
                 auto listener = evconnlistener_new_bind(m_event_base, new_session_cb,
@@ -269,6 +279,7 @@ namespace Metre {
             m_logger.info("Starting healthcheck service on {}:{}", address, port);
             m_healthcheck_server = evhttp_new(m_event_base);
             evhttp_bind_socket(m_healthcheck_server, address, port);
+            evhttp_set_bevcb(m_healthcheck_server, healthcheck_tls_cb, nullptr);
             evhttp_set_gencb(m_healthcheck_server, healthcheck_cb, nullptr);
             return ok;
         }
@@ -618,14 +629,17 @@ namespace Metre {
         void run(std::function<bool()> const &check_fn) {
             Metre::Mainloop loop;
             auto & logger = Config::config().logger();
+            logger.info("Loop initialization");
             if (!loop.init()) {
                 logger.critical("Loop initialization failure");
                 return;
             }
+            logger.info("Early Defer");
             for (auto [fn, seconds] : early_defer) {
                 loop.do_later(std::move(fn), seconds);
             }
             early_defer.clear();
+            logger.info("Main loop run");
             loop.run(check_fn);
             logger.info("Shutdown complete");
         }

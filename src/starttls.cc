@@ -208,6 +208,7 @@ namespace Metre {
     }
 
     bool start_tls(XMLStream &stream, bool send_proceed) {
+        if (!Config::config().domain(stream.local_domain()).tls_enabled()) return false;
         SSL *ssl = Config::config().domain(stream.local_domain()).tls_context().instantiate(stream.direction() == SESSION_DIRECTION::OUTBOUND, stream.remote_domain());
         bufferevent_ssl_state st = BUFFEREVENT_SSL_ACCEPTING;
         if (stream.direction() == SESSION_DIRECTION::INBOUND) {

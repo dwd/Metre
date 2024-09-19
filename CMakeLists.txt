@@ -237,6 +237,7 @@ set(SOURCE_FILES
         include/sockaddr-cast.h
         src/pkix.cc
         include/fmt-enum.h
+        src/healthcheck.cc
 )
 
 if(UNIX)

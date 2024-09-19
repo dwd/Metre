@@ -36,10 +36,6 @@ SOFTWARE.
 #include <libunwind.h>
 #include <cxxabi.h>
 
-#include "event2/event.h"
-#include "event2/http.h"
-#include "event2/buffer.h"
-
 #ifdef METRE_SENTRY
 #include "sentry.h"
 #endif
@@ -219,39 +215,6 @@ namespace {
         bug_reporter("std::terminate", "Termination function called");
     }
 
-    bool healthcheck_response = false;
-
-    void request_callback(struct evhttp_request* req, void* arg) {
-        if (req) {
-            int response_code = evhttp_request_get_response_code(req);
-            if (response_code == HTTP_OK) {
-                healthcheck_response = true;
-                std::cerr << "Healthcheck is happy bunny" << std::endl;
-            } else {
-                std::cerr << "Healthcheck failure, status code " << response_code << std::endl;
-            }
-        } else {
-            std::cerr << "Healthcheck received no response." << std::endl;
-        }
-        event_base_loopbreak((struct event_base*)arg);
-    }
-
-
-    bool healthcheck(unsigned short port) {
-        struct event_base* base = event_base_new();
-        struct evhttp_connection* conn = evhttp_connection_base_new(base, nullptr, "127.0.0.1", port);
-        struct evhttp_request* req = evhttp_request_new(request_callback, base);
-
-        // Set the request path (e.g., "/api/status")
-        evhttp_make_request(conn, req, EVHTTP_REQ_GET, "/api/status");
-
-        event_base_dispatch(base);
-
-        evhttp_connection_free(conn);
-        event_base_free(base);
-
-        return healthcheck_response;
-    }
 }
 
 int main(int argc, char *argv[]) {
@@ -269,18 +232,20 @@ int main(int argc, char *argv[]) {
     signal(SIGBUS, segv_handler);
     // Firstly, load up the configuration.
     bc = std::make_unique<BootConfig>(argc, argv);
-    std::cout << "Trying to load config from " << bc->config_file <<std::endl;
     auto config_lite = std::make_unique<Metre::Config>(bc->config_file, true);
+    config_lite->logger().info("Anything");
     if (bc->boot_method.empty()) {
-        bc->boot_method = config->boot_method();
+        bc->boot_method = config_lite->boot_method();
     }
+    config_lite->logger().info("Preparing to use boot method '{}'", bc->boot_method);
     if (bc->boot_method == "healthcheck") {
-        if (healthcheck(config_lite->healthcheck_port())) {
+        if (Metre::Config::run_healthcheck(config_lite->healthcheck_port(), config_lite->healthcheck_tls().enabled())) {
             exit(0);
         } else {
             exit(1);
         }
     }
+    config_lite->logger().info("Primary boot");
     config = std::make_unique<Metre::Config>(bc->config_file);
     if (bc->boot_method == "sysv") {
         pid_t child = fork();
@@ -346,7 +311,7 @@ int main(int argc, char *argv[]) {
         signal(SIGBUS, segv_handler);
         Metre::Router::run([]() { return false; });
     } else {
-        std::cerr << "I don't know what " << bc->boot_method << " means." << std::endl;
+        config->logger().critical("I don't know what boot method '{}' means", bc->boot_method);
         return 1;
     }
     config.reset(nullptr);

@@ -153,6 +153,7 @@ namespace {
         dom->stanza_timeout(stanza_timeout);
         dom->connect_timeout(connect_timeout);
         dom->tls_preference(tls_preference);
+        bool validator_loaded = false;
         if (auto tls = domain["tls"]; tls) {
             if (tls["config"]) {
                 dom->tls_context(std::make_unique<TLSContext>(tls["config"], name));
@@ -166,7 +167,15 @@ namespace {
             if (tls["validation"]) {
                 dom->pkix_validator(std::make_unique<PKIXValidator>(tls["validation"]));
                 dom->pkix_validator().load(); // Force loading here.
+                validator_loaded = true;
             }
+        }
+        if (!validator_loaded) {
+            YAML::Node tmp;
+            if (domain["auth"]) {
+                tmp["crls"] = domain["auth"]["check-status"].as<bool>(Config::config().fetch_pkix_status());
+            }
+            dom->pkix_validator(std::make_unique<PKIXValidator>(tmp));
         }
 
         if (auto dnst = domain["dns"]; dnst) {
@@ -318,9 +327,7 @@ Config::Config(std::string const &filename, bool lite) : m_dialback_secret(rando
         }
         openssl_init = true;
     }
-    if (!lite) {
-        s_config = this;
-    }
+    s_config = this;
     // Spin up a temporary error logger.
     m_root_logger = spdlog::stderr_color_st(lite ? "boot" : "console");
     spdlog::set_level(spdlog::level::trace);
@@ -345,6 +352,7 @@ void Config::write_runtime_config() const {
 
 void Config::load(std::string const &filename, bool lite) {
     auto root_node = YAML::LoadFile(filename);
+    logger().debug("Config loaded from {} lite-mode: {}", filename, lite);
     if (auto globals = root_node["globals"]; globals) {
         m_default_domain = globals["default-domain"].as<std::string>(m_default_domain);
         m_runtime_dir = globals["rundir"].as<std::string>(m_runtime_dir);
@@ -360,12 +368,17 @@ void Config::load(std::string const &filename, bool lite) {
         if (globals["healthcheck"]) {
             m_healthcheck_port = globals["healthcheck"]["port"].as<unsigned short>(m_healthcheck_port);
             m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>(m_healthcheck_address);
+            m_healthcheck_tls = std::make_unique<TLSContext>(globals["healthcheck"]["tls"], "healthcheck");
+            logger().debug("Found healthcheck info, will bail if lite mode is on: {}", lite);
+            if (lite) return;
+            m_healthcheck_tls->enabled();
             if (globals["healthcheck"]["checks"]) {
                 for (auto const & from : globals["healthcheck"]["checks"]) {
                     m_healthchecks.emplace(from.first.as<std::string>(), from.second.as<std::string>());
                 }
             }
         }
+        logger().debug("Completed globals, will bail if lite mode is on: {}", lite);
         if (lite) return;
         if (auto filters = root_node["filters"]; filters) {
             for (auto const & item : filters) {
@@ -380,6 +393,7 @@ void Config::load(std::string const &filename, bool lite) {
         }
     }
     if (lite) return;
+    logger().debug("Proceeding with full config load");
     if (m_runtime_dir.empty()) {
         m_runtime_dir = "/var/run/";
     }
@@ -605,8 +619,10 @@ namespace {
             host["a"] = address_tostring(address->addr.data());
             config["dns"]["host"].push_back(host);
         }
-        config["tls"]["config"] = domain.tls_context().write();
-        config["tls"]["validation"] = domain.pkix_validator().write();
+        if (domain.tls_enabled()) {
+            config["tls"]["config"] = domain.tls_context().write();
+            config["tls"]["validation"] = domain.pkix_validator().write();
+        }
 
         for (auto const &filter: domain.filters()) {
             config["filter-in"][filter->name()] = filter->dump_config();
@@ -634,6 +650,7 @@ std::string Config::asString() const {
     for (auto const & [from, to] : m_healthchecks) {
         config["globals"]["healthcheck"]["checks"][from] = to;
     }
+    config["globals"]["healthcheck"]["tls"] = m_healthcheck_tls->write();
 
     for (auto const &[filter_name, filter] : Filter::all_filters()) {
         config["filters"][filter_name] = filter->config();

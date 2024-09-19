@@ -85,7 +85,9 @@ namespace Metre {
             }
 
             [[nodiscard]] bool tls_enabled() const {
-                return tls_context().enabled();
+                if (m_tls_context && m_tls_context->enabled()) return true;
+                if (m_parent) return m_parent->tls_enabled();
+                return false;
             }
 
             [[nodiscard]] std::string const &domain() const {
@@ -182,7 +184,9 @@ namespace Metre {
 
             sigslot::tasklet<FILTER_RESULT> filter(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) const;
             [[nodiscard]] TLSContext & tls_context() const {
-                return *m_tls_context;
+                if (m_tls_context) return *m_tls_context;
+                if (m_parent) return m_parent->tls_context();
+                throw pkix_error("No TLS Context for domain");
             }
             TLSContext & tls_context(std::unique_ptr<TLSContext> && tls_context) {
                 m_tls_context = std::move(tls_context);
@@ -190,7 +194,9 @@ namespace Metre {
             }
 
             [[nodiscard]] PKIXValidator & pkix_validator() const {
-                return *m_pkix_validator;
+                if (m_pkix_validator) return *m_pkix_validator;
+                if (m_parent) return m_parent->pkix_validator();
+                throw pkix_error("No PKIX Validator for domain");
             }
             PKIXValidator & pkix_validator(std::unique_ptr<PKIXValidator> && pkix_validator) {
                 m_pkix_validator = std::move(pkix_validator);
@@ -384,13 +390,17 @@ namespace Metre {
             return m_healthcheck_port;
         }
 
+        [[nodiscard]] TLSContext & healthcheck_tls() const {
+            return *m_healthcheck_tls;
+        }
+
         [[nodiscard]] auto const & healthchecks() const {
             return m_healthchecks;
         }
 
-    private:
-        static int verify_callback_cb(int preverify_ok, struct x509_store_ctx_st *);
+        static bool run_healthcheck(unsigned short port, bool tls);
 
+    private:
         void create_domain(std::string const &dom);
 
         bool m_fetch_crls = true;
@@ -411,6 +421,7 @@ namespace Metre {
         std::string m_log_level;
         std::string m_log_flush;
         std::string m_healthcheck_address;
+        std::unique_ptr<TLSContext> m_healthcheck_tls;
         unsigned short int m_healthcheck_port;
         std::set<std::pair<std::string, std::string>> m_healthchecks;
     };

@@ -126,6 +126,7 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
     }
 
     int yaml_to_tls(YAML::Node const &tls_version_node, int def) {
+        if (!tls_version_node) return def;
         auto version_string = tls_version_node.as<std::string>();
         int version = def;
         std::ranges::transform(version_string, version_string.begin(), [](unsigned char c) {
@@ -172,7 +173,7 @@ EjhZjvPJOKqTisDI6g9A9ak87cfIh26eYj+vm5JOnjYltmaZ6U83AgEC
 PKIXIdentity::PKIXIdentity(const YAML::Node &config) {
     m_cert_chain_file = config["chain"].as<std::string>();
     m_pkey_file = config["pkey"].as<std::string>();
-    m_generate = config["generate"].as<bool>();
+    m_generate = config["generate"].as<bool>(false);
 }
 
 YAML::Node PKIXIdentity::write() const {
@@ -196,7 +197,6 @@ PKIXValidator::PKIXValidator(const YAML::Node &config) : m_log(Config::config().
 YAML::Node PKIXValidator::write() const {
     YAML::Node config;
     config["crls"] = m_crls;
-    config["trust-anchors"] = YAML::Node(YAML::NodeType::Sequence);
     for (const auto &ta: m_trust_anchors) {
         config["trust-anchors"].push_back(ta);
     }
@@ -204,29 +204,38 @@ YAML::Node PKIXValidator::write() const {
 }
 
 TLSContext::TLSContext(const YAML::Node &config, std::string const & domain) : m_domain(domain), m_log(Config::config().logger("tls {}", domain)) {
-    m_dhparam = config["dhparam"].as<std::string>("auto");
-    m_cipherlist = config["cipherlist"].as<std::string>("HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"); // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
-    m_min_version = yaml_to_tls(config["min_version"], TLS1_2_VERSION);
-    m_max_version = yaml_to_tls(config["max_version"], TLS1_3_VERSION);
-    for (auto const & identity : config["identities"]) {
-        add_identity(std::make_unique<PKIXIdentity>(identity));
+    if (!config) {
+        m_enabled = false;
+    } else {
+        m_enabled = config["enabled"].as<bool>(true);
+        m_dhparam = config["dhparam"].as<std::string>("auto");
+        m_cipherlist = config["cipherlist"].as<std::string>(
+                "HIGH:!3DES:!eNULL:!aNULL:@STRENGTH"); // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
+        m_min_version = yaml_to_tls(config["min_version"], TLS1_2_VERSION);
+        m_max_version = yaml_to_tls(config["max_version"], TLS1_3_VERSION);
+        for (auto const &identity: config["identities"]) {
+            add_identity(std::make_unique<PKIXIdentity>(identity));
+        }
     }
 }
 
 
 YAML::Node TLSContext::write() const {
     YAML::Node config;
-    config["dhparam"] = m_dhparam;
-    config["cipherlist"] = m_cipherlist;
-    if (tls_version_to_string(m_min_version)) {
-        config["min_version"] = tls_version_to_string(m_min_version);
-    }
-    if (tls_version_to_string(m_max_version)) {
-        config["min_version"] = tls_version_to_string(m_max_version);
-    }
-    config["identities"] = YAML::Node(YAML::NodeType::Sequence);
-    for (const auto &identity: m_identities) {
-        config["identities"].push_back(identity->write());
+    config["enabled"] = m_enabled;
+    if (m_enabled) {
+        config["dhparam"] = m_dhparam;
+        config["cipherlist"] = m_cipherlist;
+        if (tls_version_to_string(m_min_version)) {
+            config["min_version"] = tls_version_to_string(m_min_version);
+        }
+        if (tls_version_to_string(m_max_version)) {
+            config["min_version"] = tls_version_to_string(m_max_version);
+        }
+        config["identities"] = YAML::Node(YAML::NodeType::Sequence);
+        for (const auto &identity: m_identities) {
+            config["identities"].push_back(identity->write());
+        }
     }
     return config;
 }
@@ -380,6 +389,7 @@ sigslot::tasklet<bool> PKIXValidator::verify_tls(std::shared_ptr<sentry::span> s
 }
 
 SSL * TLSContext::instantiate(bool connecting, std::string const & domain) {
+    if (!m_enabled) return nullptr;
     SSL_CTX *ctx = context();
     SSL *ssl = SSL_new(ctx);
     if (!ssl) throw pkix_error("Failure to initiate TLS, sorry!");
@@ -424,9 +434,19 @@ namespace {
         const char *servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
         if (!servername) return SSL_TLSEXT_ERR_OK;
         SSL_CTX const * const old_ctx = SSL_get_SSL_CTX(ssl);
-        auto & tls_context = Config::config().domain(Jid(servername).domain()).tls_context();
-        SSL_CTX *new_ctx = tls_context.context();
-        if (!new_ctx) new_ctx = Config::config().domain("").tls_context().context();
+        SSL_CTX  * new_ctx = nullptr;
+        std::string domain_name = Jid(servername).domain();
+        auto const & domain = Config::config().domain(domain_name);
+        if (domain.tls_enabled()) {
+            auto &tls_context = domain.tls_context();
+            new_ctx = tls_context.context();
+        }
+        if (!new_ctx) {
+            auto const & any_domain = Config::config().domain("");
+            if (any_domain.tls_enabled()) {
+                new_ctx = any_domain.tls_context().context();
+            }
+        }
         if (new_ctx != old_ctx) SSL_set_SSL_CTX(ssl, new_ctx);
         return SSL_TLSEXT_ERR_OK;
     }
@@ -480,6 +500,7 @@ namespace {
 }
 
 SSL_CTX * TLSContext::context() {
+    if (!m_enabled) return nullptr;
     if (m_ssl_ctx) {
         return m_ssl_ctx;
     }
