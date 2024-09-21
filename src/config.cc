@@ -58,6 +58,7 @@ SOFTWARE.
 #include <iomanip>
 #include <filter.h>
 #include <cstring>
+#include <utility>
 #include <yaml-cpp/yaml.h>
 
 using namespace Metre;
@@ -206,7 +207,7 @@ namespace {
                 auto certusagea = tlsa["certusage"];
                 if (!certusagea) throw std::runtime_error("Missing certusage in TLSA DNS override");
                 DNS::TlsaRR::CertUsage certUsage;
-                if (std::string certusages = certusagea.as<std::string>(); certusages == "CAConstraint") {
+                if (auto certusages = certusagea.as<std::string>(); certusages == "CAConstraint") {
                     certUsage = DNS::TlsaRR::CertUsage::CAConstraint;
                 } else if (certusages == "CertConstraint") {
                     certUsage = DNS::TlsaRR::CertUsage::CertConstraint;
@@ -242,7 +243,7 @@ namespace {
         }
         dom->dnssec_required(dnssec_required);
         for (auto const & filter : domain["filter-in"]) {
-            std::string filter_name = filter.first.as<std::string>();
+            auto filter_name = filter.first.as<std::string>();
             auto it = Filter::all_filters().find(filter_name);
             if (it == Filter::all_filters().end()) {
                 throw std::runtime_error("Unknown filter " + filter_name);
@@ -258,15 +259,15 @@ namespace {
     bool openssl_init = false;
 }
 
-Config::Domain::Domain(std::string const &domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls,
+Config::Domain::Domain(std::string domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls,
                        bool block, bool multiplex, bool auth_pkix, bool auth_dialback, bool auth_host,
                        std::optional<std::string> &&auth_secret)
-        : m_domain(domain), m_type(transport_type), m_xmpp_ver(xmpp_ver), m_forward(forward), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
+        : m_domain(std::move(domain)), m_type(transport_type), m_xmpp_ver(xmpp_ver), m_forward(forward), m_require_tls(require_tls), m_block(block), m_multiplex(multiplex),
           m_auth_pkix(auth_pkix), m_auth_dialback(auth_dialback), m_auth_host(auth_host), m_auth_secret(std::move(auth_secret)),
           m_logger(Config::config().logger("domain <{}>", m_domain)) {}
 
-Config::Domain::Domain(Config::Domain const &any, std::string const &domain)
-        : m_domain(domain), m_type(any.m_type), m_xmpp_ver(any.m_xmpp_ver), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
+Config::Domain::Domain(Config::Domain const &any, std::string domain)
+        : m_domain(std::move(domain)), m_type(any.m_type), m_xmpp_ver(any.m_xmpp_ver), m_forward(any.m_forward), m_require_tls(any.m_require_tls),
           m_block(any.m_block), m_multiplex(any.m_multiplex), m_auth_pkix(any.m_auth_pkix),
           m_auth_dialback(any.m_auth_dialback), m_auth_host(any.m_auth_host), m_dnssec_required(any.m_dnssec_required),
           m_tls_preference(any.m_tls_preference),
@@ -927,6 +928,7 @@ sigslot::tasklet<void> Config::Domain::gather_tlsa(std::shared_ptr<sentry::span>
 }
 
 sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather(std::shared_ptr<sentry::span> span) const {
+    m_logger.info("Gathering discovery data for {}", m_domain);
     auto r = resolver();
     std::string domain = m_domain;
     GatheredData g;
@@ -941,6 +943,7 @@ sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather(std::share
     span->containing_transaction().tag("gather.tls.starttls", "no");
     bool dnssec = true;
 aname_restart:
+    m_logger.debug("ANAME restart");
     g.gathered_connect.clear();
     auto svcb = co_await r->SvcbLookup(domain);
     if (svcb.error.empty() && !svcb.rrs.empty()) {

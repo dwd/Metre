@@ -278,7 +278,7 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
     } else {
         queue(std::move(v));
         if (!m_verify_task.has_value()) {
-            auto wrapper = [this](std::shared_ptr<sentry::transaction> && trans) -> sigslot::tasklet<bool> {
+            auto wrapper = [this](std::shared_ptr<sentry::transaction> trans) -> sigslot::tasklet<bool> {
                 bool result = co_await init_session_vrfy(trans->start_child("verify_session", m_domain.domain()), true);
                 if (!result) trans->exception({});
                 co_return result;

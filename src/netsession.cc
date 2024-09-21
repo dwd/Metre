@@ -61,6 +61,7 @@ NetSession::NetSession(long long unsigned serial, struct bufferevent *bev, Confi
                               stream_buf.size());
         m_xml_stream->set_auth_ready();
     }
+    m_logger = Config::config().logger("NetSession serial={} IN type=[{}] from=[{}] to=[{}]", serial, listen->name, m_xml_stream->local_domain(), m_xml_stream->remote_domain());
     m_logger.info("New INBOUND");
 }
 
@@ -109,10 +110,10 @@ bool NetSession::drain() {
     if (m_in_progress) return false;
     auto latch = std::make_unique<Latch>(m_in_progress);
     // While there is data, see how much we can consume with the XMLStream.
-    struct evbuffer *buf = nullptr; // This gets refreshed each time through the loops.
     size_t len;
-    while ((len = evbuffer_get_contiguous_space(buf = bufferevent_get_input(m_bev))) > 0) {
+    while ((len = evbuffer_get_contiguous_space(bufferevent_get_input(m_bev))) > 0) {
         if (!m_xml_stream->closed()) {
+            struct evbuffer *buf = bufferevent_get_input(m_bev);
             size_t used = m_xml_stream->process(evbuffer_pullup(buf, len), len);
             if (used == 0) {
                 break;
@@ -123,8 +124,9 @@ bool NetSession::drain() {
         }
     }
     // If we can't consume it all, try pullup(), then return.
-    if ((len = evbuffer_get_length(buf = bufferevent_get_input(m_bev))) > 0) {
+    if ((len = evbuffer_get_length(bufferevent_get_input(m_bev))) > 0) {
         if (!m_xml_stream->closed()) {
+            struct evbuffer *buf = bufferevent_get_input(m_bev);
             m_xml_stream->process(evbuffer_pullup(buf, -1), len);
         } else {
             if (len > 0)
@@ -132,7 +134,7 @@ bool NetSession::drain() {
             return true;
         }
     }
-    return m_xml_stream->closed() && (evbuffer_get_length(buf) == 0);
+    return m_xml_stream->closed() && (evbuffer_get_length(bufferevent_get_input(m_bev)) == 0);
 }
 
 void NetSession::used(size_t n) {

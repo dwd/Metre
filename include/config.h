@@ -69,13 +69,13 @@ namespace Metre {
 
             tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname) override;
 
-            spdlog::logger & logger() {
+            spdlog::logger & logger() const {
                 return m_logger;
             }
 
         private:
             Domain const &m_domain;
-            spdlog::logger m_logger;
+            mutable spdlog::logger m_logger;
         };
 
         class Domain {
@@ -171,10 +171,10 @@ namespace Metre {
             void tlsa(std::string const &hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
                       DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value);
 
-            Domain(std::string const &domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls, bool block, bool multiplex,
+            Domain(std::string domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls, bool block, bool multiplex,
                    bool auth_pkix, bool auth_dialback, bool auth_host, std::optional<std::string> &&m_auth_secret);
 
-            Domain(Domain const &, std::string const &domain);
+            Domain(Domain const &, std::string domain);
 
             Domain(Domain const &) = delete;
 
@@ -220,7 +220,7 @@ namespace Metre {
                 return m_auth_host;
             }
 
-            [[nodiscard]] spdlog::logger const &logger() const {
+            [[nodiscard]] spdlog::logger &logger() const {
                 return m_logger;
             }
 
@@ -282,7 +282,7 @@ namespace Metre {
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;
             Domain const *m_parent = nullptr;
-            spdlog::logger m_logger;
+            mutable spdlog::logger m_logger;
         };
 
         explicit Config(std::string const &filename, bool lite=false);
