@@ -142,7 +142,7 @@ namespace Metre {
         rapidxml::optional_ptr<rapidxml::xml_node<>> node() {
             return node_internal();
         }
-        rapidxml::optional_ptr<rapidxml::xml_node<>> const node() const {
+        rapidxml::optional_ptr<rapidxml::xml_node<>> node() const {
             return const_cast<Stanza *>(this)->node_internal();
         }
 

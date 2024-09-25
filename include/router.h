@@ -53,7 +53,7 @@ namespace Metre {
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
         Jid const m_domain;
-        std::shared_ptr<spdlog::logger> m_logger;
+        spdlog::logger m_logger;
     public:
         Route(Jid const &from, Jid const &to);
 

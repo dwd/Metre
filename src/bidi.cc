@@ -25,7 +25,6 @@ SOFTWARE.
 
 #include "feature.h"
 #include "router.h"
-#include "config.h"
 #include "log.h"
 
 using namespace Metre;

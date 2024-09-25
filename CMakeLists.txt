@@ -207,7 +207,7 @@ set(SOURCE_FILES
     include/router.h
     include/sigslot.h
     include/stanza.h
-    include/tls.h
+        include/pkix.h
     include/xmlstream.h
     include/xmppexcept.h
     src/base64.cc
@@ -235,6 +235,9 @@ set(SOURCE_FILES
         src/send.cc
         src/send.cc
         include/sockaddr-cast.h
+        src/pkix.cc
+        include/fmt-enum.h
+        src/healthcheck.cc
 )
 
 if(UNIX)
