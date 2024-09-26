@@ -839,7 +839,7 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
             break;
         default: {
             bool read_ok = false;
-            if (!value.contains('\n') && !value.contains('/')) {
+            if (!value.contains('\n') && value.contains('/')) {
                 std::ifstream in(value);
                 rr.matchData.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
                 if (!rr.matchData.empty()) {
@@ -978,7 +978,7 @@ aname_restart:
         // SRV path
         auto srv = co_await r->SrvLookup(domain); // Interesting case: An SVCB looking resulting in the ANAME case might follow to an SRV lookup.
         if (srv.error.empty() && !srv.rrs.empty()) {
-            dnssec = dnssec && svcb.dnssec;
+            dnssec = dnssec && srv.dnssec;
             span->containing_transaction().tag("gather.srv", "yes");
             for (auto const & rr : srv.rrs) {
                 if (srv.dnssec) {
