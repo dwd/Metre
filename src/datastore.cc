@@ -10,8 +10,7 @@ using namespace Metre;
 Datastore::Datastore() : m_empty() {
 }
 
-Datastore::~Datastore() {
-}
+Datastore::~Datastore() = default;
 
 void Datastore::get(std::string const &scope, std::string const &node, std::string const &item_id,
                     callback const &fn) const {

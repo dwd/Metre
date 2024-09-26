@@ -20,7 +20,7 @@ namespace Metre {
     public:
         static Endpoint &endpoint(Jid const &);
 
-        explicit Endpoint(Jid const &);
+        explicit Endpoint(Jid);
 
         Jid const &jid() const {
             return m_jid;
@@ -36,7 +36,7 @@ namespace Metre {
 
         std::string random_identifier();
 
-        void send(std::unique_ptr<Stanza> &&stanza);
+        void send(std::unique_ptr<Stanza> &&stanza) const;
 
         void send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza const &)> const &);
 
@@ -52,7 +52,7 @@ namespace Metre {
 
         ~Endpoint() override;
 
-        sigslot::tasklet<Node *> node(std::string const &name, bool create = false);
+        sigslot::tasklet<Node *> node(std::string name, bool create = false);
 
         std::map<std::string, std::unique_ptr<Node>, std::less<>> const &nodes() const {
             return m_nodes;
@@ -68,17 +68,17 @@ namespace Metre {
             std::unique_ptr<Stanza> stanza;
             sigslot::tasklet<void> task;
         };
-        void task_complete(process_task *);
+        void task_complete(process_task const *);
 
+    private:
         Jid m_jid;
         static const size_t id_len = 16;
-        static const char characters[];
+        static std::string const characters;
         std::default_random_engine m_random;
         std::uniform_int_distribution<> m_dist;
         std::map<std::string, std::unique_ptr<Node>, std::less<>> m_nodes;
 
 
-    private:
         std::list<std::unique_ptr<process_task>> m_tasks;
         std::set<std::unique_ptr<Capability>> m_capabilities;
         std::map<std::pair<std::string, std::string>, std::function<sigslot::tasklet<void>(Iq const &)>> m_handlers;

@@ -6,15 +6,17 @@
 #include <router.h>
 #include <config.h>
 #include <algorithm>
+#include <utility>
 
 using namespace Metre;
 
-const char Endpoint::characters[] = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
+const std::string Endpoint::characters = "0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ@";
 
-Endpoint::Endpoint(Jid const &jid) : m_jid(jid), m_random(std::random_device{}()), m_dist(0, sizeof(characters) - 2) {}
+Endpoint::Endpoint(Jid jid) : m_jid(std::move(jid)), m_random(std::random_device{}()), m_dist(0, sizeof(characters) - 2) {}
 
 std::string Endpoint::random_identifier() {
-    std::string id(id_len, char{});
+    std::string id;
+    id.resize(id_len);
     std::generate_n(id.begin(), id_len, [this]() { return characters[m_dist(m_random)]; });
     return id;
 }
@@ -90,14 +92,14 @@ Endpoint::~Endpoint() = default;
 
 void Endpoint::add_handler(std::string const &xmlns, std::string const &local,
                            std::function<sigslot::tasklet<void>(Iq const &)> &&fn) {
-    m_handlers.emplace(std::make_pair(xmlns, local), std::move(fn));
+    m_handlers.try_emplace(std::make_pair(xmlns, local), std::move(fn));
 }
 
 void Endpoint::add_capability(std::string const &name) {
     m_capabilities.emplace(Capability::create(name, *this));
 }
 
-void Endpoint::send(std::unique_ptr<Stanza> &&stanza) {
+void Endpoint::send(std::unique_ptr<Stanza> &&stanza) const {
 #ifdef METRE_TESTING
     sent_stanza(*stanza, m_jid, stanza->to());
 #else
@@ -113,12 +115,16 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza 
     send(std::move(stanza));
 }
 
-sigslot::tasklet<Node *> Endpoint::node(std::string const &name, bool create) {
+sigslot::tasklet<Node *> Endpoint::node(std::string name, bool create) {
     auto it = m_nodes.find(name);
     if (it == m_nodes.end()) {
         if (create) {
-            m_nodes.emplace(std::make_pair(name, std::make_unique<Node>(*this, name)));
-            it = m_nodes.find(name);
+            auto const & [nit, ok] = m_nodes.try_emplace(name, std::make_unique<Node>(*this, name));
+            if (ok) {
+                it = nit;
+            } else {
+                throw stanza_service_unavailable("Node creation failed");
+            }
         } else {
             throw stanza_service_unavailable("Node not found");
         }
@@ -129,7 +135,7 @@ sigslot::tasklet<Node *> Endpoint::node(std::string const &name, bool create) {
 #include "../src/endpoints/simple.cc"
 
 Endpoint &Endpoint::endpoint(Jid const &jid) {
-    static std::map<std::string, std::unique_ptr<Endpoint>> s_endpoints;
+    static std::map<std::string, std::unique_ptr<Endpoint>, std::less<>> s_endpoints;
     auto i = s_endpoints.find(jid.domain());
     if (i == s_endpoints.end()) {
         s_endpoints[jid.domain()] = std::make_unique<Simple>(jid.domain_jid());
@@ -138,16 +144,14 @@ Endpoint &Endpoint::endpoint(Jid const &jid) {
     return *((*i).second);
 }
 
-void Endpoint::task_complete(Endpoint::process_task * task) {
+void Endpoint::task_complete(Endpoint::process_task const * task) {
     try {
-        try {
-            task->task.get();
-        } catch (Metre::base::stanza_exception &) {
-            throw;
-        } catch (std::runtime_error &e) {
-            throw Metre::stanza_undefined_condition(e.what());
-        }
-    } catch (Metre::base::stanza_exception const &stanza_error) {
+        task->task.get();
+    } catch (Metre::base::stanza_exception & stanza_error) {
+        std::unique_ptr<Stanza> st = task->stanza->create_bounce(stanza_error);
+        send(std::move(st));
+    } catch (std::runtime_error &e) {
+        auto stanza_error = Metre::stanza_undefined_condition(e.what());
         std::unique_ptr<Stanza> st = task->stanza->create_bounce(stanza_error);
         send(std::move(st));
     }
