@@ -872,7 +872,7 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
     tlsa->rrs.push_back(rr);
 }
 
-Config::Resolver::Resolver(Domain const &d) : Metre::DNS::Resolver(d.domain(), d.dnssec_required(), d.tls_preference()), m_domain(d), m_logger(Config::config().logger("Resolver <{}>", m_domain.domain())) {}
+Config::Resolver::Resolver(Domain const &d) : m_resolver(d.domain(), d.dnssec_required(), d.tls_preference()), m_domain(d), m_logger(Config::config().logger("Resolver <{}>", m_domain.domain())) {}
 
 Config::Resolver::~Resolver() = default;
 
@@ -897,7 +897,7 @@ Config::Domain::srv(std::string const &hostname, unsigned short priority, unsign
 }
 
 sigslot::tasklet<void> Config::Domain::gather_host(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string host, uint16_t port, DNS::ConnectInfo::Method method) const {
-    auto addr_recs = co_await r.AddressLookup(host);
+    auto addr_recs = co_await r.address_lookup(host);
     if (!addr_recs.error.empty()) co_return; // Interesting case: a DNSSEC-signed SVCB/SRV record pointing to a non-existent host still adds that host to the X.509-acceptable names.
     if (!addr_recs.dnssec && m_dnssec_required) co_return;
     for (auto const & arr : addr_recs.addr) {
@@ -918,7 +918,7 @@ sigslot::tasklet<void> Config::Domain::gather_host(std::shared_ptr<sentry::span>
 }
 
 sigslot::tasklet<void> Config::Domain::gather_tlsa(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string host, uint16_t port) const {
-    auto recs = co_await r.TlsaLookup(port, host);
+    auto recs = co_await r.tlsa_lookup(port, host);
     if (!recs.error.empty()) co_return;
     if (!recs.dnssec) co_return;
     span->containing_transaction().tag("gather.tlsa", "yes");
@@ -945,7 +945,7 @@ sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather(std::share
 aname_restart:
     m_logger.debug("ANAME restart");
     g.gathered_connect.clear();
-    auto svcb = co_await r->SvcbLookup(domain);
+    auto svcb = co_await r->svcb_lookup(domain);
     if (svcb.error.empty() && !svcb.rrs.empty()) {
         dnssec = dnssec && svcb.dnssec;
         span->containing_transaction().tag("gather.svcb", "yes");
@@ -1001,7 +1001,7 @@ aname_restart:
     co_return g;
 }
 
-DNS::Resolver::addr_callback_t &Config::Resolver::AddressLookup(std::string const &ihostname) {
+sigslot::tasklet<DNS::Address> Config::Resolver::AddressLookup(std::string const &ihostname) {
     std::string hostname = DNS::Utils::toASCII(ihostname);
     logger().info("A/AAAA lookup for {}", hostname);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
@@ -1010,81 +1010,59 @@ DNS::Resolver::addr_callback_t &Config::Resolver::AddressLookup(std::string cons
             auto it = domain_override->address_overrides().find(hostname);
             if (it != domain_override->address_overrides().end()) {
                 auto addr = it->second.get();
-                Router::defer([addr, this]() {
-                    m_a_pending[addr->hostname].emit(*addr);
-                });
-                logger().debug("Using domain_override at {}", domain_override->domain());
-                return m_a_pending[hostname];
+                co_return *addr;
             }
         }
     }
-    return DNS::Resolver::AddressLookup(ihostname);
+    co_return co_await m_resolver.AddressLookup(ihostname);
 }
 
-DNS::Resolver::srv_callback_t &Config::Resolver::SrvLookup(std::string const &base_domain) {
+sigslot::tasklet<DNS::Srv> Config::Resolver::srv_lookup(std::string const &base_domain) {
     std::string domain = DNS::Utils::toASCII("_xmpp-server._tcp." + base_domain + ".");
     std::string domains = DNS::Utils::toASCII("_xmpps-server._tcp." + base_domain + ".");
     m_logger.debug("SRV lookup: domain=[{}]", base_domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
         if (domain_override->srv_override()) {
             logger().debug("Found domain_override at {}", domain_override->domain());
-            Router::defer([domain_override, this]() {
-                m_srv_pending.emit(*domain_override->srv_override());
-            });
-            logger().debug("Using domain_override at {}", domain_override->domain());
-            return m_srv_pending;
+            co_return *domain_override->srv_override();
         }
     }
     if (base_domain.empty()) {
-        Router::defer([this]() {
-            DNS::Srv r;
-            r.error = "Empty Domain - DNS aborted";
-            m_srv_pending.emit(r);
-        });
+        DNS::Srv r;
+        r.error = "Empty Domain - DNS aborted";
+        co_return r;
     } else if (m_domain.transport_type() == SESSION_TYPE::X2X) {
-        Router::defer([this]() {
-            DNS::Srv r;
-            r.error = "X2X - DNS aborted";
-            m_srv_pending.emit(r);
-        });
+        DNS::Srv r;
+        r.error = "X2X - DNS aborted";
+        co_return r;
     } else {
-        DNS::Resolver::SrvLookup(base_domain);
+        co_return m_resolver.SrvLookup(base_domain);
     }
-    return m_srv_pending;
 }
 
-DNS::Resolver::svcb_callback_t &Config::Resolver::SvcbLookup(std::string const &base_domain) {
+sigslot::tasklet<DNS::Svcb> Config::Resolver::SvcbLookup(std::string const &base_domain) {
     std::string domain = DNS::Utils::toASCII("_xmpp-server." + base_domain + ".");
     m_logger.debug("SVCB lookup: domain=[{}]", base_domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
         if (domain_override->svcb_override()) {
             logger().debug("Found domain_override at {}", domain_override->domain());
-            Router::defer([domain_override, this]() {
-                m_svcb_pending.emit(*domain_override->svcb_override());
-            });
-            logger().debug("Using domain_override at {}", domain_override->domain());
-            return m_svcb_pending;
+            co_return *domain_override->svcb_override();
         }
     }
     if (base_domain.empty()) {
-        Router::defer([this]() {
-            DNS::Svcb r;
-            r.error = "Empty Domain - DNS aborted";
-            m_svcb_pending.emit(r);
-        });
+        DNS::Svcb r;
+        r.error = "Empty Domain - DNS aborted";
+        co_return r;
     } else if (m_domain.transport_type() == SESSION_TYPE::X2X) {
-        Router::defer([this]() {
-            DNS::Svcb r;
-            r.error = "X2X - DNS aborted";
-            m_svcb_pending.emit(r);
-        });
+        DNS::Svcb r;
+        r.error = "X2X - DNS aborted";
+        co_return r;
     } else {
-        DNS::Resolver::SvcbLookup(base_domain);
+        co_return co_await m_resolver.SvcbLookup(base_domain);
     }
-    return m_svcb_pending;
 }
 
-DNS::Resolver::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port, std::string const &base_domain) {
+sigslot::tasklet<DNS::Tlsa> Config::Resolver::tlsa_lookup(unsigned short port, std::string const &base_domain) {
     std::ostringstream out;
     out << "_" << port << "._tcp." << base_domain;
     std::string domain = DNS::Utils::toASCII(out.str());
@@ -1095,23 +1073,15 @@ DNS::Resolver::tlsa_callback_t &Config::Resolver::TlsaLookup(unsigned short port
             auto it = domain_override->tlsa_overrides().find(domain);
             if (it != domain_override->tlsa_overrides().end()) {
                 auto addr = it->second.get();
-                Router::defer([addr, this]() {
-                    m_tlsa_pending[addr->domain].emit(*addr);
-                });
-                logger().debug("Using domain_override at [{}]", domain_override->domain());
-                return m_tlsa_pending[domain];
+                co_return *addr;
             }
         }
     }
     if (m_domain.transport_type() == SESSION_TYPE::X2X) {
-        auto &cb = m_tlsa_pending[domain];
-        Router::defer([&cb]() {
-            DNS::Tlsa r;
-            r.error = "X2X - DNS aborted";
-            cb.emit(r);
-        });
+        DNS::Tlsa r;
+        r.error = "X2X - DNS aborted";
+        co_return r;
     } else {
-        DNS::Resolver::TlsaLookup(port, base_domain);
+        co_return co_await m_resolver.TlsaLookup(port, base_domain);
     }
-    return m_tlsa_pending[domain];
 }
