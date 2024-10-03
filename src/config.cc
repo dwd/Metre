@@ -976,7 +976,7 @@ aname_restart:
         }
     } else {
         // SRV path
-        auto srv = co_await r->SrvLookup(domain); // Interesting case: An SVCB looking resulting in the ANAME case might follow to an SRV lookup.
+        auto srv = co_await r->srv_lookup(domain); // Interesting case: An SVCB looking resulting in the ANAME case might follow to an SRV lookup.
         if (srv.error.empty() && !srv.rrs.empty()) {
             dnssec = dnssec && srv.dnssec;
             span->containing_transaction().tag("gather.srv", "yes");
@@ -1001,7 +1001,7 @@ aname_restart:
     co_return g;
 }
 
-sigslot::tasklet<DNS::Address> Config::Resolver::AddressLookup(std::string const &ihostname) {
+sigslot::tasklet<DNS::Address> Config::Resolver::address_lookup(std::string const &ihostname) {
     std::string hostname = DNS::Utils::toASCII(ihostname);
     logger().info("A/AAAA lookup for {}", hostname);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
@@ -1036,11 +1036,11 @@ sigslot::tasklet<DNS::Srv> Config::Resolver::srv_lookup(std::string const &base_
         r.error = "X2X - DNS aborted";
         co_return r;
     } else {
-        co_return m_resolver.SrvLookup(base_domain);
+        co_return co_await m_resolver.SrvLookup(base_domain);
     }
 }
 
-sigslot::tasklet<DNS::Svcb> Config::Resolver::SvcbLookup(std::string const &base_domain) {
+sigslot::tasklet<DNS::Svcb> Config::Resolver::svcb_lookup(std::string const &base_domain) {
     std::string domain = DNS::Utils::toASCII("_xmpp-server." + base_domain + ".");
     m_logger.debug("SVCB lookup: domain=[{}]", base_domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
