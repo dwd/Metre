@@ -248,7 +248,7 @@ namespace Metre {
             evbuffer_add_printf(reply, "%s", final_body.c_str());
             evhttp_send_reply(req, success ? HTTP_OK : HTTP_INTERNAL, nullptr, reply);
             evbuffer_free(reply);
-            event_base_loopbreak(m_event_base); // Do this at the end for cleanup to happen.
+            event_base_loopexit(m_event_base, nullptr); // Do this at the end for cleanup to happen.
         }
 
         [[nodiscard]] struct event_base * event_base() const {
@@ -431,14 +431,14 @@ namespace Metre {
             struct timeval t = m_pending_actions.begin()->first;
             if (t.tv_usec <= now.tv_usec) {
                 if (t.tv_sec <= now.tv_sec) {
-                    event_base_loopbreak(m_event_base);
+                    event_base_loopexit(m_event_base, nullptr);
                     return;
                 }
                 t.tv_sec -= 1;
                 t.tv_usec += 1000000;
             }
             if (t.tv_sec < now.tv_sec) {
-                event_base_loopbreak(m_event_base);
+                event_base_loopexit(m_event_base, nullptr);
                 return;
             }
             t.tv_sec -= now.tv_sec;
@@ -525,7 +525,7 @@ namespace Metre {
             }
             m_pending_actions.emplace(when, std::move(fn));
             if (seconds.tv_sec == 0 && seconds.tv_usec == 0) {
-                event_base_loopbreak(m_event_base);
+                event_base_loopexit(m_event_base, nullptr);
             } else {
                 next_break();
             }
