@@ -323,8 +323,10 @@ add_executable(metre-test
     ${CAPABILITY_SOURCES}
     tests/endpoint.cc
         src/dns.cc
+        src/base64.cc
         tests/dns.cc
         tests/main.cc
+        tests/jwt.cc
 )
 
 target_compile_definitions(metre-test PUBLIC
@@ -355,6 +357,7 @@ target_link_libraries(metre-test PRIVATE
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
+        yaml-cpp::yaml-cpp
         GTest::gtest
 )
 if(METRE_SENTRY)
