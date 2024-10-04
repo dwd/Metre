@@ -22,6 +22,90 @@ Most domain-specific values will fall back to the `any` domain if they're not sp
 
 Wildcarded domains allow multiple domains to share a configuration, but, internally, this configuration will be templated for each domain.
 
+## Shared Constructs
+
+In some cases - mostly TLS at the moment - configuration has shared schemas.
+
+### PKIX Identity
+
+#### chain
+
+A filename containing the full chain. Ideally, this should include the CA as well as any intermediaries, and must include the End Entity cert, all in PEM format.
+
+#### pkey
+
+A filename containing the private key, also in PEM form.
+
+#### generate
+
+Boolean - and for now ignored.
+
+### TLS Configuration
+
+This structure holds TLS configuration.
+
+#### enabled
+
+Default: true if any configuration is present (including empty configuration), false otherwise.
+
+Enables and disables TLS.
+
+#### dhparam
+
+Default: `auto`
+
+The default, `auto`, tells OpenSSL to automatically select DH parameters, as per SSL_set_dh_auto.
+
+Otherwise, if the value is an integer, it will be used as the maximum size of the DH parameters to be used. Metre ships with built-in DH parameters of a number of sizes: 1024, 2048, 2236, 3072, and 4096. Higher numbers than 4096 are rejected and will cause an error.
+
+Finally, the value will be used as a filename and the DH parameters loaded in from a PEM format file.
+
+These DH parameters are used when contacting this domain (ie, when it is the remote domain on a session).
+
+#### min_version
+#### max_version
+
+Default: `TLSv1.2` minimum, no maximum.
+
+These dictate the minimum, and maximum, versions of TLS to use when contacting this domain.
+
+Versions are given as "TLS" (or "SSL"), followed by a 1 or 2 digit version number. "v" and "." are ignored, as is case.
+
+So "TLSv1.2" is the same as "tls12" and will set a minimum (or maximum) TLS version.
+
+Up to TLSv1.3 is supported, and down to SSLv2 (though this is usually disabled in the underlying OpenSSL build).
+
+#### cipherlist
+
+Default: `HIGH:!3DES:!eNULL:!aNULL:@STRENGTH`
+Inherits any: yes
+
+A cipherlist in OpenSSL format.
+
+Again, this is used for contacting the remote domain.
+
+#### identities
+
+A list of PKIX Identities (as above). Only one identity of each certificate type should be provided, so typically only an RSA and/or EC identities should be provided.
+
+### PKIX Validation
+
+#### crls
+
+Default: whatever`globals.fetch-crls` above is set to.
+
+Ineffective if `globals.fetch-crls` is set to false, and setting this to true but `globals.fetch-crls` to false will cause an error.
+
+This causes the revocation status of presented certificates to be checked. Metre uses a CRL cache, maintains CRLs for a maximum of one hour, and refetching sooner if the CRL indicates it in the nextUpdate field.
+
+OCSP querying (and OCSP stapling) is unsupported; OCSP querying leaks a substantial amount of information, and OCSP stapling only protects the end-entity certificate.
+
+Fetching CRLs is quite efficient, though administrators should note that Metre fetches CRLs whether or not the certificate would otherwise pass, so an attacker can (by using a CRL-DP URI in a certificate under their control) make some deductions about the traffic.
+
+#### trust-anchors
+
+A list containing filenames of PEM or DER certificates. If present, these will be used instead of the system trust anchors.
+
 ## Global Settings
 
 All global settings live within the `globals` key at the top level.
@@ -135,6 +219,10 @@ In this case, pings will be sent with Metre acting as `from.example.org` to `to.
 The two last seem like mirrors, but are checking entirely different connections.
 
 I don't recommend using external domains on the right-hand-side, as this generates significant traffic.
+
+### healthchecks.tls
+
+A TLS Configuration block (see above)
 
 ## Global Filter Settings
 
@@ -294,51 +382,13 @@ In some cases, Metre will learn of the identity too late to be able to place all
 
 These cases are when Metre is being contacted by XEP-0368 (so does not know the calling domain), or when no SNI or stream:to/stream:from attributes have been used (so either or both identities are unknown).
 
-#### tls.x509 block
+#### tls.config
 
-This is used as the PKIX identity for the "local" domain on a session, i.e. the domain Metre is attempting to act as.
+A TLS Configuration block (see above).
 
-#### tls.x509.chain
+#### tls.validation
 
-A chain file, including the certificate.
-
-#### tls.x509.pkey
-
-A private key file.
-
-#### tls.dhparam
-
-Default: `auto`
-
-The default, `auto`, tells OpenSSL to automatically select DH parameters, as per SSL_set_dh_auto.
-
-Otherwise, if the value is an integer, it will be used as the maximum size of the DH parameters to be used. Metre ships with built-in DH parameters of a number of sizes: 1024, 2048, 2236, 3072, and 4096. Higher numbers than 4096 are rejected and will cause an error.
-
-Finally, the value will be used as a filename and the DH parameters loaded in from a PEM format file.
-
-These DH parameters are used when contacting this domain (ie, when it is the remote domain on a session).
-
-#### tls.min_version
-#### tls.max_version
-
-Default: `TLSv1.2` minimum, no maximum.
-
-These dictate the minimum, and maximum, versions of TLS to use when contacting this domain.
-
-Versions are given as "TLS" (or "SSL"), followed by a 1 or 2 digit version number. "v" and "." are ignored, as is case.
-
-So "TLSv1.2" is the same as "tls12" and will set a minimum (or maximum) TLS version.
-
-Up to TLSv1.3 is supported, and down to SSLv2 (though this is usually disabled in the underlying OpenSSL build).
-
-#### tls.ciphers
-
-Default: `HIGH:!3DES:!eNULL:!aNULL:@STRENGTH`
-Inherits any: yes
-
-A cipherlist in OpenSSL format.
-
-Again, this is used for contacting the remote domain.
+A PKIX Validation block (see above).
 
 #### dns block
 
