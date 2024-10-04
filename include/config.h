@@ -54,26 +54,27 @@ namespace Metre {
     public:
         class Domain;
 
-        class Resolver : public Metre::DNS::Resolver{
+        class Resolver {
         public:
             explicit Resolver(Domain const &);
 
-            ~Resolver() override;
+            ~Resolver();
 
             /* DNS */
-            srv_callback_t &SrvLookup(std::string const &domain) override;
+            sigslot::tasklet<DNS::Srv> srv_lookup(std::string const &domain);
 
-            svcb_callback_t &SvcbLookup(std::string const &domain) override;
+            sigslot::tasklet<DNS::Svcb> svcb_lookup(std::string const &domain);
 
-            addr_callback_t &AddressLookup(std::string const &hostname) override;
+            sigslot::tasklet<DNS::Address> address_lookup(std::string const &hostname);
 
-            tlsa_callback_t &TlsaLookup(short unsigned int port, std::string const &hostname) override;
+            sigslot::tasklet<DNS::Tlsa> tlsa_lookup(short unsigned int port, std::string const &hostname);
 
             spdlog::logger & logger() const {
                 return m_logger;
             }
 
         private:
+            DNS::Resolver m_resolver;
             Domain const &m_domain;
             mutable spdlog::logger m_logger;
         };
