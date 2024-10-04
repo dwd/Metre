@@ -646,7 +646,9 @@ std::string Config::asString() const {
     for (auto const & [from, to] : m_healthchecks) {
         config["globals"]["healthcheck"]["checks"][from] = to;
     }
-    config["globals"]["healthcheck"]["tls"] = m_healthcheck_tls->write();
+    if (m_healthcheck_tls && m_healthcheck_tls->enabled()) {
+        config["globals"]["healthcheck"]["tls"] = m_healthcheck_tls->write();
+    }
 
     for (auto const &[filter_name, filter] : Filter::all_filters()) {
         config["filters"][filter_name] = filter->config();
