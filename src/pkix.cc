@@ -551,7 +551,7 @@ void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
 }
 
 bool TLSContext::enabled() {
-    return context() != nullptr;
+    return m_enabled;
 }
 
 void TLSContext::add_identity(std::unique_ptr<PKIXIdentity> &&identity) {
