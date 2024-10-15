@@ -36,9 +36,9 @@ jobs:
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       - name: Show coverage
-        run: cd ./sonar-build && gcovr -r ..
+        run: cd ./sonar-build && gcovr -r .. --gcov-ignore-parse-errors
       - name: Collate coverage
-        run: cd ./sonar-build && gcovr -r .. --sonarqube >../coverage.xml
+        run: cd ./sonar-build && gcovr -r .. --gcov-ignore-parse-errors --sonarqube >../coverage.xml
       - name: Sonar Scanner
         run: sonar-scanner --define sonar.cfamily.compile-commands=sonar-out/compile_commands.json --define sonar.coverageReportPaths=coverage.xml
         env:
