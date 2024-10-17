@@ -365,6 +365,9 @@ void Config::load(std::string const &filename, bool lite) {
             m_healthcheck_port = globals["healthcheck"]["port"].as<unsigned short>(m_healthcheck_port);
             m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>(m_healthcheck_address);
             m_healthcheck_tls = std::make_unique<TLSContext>(globals["healthcheck"]["tls"], "healthcheck");
+            if (globals["healthcheck"]["jwt_pub_key"]) {
+                m_healthcheck_verifier = std::make_unique<JWTVerifier>(globals["healthcheck"]["jwt_pub_key"].as<std::string>());
+            }
             logger().debug("Found healthcheck info, will bail if lite mode is on: {}", lite);
             if (lite) return;
             m_healthcheck_tls->context();

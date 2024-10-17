@@ -28,10 +28,10 @@ SOFTWARE.
 
 #include <string>
 
-std::string base64_encode(unsigned char const *, std::size_t len);
+std::string base64_encode(unsigned char const *, std::size_t len, bool urlsafe=false, bool padding=true);
 
-std::string base64_encode(std::string_view const &);
+std::string base64_encode(std::string_view const &, bool urlsafe=false, bool padding=true);
 
-std::string base64_decode(std::string_view const &s);
+std::string base64_decode(std::string_view const &s, bool urlsafe=false);
 
 #endif

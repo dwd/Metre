@@ -40,6 +40,7 @@ SOFTWARE.
 #include "sigslot.h"
 #include "sentry-wrap.h"
 #include "pkix.h"
+#include "jwt.h"
 #include <sigslot/tasklet.h>
 
 /**
@@ -400,6 +401,9 @@ namespace Metre {
         }
 
         static bool run_healthcheck(unsigned short port, bool tls);
+        auto const & healthcheck_auth() const {
+            return m_healthcheck_verifier;
+        }
 
     private:
         void create_domain(std::string const &dom);
@@ -425,6 +429,7 @@ namespace Metre {
         std::unique_ptr<TLSContext> m_healthcheck_tls;
         unsigned short int m_healthcheck_port;
         std::set<std::pair<std::string, std::string>> m_healthchecks;
+        std::unique_ptr<JWTVerifier> m_healthcheck_verifier;
     };
 }
 
