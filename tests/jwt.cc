@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include "base64.h"
+#include "jwt.h"
 #include "yaml-cpp/yaml.h"
 #include <openssl/evp.h>
 #include <openssl/ec.h>
@@ -11,6 +12,7 @@
 #include <openssl/bio.h>
 #include <openssl/err.h>
 
+using namespace Metre;
 
 std::string openssl_errs() {
     std::ostringstream os;
@@ -20,119 +22,6 @@ std::string openssl_errs() {
     }
     return os.str();
 }
-
-class JWTVerifier {
-private:
-    EVP_PKEY * m_public_key = nullptr;
-    const std::string key_type = "EC";
-    const std::string algo_prefix = "ES";
-
-public:
-    // Mostly exposed for testing.
-    static std::tuple<std::string_view,std::string_view,std::string_view> split(std::string_view s) {
-        const char delimiter = '.';
-        std::string_view header = s.substr(0, s.find(delimiter));
-        s.remove_prefix(s.find(delimiter) + 1);
-        std::string_view payload = s.substr(0, s.find(delimiter));
-        s.remove_prefix(s.find(delimiter) + 1);
-        std::string_view signature = s;
-        return std::make_tuple(header, payload, signature);
-    }
-
-    static BIGNUM * str_to_bignum(std::string_view const & s) {
-        return BN_bin2bn(reinterpret_cast<const unsigned char *>(s.data()), s.length(), nullptr);
-    }
-
-    static std::vector<unsigned char> jwt_to_sig(std::string_view const & sig_64) {
-        auto sig_in = base64_decode(sig_64, true);
-        BIGNUM * r = str_to_bignum(sig_in.substr(0, sig_in.length() / 2));
-        BIGNUM * s = str_to_bignum(sig_in.substr(sig_in.length() / 2));
-        auto sig = ECDSA_SIG_new();
-        ECDSA_SIG_set0(sig, r, s);
-
-        std::vector<unsigned char> sigdata;
-        auto siglen = i2d_ECDSA_SIG(sig, nullptr);
-        sigdata.resize(siglen);
-        auto * sigptr = sigdata.data();
-        i2d_ECDSA_SIG(sig, &sigptr);
-        ECDSA_SIG_free(sig);
-        return sigdata;
-    }
-public:
-    explicit JWTVerifier(std::string const & public_key) {
-        auto * bio = BIO_new_mem_buf(public_key.data(), public_key.size());
-        m_public_key = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
-        if (!m_public_key) {
-            throw std::runtime_error("PEM_read_bio_Privatekey failed: " + openssl_errs());
-        }
-        if (EVP_PKEY_get0_type_name(m_public_key) != key_type) {
-            EVP_PKEY_free(m_public_key);
-            m_public_key = nullptr;
-            throw std::runtime_error("Wrong key type");
-        }
-    }
-    explicit JWTVerifier(EVP_PKEY * public_key) : m_public_key(public_key) {
-        if (EVP_PKEY_get0_type_name(m_public_key) != key_type) {
-            EVP_PKEY_free(m_public_key);
-            m_public_key = nullptr;
-            throw std::runtime_error("Wrong key type");
-        }
-    }
-    JWTVerifier(JWTVerifier && other)  noexcept : m_public_key(other.m_public_key) {
-        other.m_public_key = nullptr;
-    }
-    JWTVerifier(JWTVerifier const &) = delete;
-
-    [[nodiscard]] YAML::Node verify(std::string_view const & jwt) const {
-        const auto [header64, payload64, signature64] = split(jwt);
-        auto header_str = base64_decode(header64, true);
-        auto header = YAML::Load(header_str);
-        if (header["typ"].as<std::string>("") != "JWT") {
-            throw std::runtime_error("Not a JWT");
-        }
-        auto alg = header["alg"].as<std::string>("");
-        if (!alg.starts_with(algo_prefix)) {
-            throw std::runtime_error("Not an " + algo_prefix + " type JWT - " + alg);
-        }
-        const EVP_MD * md = nullptr;
-        if (alg == "ES256") {
-            md = EVP_sha256();
-        } else if (alg == "ES384") {
-            md = EVP_sha384();
-        } else if (alg == "ES512") {
-            md = EVP_sha512();
-        }
-        auto signature = jwt_to_sig(signature64);
-        EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-        try {
-            if (EVP_DigestVerifyInit(md_ctx, nullptr, md, nullptr, m_public_key) != 1) {
-                throw std::runtime_error("EVP_DigestVerifyInit failed" + openssl_errs());
-            };
-            if (EVP_DigestVerifyUpdate(md_ctx, reinterpret_cast<const unsigned char *>(header64.data()), header64.size()) != 1) {
-                throw std::runtime_error("EVP_DigestVerifyUpdate failed" + openssl_errs());
-            };
-            if (EVP_DigestVerifyUpdate(md_ctx, reinterpret_cast<const unsigned char *>("."), 1) != 1) {
-                throw std::runtime_error("EVP_DigestVerifyUpdate failed" + openssl_errs());
-            };
-            if (EVP_DigestVerifyUpdate(md_ctx, reinterpret_cast<const unsigned char *>(payload64.data()), payload64.size()) != 1) {
-                throw std::runtime_error("EVP_DigestVerifyUpdate failed" + openssl_errs());
-            };
-            if (EVP_DigestVerifyFinal(md_ctx, reinterpret_cast<unsigned char *>(signature.data()), signature.size()) != 1) {
-                throw std::runtime_error("JWT signature failed");
-            }
-        } catch(...) {
-            EVP_MD_CTX_free(md_ctx);
-            throw;
-        }
-        EVP_MD_CTX_free(md_ctx);
-        auto payload = base64_decode(payload64, true);
-        return YAML::Load(payload);
-    }
-
-    ~JWTVerifier() {
-        if (m_public_key != nullptr) EVP_PKEY_free(m_public_key);
-    }
-};
 
 std::string bignum_to_str(const BIGNUM * bn, size_t sz) {
     // Convert the bignum to bytes:

@@ -238,6 +238,8 @@ set(SOURCE_FILES
         src/pkix.cc
         include/fmt-enum.h
         src/healthcheck.cc
+        include/jwt.h
+        src/jwt.cc
 )
 
 if(UNIX)
@@ -313,6 +315,7 @@ add_executable(metre-test
     tests/endpoint.cc
         src/dns.cc
         src/base64.cc
+        src/jwt.cc
         tests/dns.cc
         tests/main.cc
         tests/jwt.cc
