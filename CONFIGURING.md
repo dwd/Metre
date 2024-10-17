@@ -222,7 +222,14 @@ I don't recommend using external domains on the right-hand-side, as this generat
 
 ### healthchecks.tls
 
-A TLS Configuration block (see above)
+A TLS Configuration block (see above). There's no sub-key of config here, please note. Defaults to disabled, so would look like this:
+
+```yaml
+globals:
+  healthcheck:
+    tls:
+      enabled: false
+```
 
 ## Global Filter Settings
 

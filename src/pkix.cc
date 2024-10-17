@@ -230,7 +230,7 @@ YAML::Node TLSContext::write() const {
             config["min_version"] = tls_version_to_string(m_min_version);
         }
         if (tls_version_to_string(m_max_version)) {
-            config["min_version"] = tls_version_to_string(m_max_version);
+            config["max_version"] = tls_version_to_string(m_max_version);
         }
         config["identities"] = YAML::Node(YAML::NodeType::Sequence);
         for (const auto &identity: m_identities) {
@@ -551,7 +551,7 @@ void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
 }
 
 bool TLSContext::enabled() {
-    return context() != nullptr;
+    return m_enabled;
 }
 
 void TLSContext::add_identity(std::unique_ptr<PKIXIdentity> &&identity) {

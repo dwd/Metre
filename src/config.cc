@@ -159,7 +159,7 @@ namespace {
             if (tls["x509"]) {
                 dom->tls_context().add_identity(std::make_unique<PKIXIdentity>(tls["x509"]));
             }
-            dom->tls_context().enabled(); // Force everything to get instantiated here.
+            dom->tls_context().context(); // Force everything to get instantiated here.
             if (tls["validation"]) {
                 dom->pkix_validator(std::make_unique<PKIXValidator>(tls["validation"]));
                 dom->pkix_validator().load(); // Force loading here.
@@ -367,12 +367,14 @@ void Config::load(std::string const &filename, bool lite) {
             m_healthcheck_tls = std::make_unique<TLSContext>(globals["healthcheck"]["tls"], "healthcheck");
             logger().debug("Found healthcheck info, will bail if lite mode is on: {}", lite);
             if (lite) return;
-            m_healthcheck_tls->enabled();
+            m_healthcheck_tls->context();
             if (globals["healthcheck"]["checks"]) {
                 for (auto const & from : globals["healthcheck"]["checks"]) {
                     m_healthchecks.emplace(from.first.as<std::string>(), from.second.as<std::string>());
                 }
             }
+        } else {
+            m_healthcheck_tls = std::make_unique<TLSContext>(globals["healthcheck"], "healthcheck"); // Non-existent node to gain defaults
         }
         logger().debug("Completed globals, will bail if lite mode is on: {}", lite);
         if (lite) return;
@@ -646,9 +648,7 @@ std::string Config::asString() const {
     for (auto const & [from, to] : m_healthchecks) {
         config["globals"]["healthcheck"]["checks"][from] = to;
     }
-    if (m_healthcheck_tls && m_healthcheck_tls->enabled()) {
-        config["globals"]["healthcheck"]["tls"] = m_healthcheck_tls->write();
-    }
+    config["globals"]["healthcheck"]["tls"] = m_healthcheck_tls->write();
 
     for (auto const &[filter_name, filter] : Filter::all_filters()) {
         config["filters"][filter_name] = filter->config();
