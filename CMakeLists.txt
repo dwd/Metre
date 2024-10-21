@@ -238,6 +238,8 @@ set(SOURCE_FILES
         src/pkix.cc
         include/fmt-enum.h
         src/healthcheck.cc
+        include/jwt.h
+        src/jwt.cc
 )
 
 if(UNIX)
@@ -277,18 +279,7 @@ endif(METRE_SENTRY)
 # target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
 if (UNIX)
-    target_include_directories(metre PRIVATE
-        ${SPIFFING_INCLUDE_DIRS}
-    )
-
-    set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
-    set(THREADS_PREFER_PTHREAD_FLAG TRUE)
-    find_package(Threads)
-
     target_link_libraries(metre PRIVATE
-        ${SPIFFING_LDFLAGS}
-        ${CMAKE_DL_LIBS} 
-        Threads::Threads
             -lunwind
     )
 else()
@@ -323,8 +314,11 @@ add_executable(metre-test
     ${CAPABILITY_SOURCES}
     tests/endpoint.cc
         src/dns.cc
+        src/base64.cc
+        src/jwt.cc
         tests/dns.cc
         tests/main.cc
+        tests/jwt.cc
 )
 
 target_compile_definitions(metre-test PUBLIC
@@ -355,6 +349,7 @@ target_link_libraries(metre-test PRIVATE
     ${UNBOUND_LDFLAGS}
     OpenSSL::SSL
     OpenSSL::Crypto
+        yaml-cpp::yaml-cpp
         GTest::gtest
 )
 if(METRE_SENTRY)
@@ -363,15 +358,6 @@ if(METRE_SENTRY)
 endif(METRE_SENTRY)
 
 if (UNIX)
-    target_include_directories(metre-test PRIVATE
-        ${SPIFFING_INCLUDE_DIRS}
-    )
-
-    target_link_libraries(metre-test PRIVATE
-        ${SPIFFING_LDFLAGS}
-        ${CMAKE_DL_LIBS} 
-        Threads::Threads
-    )
 else()
     target_link_libraries(metre-test PRIVATE
         ws2_32

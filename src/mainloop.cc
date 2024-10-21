@@ -196,6 +196,26 @@ namespace Metre {
                     evhttp_send_error(req, HTTP_BADMETHOD, "Method not supported");
                     co_return;
             }
+            auto headers = evhttp_request_get_input_headers(req);
+            if (Config::config().healthcheck_auth()) {
+                auto authz = evhttp_find_header(headers, "authorization");
+                if (!authz) {
+                    evhttp_send_error(req, HTTP_BADREQUEST, "No header");
+                    co_return;
+                }
+                std::string_view jwt = authz;
+                auto space = jwt.find(' ');
+                if (space == std::string_view::npos) {
+                    evhttp_send_error(req, HTTP_BADREQUEST, "No token");
+                    co_return;
+                }
+                jwt.remove_prefix(space);
+                try {
+                    auto payload = Config::config().healthcheck_auth()->verify(jwt);
+                } catch(std::runtime_error & e) {
+                    evhttp_send_error(req, HTTP_BADREQUEST, e.what());
+                }
+            }
 
             evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "application/json");
             std::ostringstream body;
