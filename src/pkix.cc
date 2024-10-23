@@ -499,7 +499,7 @@ namespace {
     }
 }
 
-SSL_CTX * TLSContext::context() {
+SSL_CTX * TLSContext::context(bool server) {
     if (!m_enabled) return nullptr;
     if (m_ssl_ctx) {
         return m_ssl_ctx;
@@ -512,6 +512,9 @@ SSL_CTX * TLSContext::context() {
 
     for (auto & identity : m_identities) {
         identity->apply(m_ssl_ctx);
+    }
+    if (server && m_identities.empty()) {
+        throw pkix_config_error("No identities for server context " + m_domain);
     }
 
     SSL_CTX_set_purpose(m_ssl_ctx, X509_PURPOSE_SSL_SERVER);
@@ -536,18 +539,21 @@ void PKIXIdentity::apply(SSL_CTX * ssl_ctx) const {
         }
         throw pkix_identity_load_error("Couldn't load chain file: " + m_cert_chain_file);
     }
+    Config::config().logger().info("Certificate chain loaded from {}", m_cert_chain_file);
     if (SSL_CTX_use_PrivateKey_file(ssl_ctx, m_pkey_file.c_str(), SSL_FILETYPE_PEM) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
             Config::config().logger().error("OpenSSL Error (pkey): {}", ERR_reason_error_string(e));
         }
         throw pkix_identity_load_error("Couldn't load keyfile: " + m_pkey_file);
     }
+    Config::config().logger().info("Private key loaded from {}", m_pkey_file);
     if (SSL_CTX_check_private_key(ssl_ctx) != 1) {
         for (unsigned long e = ERR_get_error(); e != 0; e = ERR_get_error()) {
             Config::config().logger().error("OpenSSL Error (check): {}", ERR_reason_error_string(e));
         }
         throw pkix_config_error("Private key mismatch");
     }
+    Config::config().logger().info("Certificate and key loaded OK");
 }
 
 bool TLSContext::enabled() {

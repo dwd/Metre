@@ -78,7 +78,7 @@ namespace Metre {
         TLSContext(TLSContext const &) = delete;
         void operator = (TLSContext const &) = delete;
         TLSContext(YAML::Node const & config, std::string const & domain);
-        SSL_CTX* context();
+        SSL_CTX* context(bool server=true);
         SSL * instantiate(bool connecting, std::string const & remote_domain);
         bool enabled();
         void add_identity(std::unique_ptr<PKIXIdentity> && identity);
