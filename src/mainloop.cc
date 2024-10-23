@@ -196,8 +196,16 @@ namespace Metre {
                     evhttp_send_error(req, HTTP_BADMETHOD, "Method not supported");
                     co_return;
             }
+            bool check_auth = true;
             auto headers = evhttp_request_get_input_headers(req);
-            if (Config::config().healthcheck_auth()) {
+            auto connection = evhttp_request_get_connection(req);
+            char * host = nullptr;
+            uint16_t port = 0;
+            evhttp_connection_get_peer(connection, &host, &port);
+            if (host && host == std::string("127.0.0.1")) {
+                check_auth = false;
+            }
+            if (check_auth && Config::config().healthcheck_auth()) {
                 auto authz = evhttp_find_header(headers, "authorization");
                 if (!authz) {
                     evhttp_send_error(req, HTTP_BADREQUEST, "No header");

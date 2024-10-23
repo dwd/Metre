@@ -54,10 +54,20 @@ std::vector<unsigned char> JWTVerifier::jwt_to_sig(std::string_view const & sig_
 }
 
 JWTVerifier::JWTVerifier(std::string const & public_key) {
-    auto * bio = BIO_new_mem_buf(public_key.data(), public_key.size());
-    m_public_key = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+    if (public_key.starts_with("-----BEGIN PUBLIC KEY-----")) {
+        auto *bio = BIO_new_mem_buf(public_key.data(), public_key.size());
+        m_public_key = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+    } else {
+        auto * fp = std::fopen(public_key.c_str(), "r");
+        if (fp) {
+            m_public_key = PEM_read_PUBKEY(fp, nullptr, nullptr, nullptr);
+            std::fclose(fp);
+        } else {
+            throw std::runtime_error("Couldn't open file: " + public_key);
+        }
+    }
     if (!m_public_key) {
-        throw std::runtime_error("PEM_read_bio_Privatekey failed: " + openssl_errs());
+        throw std::runtime_error("PEM_read_bio_PUBKEY failed: " + openssl_errs());
     }
     if (EVP_PKEY_get0_type_name(m_public_key) != key_type) {
         EVP_PKEY_free(m_public_key);
