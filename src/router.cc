@@ -130,13 +130,15 @@ restart:
     trans->tag("multiplex", "none");
     auto session = Router::session_by_domain(m_domain.domain());
     if (session) {
-        if (!multiplex || session->xml_stream().multiplex(false)) {
+        if (multiplex && session->xml_stream().multiplex(false)) {
+            trans->tag("multiplex", "sender");
+        } else {
             m_logger.debug("Will not do sender multiplexing");
+            session.reset();
         }
-        trans->tag("multiplex", "sender");
     }
     if (!session) {
-        m_logger.debug("No existing session for domain=[{}]", m_domain);
+        m_logger.debug("No usable existing session for domain=[{}]", m_domain);
         do {
             session = m_vrfy.lock();
             m_logger.debug("Authenticating with verify session domain=[{}]", m_domain);
