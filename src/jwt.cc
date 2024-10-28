@@ -13,7 +13,7 @@
 namespace {
     std::string openssl_errs() {
         std::ostringstream os;
-        std::array<char, 1024> buf;
+        std::array<char, 1024> buf{};
         while(auto err = ERR_get_error()) {
             os << ERR_error_string(err, buf.data()) << std::endl;
         }
@@ -22,6 +22,9 @@ namespace {
 }
 
 using namespace Metre;
+
+const std::string JWTVerifier::key_type = "EC";
+const std::string JWTVerifier::algo_prefix = "ES";
 
 std::tuple<std::string_view,std::string_view,std::string_view> JWTVerifier::split(std::string_view s) {
     const char delimiter = '.';
@@ -38,14 +41,14 @@ BIGNUM * JWTVerifier::str_to_bignum(std::string_view const & s) {
 }
 
 std::vector<unsigned char> JWTVerifier::jwt_to_sig(std::string_view const & sig_64) {
-    auto sig_in = base64_decode(sig_64, true);
+    const auto sig_in = base64_decode(sig_64, true);
     BIGNUM * r = str_to_bignum(sig_in.substr(0, sig_in.length() / 2));
     BIGNUM * s = str_to_bignum(sig_in.substr(sig_in.length() / 2));
     auto sig = ECDSA_SIG_new();
     ECDSA_SIG_set0(sig, r, s);
 
     std::vector<unsigned char> sigdata;
-    auto siglen = i2d_ECDSA_SIG(sig, nullptr);
+    const auto siglen = i2d_ECDSA_SIG(sig, nullptr);
     sigdata.resize(siglen);
     auto * sigptr = sigdata.data();
     i2d_ECDSA_SIG(sig, &sigptr);
@@ -57,6 +60,7 @@ JWTVerifier::JWTVerifier(std::string const & public_key) {
     if (public_key.starts_with("-----BEGIN PUBLIC KEY-----")) {
         auto *bio = BIO_new_mem_buf(public_key.data(), public_key.size());
         m_public_key = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+        BIO_free(bio);
     } else {
         auto * fp = std::fopen(public_key.c_str(), "r");
         if (fp) {
@@ -90,12 +94,12 @@ JWTVerifier::JWTVerifier(JWTVerifier && other)  noexcept : m_public_key(other.m_
 
 YAML::Node JWTVerifier::verify(std::string_view const & jwt) const {
     const auto [header64, payload64, signature64] = split(jwt);
-    auto header_str = base64_decode(header64, true);
+    const auto header_str = base64_decode(header64, true);
     auto header = YAML::Load(header_str);
     if (header["typ"].as<std::string>("") != "JWT") {
         throw std::runtime_error("Not a JWT");
     }
-    auto alg = header["alg"].as<std::string>("");
+    const auto alg = header["alg"].as<std::string>("");
     if (!alg.starts_with(algo_prefix)) {
         throw std::runtime_error("Not an " + algo_prefix + " type JWT - " + alg);
     }
@@ -106,6 +110,8 @@ YAML::Node JWTVerifier::verify(std::string_view const & jwt) const {
         md = EVP_sha384();
     } else if (alg == "ES512") {
         md = EVP_sha512();
+    } else {
+        throw std::runtime_error("Unknown algorithm " + alg);
     }
     auto signature = jwt_to_sig(signature64);
     EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
@@ -130,7 +136,7 @@ YAML::Node JWTVerifier::verify(std::string_view const & jwt) const {
         throw;
     }
     EVP_MD_CTX_free(md_ctx);
-    auto payload = base64_decode(payload64, true);
+    const auto payload = base64_decode(payload64, true);
     return YAML::Load(payload);
 }
 
