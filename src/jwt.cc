@@ -23,6 +23,9 @@ namespace {
 
 using namespace Metre;
 
+const std::string JWTVerifier::key_type = "EC";
+const std::string JWTVerifier::algo_prefix = "ES";
+
 std::tuple<std::string_view,std::string_view,std::string_view> JWTVerifier::split(std::string_view s) {
     const char delimiter = '.';
     std::string_view header = s.substr(0, s.find(delimiter));
@@ -57,6 +60,7 @@ JWTVerifier::JWTVerifier(std::string const & public_key) {
     if (public_key.starts_with("-----BEGIN PUBLIC KEY-----")) {
         auto *bio = BIO_new_mem_buf(public_key.data(), public_key.size());
         m_public_key = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+        BIO_free(bio);
     } else {
         auto * fp = std::fopen(public_key.c_str(), "r");
         if (fp) {
@@ -106,6 +110,8 @@ YAML::Node JWTVerifier::verify(std::string_view const & jwt) const {
         md = EVP_sha384();
     } else if (alg == "ES512") {
         md = EVP_sha512();
+    } else {
+        throw std::runtime_error("Unknown algorithm " + alg);
     }
     auto signature = jwt_to_sig(signature64);
     EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();

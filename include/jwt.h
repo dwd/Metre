@@ -19,8 +19,8 @@ namespace Metre {
     class JWTVerifier {
     private:
         EVP_PKEY * m_public_key = nullptr;
-        const std::string key_type = "EC";
-        const std::string algo_prefix = "ES";
+        static const std::string key_type;
+        static const std::string algo_prefix;
 
     public:
         // Mostly exposed for testing.
