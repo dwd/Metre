@@ -222,14 +222,23 @@ I don't recommend using external domains on the right-hand-side, as this generat
 
 ### healthchecks.tls
 
-A TLS Configuration block (see above). There's no sub-key of config here, please note. Defaults to disabled, so would look like this:
+A TLS Configuration block (see above). There's no sub-key of config here, please note. Defaults to disabled. A typical usage would look like this:
 
 ```yaml
 globals:
   healthcheck:
     tls:
-      enabled: false
+      enabled: true
+      identities:
+        - chain: /etc/letsencrypt/live/dave.cridland.net/fullchain.pem
+          pkey: /etc/letsencrypt/live/dave.cridland.net/privkey.pem
 ```
+
+### healthcheck.jwt_pub_key
+
+A public JWT key to verify a JWT signature used to authenticate healthcheck access. This can be a
+file or an inline string, and must contain a PEM format EC key. The JWT implementation only
+supports ES256, ES384, and ES512 algorithms.
 
 ## Global Filter Settings
 
