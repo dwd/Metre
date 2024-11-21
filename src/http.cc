@@ -15,11 +15,11 @@
 using namespace Metre;
 
 namespace Metre {
-    Http * s_http = 0;
+    std::unique_ptr<Http> s_http;
 }
 
 Http & Http::http() {
-    if (!s_http) s_http = new Http();
+    if (!s_http) s_http = std::make_unique<Http>();
     return *s_http;
 }
 
@@ -52,8 +52,8 @@ void Http::done_crl(struct evhttp_request *req, std::uintptr_t key) {
             m_crl_waiting[uri].disconnect_all();
         } else {
             while (unsigned long ssl_err = ERR_get_error()) {
-                char error_buf[1024];
-                METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, error_buf));
+                std::array<char,1024> error_buf = {};
+                METRE_LOG(Metre::Log::DEBUG, " :: " << ERR_error_string(ssl_err, error_buf.data()));
             }
             m_crl_waiting[uri].emit(uri, 400, nullptr);
             m_crl_waiting[uri].disconnect_all();
@@ -73,7 +73,8 @@ Http::crl_callback_t &Http::do_crl(std::string const &urix) {
     if (iter != m_crl_cache.end() && iter->second) {
         auto data = iter->second;
         auto nextupdate = X509_CRL_get0_nextUpdate(data);
-        int day, sec;
+        int day;
+        int sec;
         ASN1_TIME_diff(&day, &sec, nullptr, nextupdate);
         if (day > 0) {
             // nextUpdate is today sometime - refetch.,
@@ -85,9 +86,9 @@ Http::crl_callback_t &Http::do_crl(std::string const &urix) {
         }
     }
     // Step two: Are we fetching this already?
-    for (auto const &k : m_requests) {
-        if (k.second == uri) {
-            return m_crl_waiting[uri];
+    for (auto const & [req_id, req_uri] : m_requests) {
+        if (req_uri == uri) {
+            return m_crl_waiting[req_uri];
         }
     }
     // Step three: Actually issue a new HTTP request:
@@ -100,26 +101,26 @@ Http::crl_callback_t &Http::do_crl(std::string const &urix) {
             throw std::runtime_error("Cannot locate scheme in " + uri);
         }
         std::string scheme = evhttp_uri_get_scheme(parsed);
-        bool ssl = false;
+        bool use_tls = false;
         if (scheme == "https") {
-            ssl = true;
+            use_tls = true;
         } else if (scheme != "http") {
             throw std::runtime_error("Unknown scheme in " + uri);
         }
         if (!evhttp_uri_get_host(parsed)) throw std::runtime_error("Cannot locate host in " + uri);
         std::string host = evhttp_uri_get_host(parsed);
         int port = evhttp_uri_get_port(parsed);
-        if (port < 0) port = (ssl ? 443 : 80);
+        if (port < 0) port = (use_tls ? 443 : 80);
         evhttp_connection * evcon = nullptr;
-        if (ssl) {
+        if (use_tls) {
             SSL_CTX * ssl_ctx = SSL_CTX_new(TLS_client_method());
             SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE, nullptr);
             SSL * ssl = SSL_new(ssl_ctx);
             SSL_set_tlsext_host_name(ssl, host.c_str());
             auto bev = bufferevent_openssl_socket_new(Router::event_base(), -1, ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
-            evcon = evhttp_connection_base_bufferevent_new(Router::event_base(), nullptr, bev, host.c_str(), port);
+            evcon = evhttp_connection_base_bufferevent_new(Router::event_base(), nullptr, bev, host.c_str(), static_cast<unsigned short>(port));
        } else {
-            evcon = evhttp_connection_base_new(Router::event_base(), nullptr, host.c_str(), port);
+            evcon = evhttp_connection_base_new(Router::event_base(), nullptr, host.c_str(), static_cast<unsigned short>(port));
         }
         // TODO config
         //evhttp_connection_set_retries(evcon, 3);

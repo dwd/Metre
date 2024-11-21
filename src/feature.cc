@@ -37,7 +37,7 @@ std::string const &Feature::BaseDescription::xmlns() const {
     return m_xmlns;
 }
 
-Feature::BaseDescription::~BaseDescription() {}
+Feature::BaseDescription::~BaseDescription() = default;
 
 std::list<std::unique_ptr<Feature::BaseDescription>> &Feature::all_features(SESSION_TYPE t) {
     static std::map<SESSION_TYPE, std::list<std::unique_ptr<Feature::BaseDescription>>> ls;

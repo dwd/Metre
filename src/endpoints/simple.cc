@@ -17,7 +17,7 @@ namespace {
         };
 
         sigslot::tasklet<void> process(Iq & iq) override {
-            if (iq.to().full() != m_jid.domain()) {
+            if (iq.to().full() != jid().domain()) {
                 throw stanza_service_unavailable();
             }
             return Endpoint::process(iq);

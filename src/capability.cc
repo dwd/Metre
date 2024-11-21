@@ -15,7 +15,7 @@ std::map<std::string, Metre::Capability::BaseDescription *, std::less<>> &Metre:
 
 Metre::Capability::Capability(BaseDescription const &d, Endpoint &jid) : m_description(d), m_endpoint(jid) {}
 
-Metre::Capability::~Capability() {}
+Metre::Capability::~Capability() = default;
 
 std::unique_ptr<Metre::Capability> Metre::Capability::create(std::string const &name, Endpoint &jid) {
     auto i = all_capabilities().find(name);
