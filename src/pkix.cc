@@ -8,7 +8,7 @@
 #include <openssl/decoder.h>
 #include <openssl/rand.h>
 #include <openssl/x509v3.h>
-#include <http.h>
+#include <covent/crl-cache.h>
 #include <fstream>
 #include "config.h"
 #include "pkix.h"
@@ -240,7 +240,7 @@ YAML::Node TLSContext::write() const {
     return config;
 }
 
-sigslot::tasklet<void> PKIXValidator::fetch_crls(std::shared_ptr<sentry::span> span, const SSL *ssl, X509 *cert) {
+covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
     STACK_OF(X509) *chain = SSL_get_peer_cert_chain(ssl);
     const SSL_CTX *ctx = SSL_get_SSL_CTX(ssl);
     X509_STORE *store = SSL_CTX_get_cert_store(ctx);
@@ -248,7 +248,7 @@ sigslot::tasklet<void> PKIXValidator::fetch_crls(std::shared_ptr<sentry::span> s
     X509_STORE_CTX_init(st, store, cert, chain);
     X509_verify_cert(st);
     STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
-    std::list<std::pair<std::string,std::shared_ptr<sentry::span>>> all_crls;
+    std::map<std::string,covent::task<std::tuple<std::string,int,X509_CRL *>>, std::less<>> all_crls;
     for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
         auto current_cert = sk_X509_value(verified, certnum);
         std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
@@ -267,9 +267,12 @@ sigslot::tasklet<void> PKIXValidator::fetch_crls(std::shared_ptr<sentry::span> s
                             std::string uristr{reinterpret_cast<char *>(uri->data),
                                                static_cast<std::size_t>(uri->length)};
                             m_log.info("verify_tls: Fetching CRL - {}", uristr);
-                            all_crls.emplace_back(uristr, span->start_child("http.client", uristr));
-                            Http::crl(uristr);
-                            // We don't await here, just get them going in parallel.
+                            if (!all_crls.contains(uristr)) {
+                                auto task = covent::pkix::CrlCache::crl(uristr);
+                                task.start();
+                                all_crls[uristr] = std::move(task);
+                                // We don't await here, just get them going in parallel.
+                            }
                         }
                     }
                 }
@@ -279,9 +282,8 @@ sigslot::tasklet<void> PKIXValidator::fetch_crls(std::shared_ptr<sentry::span> s
     // Now we wait for them all. Order doesn't matter - we'll get new copies
     // in the rare case we happen to cross an expiry boundary, but that's
     // no biggie.
-    for (auto & [uri, child_span] : all_crls) {
-        auto [uristr, code, crl] = co_await Http::crl(uri);
-        child_span.reset();
+    for (auto & [uri,task] : all_crls) {
+        auto [uristr, code, crl] = co_await task;
         m_log.info("verify_tls: Fetched CRL - {}, with code {}", uri, code);
         if (!X509_STORE_add_crl(store, crl)) {
             // Erm. Whoops? Probably doesn't matter.
@@ -318,7 +320,7 @@ namespace {
  * @param route
  * @return true if TLS verified correctly.
  */
-sigslot::tasklet<bool> PKIXValidator::verify_tls(std::shared_ptr<sentry::span> span, SSL * ssl, std::string remote_domain) {
+covent::task<bool> PKIXValidator::verify_tls(SSL * ssl, std::string remote_domain) {
     if (!ssl) co_return false; // No TLS.
     auto *cert = SSL_get_peer_certificate(ssl);
     if (!cert) {
@@ -335,13 +337,13 @@ sigslot::tasklet<bool> PKIXValidator::verify_tls(std::shared_ptr<sentry::span> s
     auto *store = SSL_CTX_get_cert_store(ctx);
     auto *vpm = X509_VERIFY_PARAM_new();
     if (m_crls) {
-        co_await fetch_crls(span->start_child("tls", "fetch_crls"), ssl, cert);
+        co_await fetch_crls(ssl, cert);
         X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_CRL_CHECK_ALL);
     }
     X509_VERIFY_PARAM_set1_host(vpm, remote_domain.c_str(), remote_domain.size());
     // Add RFC 6125 additional names.
     auto & domain = Config::config().domain(remote_domain);
-    auto gathered = co_await domain.gather(span->start_child("gather", remote_domain));
+    auto gathered = co_await domain.gather();
     for (auto const &host : gathered.gathered_hosts) {
         m_log.debug("Adding gathered hostname {}", host);
         X509_VERIFY_PARAM_add1_host(vpm, host.c_str(), host.size());
@@ -469,31 +471,31 @@ namespace {
                               cert_name.data(), name_sz);
             cert_name.resize(cert_name.find('\0'));
             Config::config().logger().debug("Cert passed basic verification: {}", cert_name);
-            if (Config::config().fetch_pkix_status()) {
-                auto cert = X509_STORE_CTX_get_current_cert(st);
-                std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
-                        (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(cert, NID_crl_distribution_points, nullptr, nullptr),
-                        [](STACK_OF(DIST_POINT) *crldp) { sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
-                auto crldp = crldp_ptr.get();
-                if (crldp) {
-                    for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
-                        auto const *const dp = sk_DIST_POINT_value(crldp, i);
-                        if (dp->distpoint->type == 0) { // Full Name
-                            auto names = dp->distpoint->name.fullname;
-                            for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
-                                auto const *const name = sk_GENERAL_NAME_value(names, ii);
-                                if (name->type == GEN_URI) {
-                                    ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
-                                    std::string uristr{reinterpret_cast<char *>(uri->data),
-                                                       static_cast<std::size_t>(uri->length)};
-                                    Config::config().logger().info("Prefetching CRL for {} - {}", cert_name, uristr);
-                                    Http::crl(uristr);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+//            if (Config::config().fetch_pkix_status()) {
+//                auto cert = X509_STORE_CTX_get_current_cert(st);
+//                std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
+//                        (STACK_OF(DIST_POINT) *) X509_get_ext_d2i(cert, NID_crl_distribution_points, nullptr, nullptr),
+//                        [](STACK_OF(DIST_POINT) *crldp) { sk_DIST_POINT_pop_free(crldp, DIST_POINT_free); }};
+//                auto crldp = crldp_ptr.get();
+//                if (crldp) {
+//                    for (int i = 0; i != sk_DIST_POINT_num(crldp); ++i) {
+//                        auto const *const dp = sk_DIST_POINT_value(crldp, i);
+//                        if (dp->distpoint->type == 0) { // Full Name
+//                            auto names = dp->distpoint->name.fullname;
+//                            for (int ii = 0; ii != sk_GENERAL_NAME_num(names); ++ii) {
+//                                auto const *const name = sk_GENERAL_NAME_value(names, ii);
+//                                if (name->type == GEN_URI) {
+//                                    ASN1_IA5STRING *uri = name->d.uniformResourceIdentifier;
+//                                    std::string uristr{reinterpret_cast<char *>(uri->data),
+//                                                       static_cast<std::size_t>(uri->length)};
+//                                    Config::config().logger().info("Prefetching CRL for {} - {}", cert_name, uristr);
+//                                    covent::pkix::CrlCache::crl(uristr);
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//            }
         }
         return 1;
     }

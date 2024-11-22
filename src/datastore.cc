@@ -24,13 +24,13 @@ void Datastore::get(std::string const &scope, std::string const &node, std::stri
             auto item_it = nodemap.find(item_id);
             if (item_it != nodemap.end()) {
                 std::string const &item = item_it->second;
-                Router::defer([fn, &item]() {
+                covent::Loop::thread_loop().defer([fn, &item]() {
                     fn(item);
                 });
             }
         }
     }
-    Router::defer([fn, this]() {
+    covent::Loop::thread_loop().defer([fn, this]() {
         fn(m_empty);
     });
 }
@@ -41,7 +41,7 @@ void Datastore::set(std::string const &scope, std::string const &node, std::stri
 }
 
 void Datastore::get(std::string const &scope, std::string const &node, callback const &fn) const {
-    Router::defer([fn, this]() {
+    covent::Loop::thread_loop().defer([fn, this]() {
         fn(m_empty);
     });
 }

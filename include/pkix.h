@@ -30,12 +30,11 @@ SOFTWARE.
 #include <openssl/ossl_typ.h>
 #include <yaml-cpp/yaml.h>
 #include "defs.h"
-#include "dns.h"
-#include <sigslot/tasklet.h>
+#include <covent/dns.h>
 
 
 namespace Metre {
-    sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span>, XMLStream &stream, Route const &route);
+    covent::task<bool> verify_tls(XMLStream &stream, Route const &route);
 
     bool start_tls(XMLStream &stream, bool send_proceed);
 
@@ -60,8 +59,8 @@ namespace Metre {
         PKIXValidator() = delete;
         PKIXValidator(PKIXValidator const &) = delete;
         explicit PKIXValidator(YAML::Node const & config);
-        sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span> span, SSL *, std::string);
-        sigslot::tasklet<void> fetch_crls(std::shared_ptr<sentry::span>, const SSL *, X509 * cert);
+        covent::task<bool> verify_tls(SSL *, std::string);
+        covent::task<void> fetch_crls(const SSL *, X509 * cert);
         void load();
         [[nodiscard]] YAML::Node write() const;
 
@@ -112,5 +111,25 @@ namespace Metre {
         using pkix_error::pkix_error;
     };
 }
+
+#include "fmt-enum.h"
+
+METRE_ENUM_FORMATTER(covent::dns::rr::TLSA::CertUsage,
+                     METRE_ENUM_ENTRY_TXT(CertConstraint, "CertConstraint (PKIX-EE)")
+                     METRE_ENUM_ENTRY_TXT(CAConstraint, "CAConstraint (PKIX-CA)")
+                     METRE_ENUM_ENTRY_TXT(DomainCert, "DomainCert (DANE-EE)")
+                     METRE_ENUM_ENTRY_TXT(TrustAnchorAssertion, "TrustAnchorAssertion (DANE-TA)")
+ );
+
+METRE_ENUM_FORMATTER(covent::dns::rr::TLSA::Selector,
+                     METRE_ENUM_ENTRY(SubjectPublicKeyInfo)
+                     METRE_ENUM_ENTRY(FullCert)
+);
+
+METRE_ENUM_FORMATTER(covent::dns::rr::TLSA::MatchType,
+                     METRE_ENUM_ENTRY_TXT(Sha256, "SHA-256")
+                     METRE_ENUM_ENTRY_TXT(Sha512, "SHA-512")
+                     METRE_ENUM_ENTRY(Full)
+);
 
 #endif //METRE_PKIX_H

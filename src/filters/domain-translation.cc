@@ -45,7 +45,7 @@ namespace {
         DomainTranslation(BaseDescription &b, Config::Domain &, YAML::Node const &) : Filter(b) {
         }
 
-        sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
+        covent::task<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
             if (dir == FILTER_DIRECTION::FROM) {
                 co_return FILTER_RESULT::PASS;
             }

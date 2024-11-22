@@ -35,6 +35,7 @@ SOFTWARE.
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
 #include <cxxabi.h>
+#include <covent/covent.h>
 
 #ifdef METRE_SENTRY
 #include "sentry.h"
@@ -81,7 +82,6 @@ namespace {
     };
 
     std::unique_ptr<BootConfig> bc;
-    std::unique_ptr<Metre::Config> config;
 
     void hup_handler(int) {
         //config.reset(new Metre::Config(bc->config_file));
@@ -91,7 +91,7 @@ namespace {
 
     void term_handler(int) {
         METRE_LOG(Metre::Log::INFO, "Shutdown received.");
-        Metre::Router::quit();
+        covent::Loop::main_loop().shutdown();
     }
 
     const char * demangle(const char * input) {
@@ -233,7 +233,6 @@ int main(int argc, char *argv[]) {
     // Firstly, load up the configuration.
     bc = std::make_unique<BootConfig>(argc, argv);
     auto config_lite = std::make_unique<Metre::Config>(bc->config_file, true);
-    config_lite->logger().info("Anything");
     if (bc->boot_method.empty()) {
         bc->boot_method = config_lite->boot_method();
     }
@@ -245,8 +244,6 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
     }
-    config_lite->logger().info("Primary boot");
-    config = std::make_unique<Metre::Config>(bc->config_file);
     if (bc->boot_method == "sysv") {
         pid_t child = fork();
         if (child == -1) {
@@ -261,6 +258,9 @@ int main(int argc, char *argv[]) {
         close(0);
         close(1);
         close(2);
+        covent::Loop mainloop;
+        config_lite->logger().info("Primary boot in method {}", bc->boot_method);
+        auto config = std::make_unique<Metre::Config>(bc->config_file);
         config->log_init();
         config->write_runtime_config();
         if (-1 == setsid()) {
@@ -286,12 +286,18 @@ int main(int argc, char *argv[]) {
         signal(SIGTERM, term_handler);
         signal(SIGSEGV, segv_handler);
         signal(SIGBUS, segv_handler);
-        Metre::Router::run([]() { return false; });
+        mainloop.run();
     } else if (bc->boot_method == "none") {
+        config_lite->logger().info("Primary boot in method {}", bc->boot_method);
+        covent::Loop mainloop;
+        auto config = std::make_unique<Metre::Config>(bc->config_file);
         config->log_init(true);
         config->write_runtime_config();
-        Metre::Router::run([]() { return false; });
+        mainloop.run();
     } else if (bc->boot_method == "docker") {
+        config_lite->logger().info("Primary boot in method {}", bc->boot_method);
+        covent::Loop mainloop;
+        auto config = std::make_unique<Metre::Config>(bc->config_file);
         config->docker_setup();
         config->write_runtime_config();
         signal(SIGPIPE, SIG_IGN);
@@ -300,8 +306,11 @@ int main(int argc, char *argv[]) {
         signal(SIGINT, term_handler);
         signal(SIGSEGV, segv_handler);
         signal(SIGBUS, segv_handler);
-        Metre::Router::run([]() { return false; });
+        mainloop.run();
     } else if (bc->boot_method == "systemd") {
+        config_lite->logger().info("Primary boot in method {}", bc->boot_method);
+        covent::Loop mainloop;
+        auto config = std::make_unique<Metre::Config>(bc->config_file);
         config->log_init(true);
         config->write_runtime_config();
         signal(SIGPIPE, SIG_IGN);
@@ -309,12 +318,11 @@ int main(int argc, char *argv[]) {
         signal(SIGTERM, term_handler);
         signal(SIGSEGV, segv_handler);
         signal(SIGBUS, segv_handler);
-        Metre::Router::run([]() { return false; });
+        mainloop.run();
     } else {
-        config->logger().critical("I don't know what boot method '{}' means", bc->boot_method);
+        config_lite->logger().critical("I don't know what boot method '{}' means", bc->boot_method);
         return 1;
     }
-    config.reset(nullptr);
     bc.reset(nullptr);
 #ifdef METRE_SENTRY
     sentry_close();

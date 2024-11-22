@@ -33,7 +33,7 @@ namespace {
 
         // Operations.
 
-        sigslot::tasklet<void> publish(Iq const &iq, rapidxml::optional_ptr<rapidxml::xml_node<>> operation) {
+        covent::task<void> publish(Iq const &iq, rapidxml::optional_ptr<rapidxml::xml_node<>> operation) {
             auto node_attr = operation->first_attribute("node");
             std::string node_name(node_attr->value());
             // Auto-create the node if it doesn't exist.
@@ -47,7 +47,7 @@ namespace {
             co_return;
         }
 
-        sigslot::tasklet<void> unknown(Iq const & iq) {
+        covent::task<void> unknown(Iq const & iq) {
             auto error = iq.create_bounce(Stanza::Error::feature_not_implemented);
             m_endpoint.send(std::move(error));
             co_return;

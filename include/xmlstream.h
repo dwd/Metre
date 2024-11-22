@@ -31,34 +31,29 @@ SOFTWARE.
 #include <optional>
 #include <memory>
 #include <vector>
-#include "sigslot.h"
+#include <sigslot/sigslot.h>
 #include "rapidxml.hpp"
 #include "feature.h"
 #include "xmppexcept.h"
 #include "filter.h"
-#include "sigslot/tasklet.h"
-
-struct X509_crl_st;
+#include <covent/covent.h>
 
 namespace Metre {
-    class NetSession;
-
-    class Server;
-
     class Feature;
 
     class Stanza;
 
-    class XMLStream : public sigslot::has_slots {
+    class XMLStream : public sigslot::has_slots, public covent::Session {
     public:
         enum class AUTH_STATE {
             NONE, REQUESTED, AUTHORIZED
         };
 
+        covent::task<bool> send_stream_open(bool);
+
     private:
         rapidxml::xml_document<> m_stream;
         rapidxml::xml_document<> m_stanza; // Not, in fact, always a stanza per-se. //
-        NetSession *m_session;
         SESSION_DIRECTION m_dir;
         SESSION_TYPE m_type;
         std::string m_stream_buf; // Sort-of-temporary buffer //
@@ -81,41 +76,30 @@ namespace Metre {
         bool m_dialback_errors = false;
         bool m_dialback = false;
         std::map<std::string, sigslot::signal<Stanza const &>, std::less<>> m_response_callbacks;
-        std::list<std::shared_ptr<sigslot::tasklet<bool>>> m_tasks;
-        int m_in_flight = 0; // Tasks in flight.
         spdlog::logger m_logger;
 
     public:
-        XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type);
+        XMLStream(SESSION_DIRECTION dir, SESSION_TYPE type);
 
-        XMLStream(NetSession *owner, SESSION_DIRECTION dir, SESSION_TYPE type, std::string const &stream_from,
+        XMLStream(SESSION_DIRECTION dir, SESSION_TYPE type, std::string const &stream_from,
                   std::string const &stream_to);
+
+        XMLStream(XMLStream const &) = delete;
+        XMLStream(XMLStream &&) = delete;
+
+        sigslot::signal<XMLStream &> on_closed;
 
         spdlog::logger &logger() {
             return m_logger;
         }
 
-        size_t process(unsigned char *, size_t);
+        covent::task<bool> process(std::string_view const & data_in) override;
 
         void handle_exception(Metre::base::xmpp_exception const &e);
 
         void in_context(std::function<void()> const &, Stanza const &s);
 
         void in_context(std::function<void()> const &);
-
-        void task_completed();
-
-        std::shared_ptr<sigslot::tasklet<bool>> start_task(std::string const & s, sigslot::tasklet<bool> &&);
-
-        void freeze() {
-            ++m_in_flight;
-        }
-
-        bool frozen() const {
-            return m_in_flight > 0;
-        }
-
-        void thaw();
 
         const char *content_namespace() const;
 
@@ -156,11 +140,12 @@ namespace Metre {
             m_user = u;
         }
 
-        void send(rapidxml::xml_document<> &d);
+        void send(rapidxml::xml_node<> &d);
 
         void send(std::unique_ptr<Stanza> v);
 
-        void restart();
+        covent::task<void> restart();
+        void clear_stream();
 
         void set_auth_ready() {
             m_authready = true;
@@ -185,7 +170,7 @@ namespace Metre {
 
         bool x2x_mode() const { return m_x2x_mode; }
 
-        sigslot::tasklet<bool> tls_auth_ok(std::shared_ptr<sentry::span>, Route &domain);
+        covent::task<bool> tls_auth_ok(Route &domain);
 
         AUTH_STATE s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION) const;
 
@@ -193,10 +178,6 @@ namespace Metre {
         s2s_auth_pair(std::string const &local, std::string const &remote, SESSION_DIRECTION, AUTH_STATE auth);
 
         void check_domain_pair(std::string const &from, std::string const &to) const;
-
-        NetSession &session() {
-            return *m_session;
-        }
 
         std::string const &stream_id() const {
             return m_stream_id;
@@ -208,13 +189,10 @@ namespace Metre {
         sigslot::signal<XMLStream &> auth_state_changed;
 
     private:
-        void handle(rapidxml::optional_ptr<rapidxml::xml_node<>>);
+        covent::task<void> handle(rapidxml::optional_ptr<rapidxml::xml_node<>>);
 
-        void do_restart();
+        covent::task<void> stream_open();
 
-        void stream_open();
-
-        sigslot::tasklet<bool> send_stream_open(std::shared_ptr<sentry::transaction>, bool);
     };
 }
 

@@ -43,7 +43,7 @@ namespace {
         DiscoCache(BaseDescription &b, Config::Domain &, YAML::Node const &) : Filter(b) {
         }
 
-        sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) override {
+        covent::task<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
             if (s.name() == Iq::name) {
                 Iq &iq = dynamic_cast<Iq &>(s);
                 if (iq.type() == Iq::Type::GET) {

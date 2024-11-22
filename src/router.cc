@@ -23,11 +23,12 @@ SOFTWARE.
 
 ***/
 
-#include "sigslot.h"
+#include <memory>
+#include <sigslot/sigslot.h>
 #include "router.h"
-#include "dns.h"
+#include <covent/covent.h>
+#include <covent/dns.h>
 #include "xmlstream.h"
-#include "netsession.h"
 #include "log.h"
 #include "config.h"
 
@@ -41,9 +42,9 @@ Route::Route(Jid const &from, Jid const &to) : m_local(from.domain_jid()), m_dom
     m_logger.log(spdlog::level::info, "Route created");
 }
 
-sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> span, bool multiplex) {
-    span->containing_transaction().tag("to", m_domain.domain());
-    span->containing_transaction().tag("from", m_local.domain());
+covent::task<bool> Route::init_session_vrfy(bool multiplex) {
+//    span->containing_transaction().tag("to", m_domain.domain());
+//    span->containing_transaction().tag("from", m_local.domain());
     m_logger.debug("Verify session spin-up: domain=[{}]", m_domain);
     switch(Config::config().domain(m_domain.domain()).transport_type()) {
         case SESSION_TYPE::INTERNAL:
@@ -55,59 +56,62 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
         default:
             break;
     }
-    auto gathered = co_await Config::config().domain(m_domain.domain()).gather(span->start_child("gather", m_domain.domain()));
+    auto gathered = co_await Config::config().domain(m_domain.domain()).gather();
 
     if (gathered.gathered_connect.empty()) {
         m_logger.warn("DNS Lookup for [{}] failed", m_domain);
         co_return false;
     }
     if (multiplex && Config::config().domain(m_domain.domain()).multiplex()) {
-        auto span_ = span->start_child("multiplex", "scan for existing sessions");
+//        auto span_ = span->start_child("multiplex", "scan for existing sessions");
         for (auto &rr: gathered.gathered_connect) {
             m_logger.trace("Should look for [{}:{}]", rr.hostname, rr.port);
             auto session = Router::session_by_address(rr.hostname, rr.port);
             if (!session) continue;
-            if (!session->xml_stream().multiplex(true)) {
-                m_logger.trace("Session serial=[{}] found, but will not multiplex", session->serial());
+            if (!session->multiplex(true)) {
+                m_logger.trace("Session serial=[{}] found, but will not multiplex", session->id());
                 continue;
             }
-            if (!session->xml_stream().auth_ready()) {
-                if (session->xml_stream().closed()) continue;
-                m_logger.trace("Awaiting auth ready on verify session serial=[{}]", session->serial());
-                (void) co_await session->xml_stream().auth_state_changed;
-                if (!session->xml_stream().auth_ready()) {
-                    m_logger.trace("Auth was not ready on verify session serial=[{}]", session->serial());
+            if (!session->auth_ready()) {
+                if (session->closed()) continue;
+                m_logger.trace("Awaiting auth ready on verify session serial=[{}]", session->id());
+                (void) co_await session->auth_state_changed;
+                if (!session->auth_ready()) {
+                    m_logger.trace("Auth was not ready on verify session serial=[{}]", session->id());
                     continue;
                 }
-                span->containing_transaction().tag("multiplex", "target");
+//                span->containing_transaction().tag("multiplex", "target");
                 set_vrfy(session);
                 m_logger.trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
                 co_return true;
             }
         }
     }
-    span->containing_transaction().tag("multiplex", "none");
+//    span->containing_transaction().tag("multiplex", "none");
     for (auto &rr : gathered.gathered_connect) {
-        auto span_ = span->start_child("connect", "Connection");
+//        auto span_ = span->start_child("connect", "Connection");
         try {
-            auto s = span_->start_child("connect", rr.hostname);
+//            auto s = span_->start_child("connect", rr.hostname);
             m_logger.trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
-            span->containing_transaction().tag("tls_mode", rr.method == DNS::ConnectInfo::Method::DirectTLS ? "XEP-0368" : "starttls");
-            auto session = Router::connect(m_local.domain(), m_domain.domain(), rr.hostname,
-                                           reinterpret_cast<sockaddr *>(&rr.sockaddr),
-                                           rr.port, Config::config().domain(m_domain.domain()).transport_type(),
-                                           rr.method == DNS::ConnectInfo::Method::DirectTLS ? TLS_MODE::IMMEDIATE : TLS_MODE::STARTTLS);
+//            span->containing_transaction().tag("tls_mode", rr.method == DNS::ConnectInfo::Method::DirectTLS ? "XEP-0368" : "starttls");
+            auto session = std::dynamic_pointer_cast<XMLStream>(covent::Loop::main_loop().add(std::make_shared<XMLStream>(SESSION_DIRECTION::OUTBOUND, SESSION_TYPE::S2S, m_local.domain(), m_domain.domain())));
+            co_await session->connect(&rr.sockaddr);
+            if (rr.method == Config::Domain::ConnectInfo::Method::DirectTLS) {
+                start_tls(*session, false);
+            }
+            co_await session->send_stream_open(Config::config().domain(m_domain.domain()).xmpp_ver());
             m_logger.trace("Connected verify session: address=[{}:{}] serial=[{}]", rr.hostname, rr.port,
-                            session->serial());
-            m_logger.trace("Awaiting auth ready on verify session: serial=[{}]", session->serial());
-            while (!session->xml_stream().auth_ready()) {
-                if (session->xml_stream().closed()) {
+                            session->id());
+            Metre::Router::register_session_address(rr.hostname, rr.port, *session);
+            m_logger.trace("Awaiting auth ready on verify session: serial=[{}]", session->id());
+            while (!session->auth_ready()) {
+                if (session->closed()) {
                     break;
                 }
-                (void) co_await session->xml_stream().auth_state_changed;
+                (void) co_await session->auth_state_changed;
             }
-            if (!session->xml_stream().auth_ready()) {
-                m_logger.trace("Auth was not ready on verify session: serial=[{}]", session->serial());
+            if (!session->auth_ready()) {
+                m_logger.trace("Auth was not ready on verify session: serial=[{}]", session->id());
                 continue;
             }
             set_vrfy(session);
@@ -121,17 +125,17 @@ sigslot::tasklet<bool> Route::init_session_vrfy(std::shared_ptr<sentry::span> sp
     co_return false;
 }
 
-sigslot::tasklet<bool> Route::init_session_to(std::shared_ptr<sentry::transaction> trans) {
+covent::task<bool> Route::init_session_to() {
     bool multiplex = true;
-    trans->tag("to", m_domain.domain());
-    trans->tag("from", m_local.domain());
+//    trans->tag("to", m_domain.domain());
+//    trans->tag("from", m_local.domain());
 restart:
     m_logger.debug("Stanza session spin-up");
-    trans->tag("multiplex", "none");
+//    trans->tag("multiplex", "none");
     auto session = Router::session_by_domain(m_domain.domain());
     if (session) {
-        if (multiplex && session->xml_stream().multiplex(false)) {
-            trans->tag("multiplex", "sender");
+        if (multiplex && session->multiplex(false)) {
+//            trans->tag("multiplex", "sender");
         } else {
             m_logger.debug("Will not do sender multiplexing");
             session.reset();
@@ -146,34 +150,34 @@ restart:
                 m_logger.debug("No verify session found");
                 if (!m_verify_task.has_value()) {
                     m_logger.debug("No verify session task found, starting");
-                    m_verify_task = init_session_vrfy(trans->start_child("verify_session", m_domain.domain()), multiplex);
+                    m_verify_task.emplace(init_session_vrfy(multiplex));
                     m_verify_task.value().start();
                 }
                 bool vrfy_success = co_await m_verify_task.value();
                 m_verify_task.reset();
                 if (!vrfy_success) {
                     m_logger.debug("Verify task failed");
-                    trans->exception({});
+//                    trans->exception({});
                     co_return false;
                 }
             }
         } while (!session);
         m_logger.trace("Got verify session domain=[{}]", m_domain);
     }
-    auto span_ = trans->start_child("auth", "Authentication");
-    trans->tag("auth", "sasl");
-    switch (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND)) {
+//    auto span_ = trans->start_child("auth", "Authentication");
+//    trans->tag("auth", "sasl");
+    switch (session->s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND)) {
         default: // NONE
-            while (!session->xml_stream().auth_ready()) {
-                if (session->xml_stream().closed()) goto restart;
+            while (!session->auth_ready()) {
+                if (session->closed()) goto restart;
                 m_logger.trace("Awaiting authentication ready: domain=[{}]");
-                (void) co_await session->xml_stream().auth_state_changed;
+                (void) co_await session->auth_state_changed;
             }
             /// Send a dialback request.
             {
-                trans->tag("auth", "dialback");
+//                trans->tag("auth", "dialback");
                 m_logger.trace("Dialing back: domain=[{}]");
-                std::string key = Config::config().dialback_key(session->xml_stream().stream_id(),
+                std::string key = Config::config().dialback_key(session->stream_id(),
                                                                 m_local.domain(),
                                                                 m_domain.domain());
                 rapidxml::xml_document<> d;
@@ -182,34 +186,33 @@ restart:
                 dbr->append_attribute(d.allocate_attribute("from", m_local.domain()));
                 dbr->value(key);
                 d.append_node(dbr);
-                session->xml_stream().send(d);
-                session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND,
+                session->send(d);
+                session->s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND,
                                                     XMLStream::AUTH_STATE::REQUESTED);
             }
             // Fallthrough
         case XMLStream::AUTH_STATE::REQUESTED:
             m_logger.trace("Awaiting authentication: domain=[{}]");
-            while (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
+            while (session->s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 m_logger.debug("Authenticating with verify session");
-                if (session->xml_stream().closed()) {
+                if (session->closed()) {
                     if (multiplex) {
                         multiplex = false;
                         goto restart;
                     } else {
-                        trans->exception({});
+//                        trans->exception({});
                         co_return false;
                     }
                 }
-                (void) co_await session->xml_stream().auth_state_changed;
+                (void) co_await session->auth_state_changed;
             }
-            if (session->xml_stream().s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::NONE) {
+            if (session->s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::NONE) {
                 // Rejected auth.
                 if (multiplex) {
                     multiplex = false;
 
                     goto restart;
                 } else {
-                    trans->exception({});
                     co_return false;
                 }
             }
@@ -222,20 +225,20 @@ restart:
     co_return true;
 }
 
-void Route::set_to(std::shared_ptr<Metre::NetSession> &to) {
+void Route::set_to(std::shared_ptr<XMLStream> &to) {
     m_to = to;
-    to->onClosed.connect(this, &Route::SessionClosed);
+    to->on_closed.connect(this, &Route::SessionClosed);
     for (auto &s : m_stanzas) {
-        to->xml_stream().send(std::move(s));
+        to->send(std::move(s));
     }
     m_stanzas.clear();
 }
 
-void Route::set_vrfy(std::shared_ptr<Metre::NetSession> &vrfy) {
+void Route::set_vrfy(std::shared_ptr<XMLStream> &vrfy) {
     m_vrfy = vrfy;
-    vrfy->onClosed.connect(this, &Route::SessionClosed);
+    vrfy->on_closed.connect(this, &Route::SessionClosed);
     for (auto &v : m_dialback) {
-        vrfy->xml_stream().send(std::move(v));
+        vrfy->send(std::move(v));
     }
     m_dialback.clear();
 }
@@ -247,17 +250,14 @@ void Route::set_vrfy(std::shared_ptr<Metre::NetSession> &vrfy) {
  *
  * @param ns - NetSession of inbound session.
  */
-void Route::outbound(NetSession *ns) {
-    m_logger.debug("Outbound NetSession: serial=[{}]", ns->serial());
+void Route::outbound(XMLStream & ns) {
+    m_logger.debug("Outbound NetSession: serial=[{}]", ns.id());
     auto to = m_to.lock();
-    if (!ns) {
-        return;
-    }
-    if (to && (to->serial() == ns->serial())) return;
+    if (to && (to->id() == ns.id())) return;
     if (to) {
         to->close(); // Kill with fire.
     }
-    auto p = Router::session_by_serial(ns->serial());
+    auto p = Router::session_by_serial(ns.id());
     set_to(p);
 }
 
@@ -265,7 +265,7 @@ void Route::queue(std::unique_ptr<DB::Verify> &&s) {
     m_logger.trace("Queue verify: name=[{}] from=[{}] to=[{}]", s->Stanza::name(), s->from(), s->to());
     s->freeze();
     if (m_dialback.empty())
-        Router::defer([this]() {
+        covent::Loop::main_loop().defer([this]() {
             bounce_dialback(true);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_dialback.push_back(std::move(s));
@@ -276,17 +276,12 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
     m_logger.trace("Transmit verify: name=[{}] from=[{}] to=[{}]", v->Stanza::name(), v->from(), v->to());
     auto vrfy = m_vrfy.lock();
     if (vrfy) {
-        vrfy->xml_stream().send(std::move(v));
+        vrfy->send(std::move(v));
     } else {
         queue(std::move(v));
         if (!m_verify_task.has_value()) {
-            auto wrapper = [this](std::shared_ptr<sentry::transaction> trans) -> sigslot::tasklet<bool> {
-                bool result = co_await init_session_vrfy(trans->start_child("verify_session", m_domain.domain()), true);
-                if (!result) trans->exception({});
-                co_return result;
-            };
-            m_verify_task = wrapper(std::make_shared<sentry::transaction>("transmit", "Verify session spin-up"));
-            m_verify_task->complete().connect(this, [this]() {Router::defer([this]() {m_verify_task.reset();}, {0,5000});});
+            m_verify_task.emplace(init_session_vrfy(true));
+            m_verify_task->on_completed(this, [this]() {covent::Loop::main_loop().defer([this]() {m_verify_task.reset();}, {0,5000});});
             m_verify_task->start();
         }
     }
@@ -327,7 +322,7 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
     m_logger.trace("Queue stanza: name=[{}] from=[{}] to=[{}]", s->name(), s->from(), s->to());
     s->freeze();
     if (m_stanzas.empty())
-        Router::defer([this]() {
+        covent::Loop::main_loop().defer([this]() {
             bounce_stanzas(Stanza::Error::remote_server_timeout);
         }, Config::config().domain(m_domain.domain()).stanza_timeout());
     m_stanzas.push_back(std::move(s));
@@ -338,22 +333,22 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
     m_logger.trace("Transmit stanza: name=[{}] from=[{}] to=[{}]", s->name(), s->from(), s->to());
     auto to = m_to.lock();
     if (to) {
-        m_logger.debug("Existing stanza session: serial=[{}]", to->serial());
-        to->xml_stream().send(std::move(s));
+        m_logger.debug("Existing stanza session: serial=[{}]", to->id());
+        to->send(std::move(s));
     } else {
         m_logger.debug("No stanza session");
         queue(std::move(s));
         if (!m_to_task.has_value()) {
             m_logger.debug("No current task");
-            m_to_task = init_session_to(std::make_shared<sentry::transaction>("transmit", "Stanza session spin-up"));
-            m_to_task->complete().connect(this, [this]() {Router::defer([this]() {m_to_task.reset();});});
+            m_to_task.emplace(init_session_to());
+            m_to_task->on_completed(this, [this]() {covent::Loop::main_loop().defer([this]() {m_to_task.reset();});});
             m_to_task->start();
         }
     }
     m_logger.trace("Stanza accepted");
 }
 
-void Route::SessionClosed(NetSession &n) {
+void Route::SessionClosed(XMLStream &n) {
     m_logger.debug("Net Session closed");
     // One of my sessions has been closed. See what needs progressing.
     if (!m_dialback.empty() || !m_stanzas.empty()) {

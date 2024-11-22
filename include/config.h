@@ -35,20 +35,13 @@ SOFTWARE.
 #include <rapidxml.hpp>
 
 #include "defs.h"
-#include "dns.h"
+#include <covent/covent.h>
+#include <covent/dns.h>
 #include "spdlog/spdlog.h"
-#include "sigslot.h"
 #include "sentry-wrap.h"
 #include "pkix.h"
 #include "jwt.h"
-#include <sigslot/tasklet.h>
-
-/**
- * Lib unbound.
- */
-
-struct ub_ctx;
-struct ub_result;
+#include <sigslot/sigslot.h>
 
 namespace Metre {
     class Config {
@@ -62,30 +55,26 @@ namespace Metre {
             ~Resolver();
 
             /* DNS */
-            sigslot::tasklet<DNS::Srv> srv_lookup(std::string const &domain);
+            covent::task<std::tuple<covent::dns::answers::SRV,covent::dns::answers::SRV>> srv_lookup(std::string const &domain);
 
-            sigslot::tasklet<DNS::Svcb> svcb_lookup(std::string const &domain);
+            covent::task<covent::dns::answers::SVCB> svcb_lookup(std::string const &domain);
 
-            sigslot::tasklet<DNS::Address> address_lookup(std::string const &hostname);
+            covent::task<covent::dns::answers::Address> address_lookup(std::string const &hostname);
 
-            sigslot::tasklet<DNS::Tlsa> tlsa_lookup(short unsigned int port, std::string const &hostname);
+            covent::task<covent::dns::answers::TLSA> tlsa_lookup(short unsigned int port, std::string const &hostname);
 
             spdlog::logger & logger() const {
                 return m_logger;
             }
 
         private:
-            DNS::Resolver m_resolver;
+            covent::dns::Resolver m_resolver;
             Domain const &m_domain;
             mutable spdlog::logger m_logger;
         };
 
         class Domain {
         public:
-            [[nodiscard]] std::unique_ptr<::Metre::Config::Resolver> resolver() const {
-                return std::make_unique<Resolver>(*this);
-            }
-
             [[nodiscard]] bool tls_enabled() const {
                 if (m_tls_context && m_tls_context->enabled()) return true;
                 if (m_parent) return m_parent->tls_enabled();
@@ -124,19 +113,19 @@ namespace Metre {
                 return m_auth_dialback;
             }
 
-            [[nodiscard]] unsigned stanza_timeout() const {
+            [[nodiscard]] auto stanza_timeout() const {
                 return m_stanza_timeout;
             }
 
-            unsigned stanza_timeout(unsigned stanza_timeout) {
+            auto stanza_timeout(long stanza_timeout) {
                 return m_stanza_timeout = stanza_timeout;
             }
 
-            [[nodiscard]] unsigned connect_timeout() const {
+            [[nodiscard]] auto connect_timeout() const {
                 return m_connect_timeout;
             }
 
-            unsigned connect_timeout(unsigned connect_timeout) {
+            auto connect_timeout(long connect_timeout) {
                 return m_connect_timeout = connect_timeout;
             }
 
@@ -170,8 +159,8 @@ namespace Metre {
 
             void srv(std::string const &, unsigned short, unsigned short, unsigned short, bool);
 
-            void tlsa(std::string const &hostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
-                      DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value);
+            void tlsa(std::string const &hostname, unsigned short port, covent::dns::rr::TLSA::CertUsage certUsage,
+                      covent::dns::rr::TLSA::Selector selector, covent::dns::rr::TLSA::MatchType matchType, std::string const &value);
 
             Domain(std::string domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls, bool block, bool multiplex,
                    bool auth_pkix, bool auth_dialback, bool auth_host, std::optional<std::string> &&m_auth_secret);
@@ -184,7 +173,7 @@ namespace Metre {
 
             ~Domain();
 
-            sigslot::tasklet<FILTER_RESULT> filter(std::shared_ptr<sentry::span>, FILTER_DIRECTION dir, Stanza &s) const;
+            covent::task<FILTER_RESULT> filter(FILTER_DIRECTION dir, Stanza &s) const;
             [[nodiscard]] TLSContext & tls_context() const {
                 if (m_tls_context) return *m_tls_context;
                 if (m_parent) return m_parent->tls_context();
@@ -238,25 +227,42 @@ namespace Metre {
                 return m_tlsarecs;
             }
 
-            [[nodiscard]] auto const &srv_override() const {
-                return m_srvrec;
+            [[nodiscard]] bool has_srv_override() const {
+                return m_srvrec || m_srvtlsrec;
+            }
+
+            [[nodiscard]] auto srv_override() const {
+                return std::make_tuple(*m_srvrec, *m_srvtlsrec);
             }
 
             [[nodiscard]] auto const &svcb_override() const {
                 return m_svcbrec;
             }
 
+            class ConnectInfo {
+            public:
+                enum class  Method {
+                    StartTLS,
+                    DirectTLS,
+                    Websocket
+                };
+                Method method;
+                std::string hostname;
+                struct sockaddr_storage sockaddr;
+                uint16_t port;
+            };
+
             class GatheredData {
             public:
                 std::set<std::string, std::less<>> gathered_hosts; // verified possible hostnames.
-                std::list<DNS::ConnectInfo> gathered_connect; // Connection options, preference order.
-                std::list<DNS::TlsaRR> gathered_tlsa; // Verified TLSA records as gathered.
+                std::list<ConnectInfo> gathered_connect; // Connection options, preference order.
+                std::list<covent::dns::rr::TLSA> gathered_tlsa; // Verified TLSA records as gathered.
             };
 
             // Do DNS discovery:
-            [[nodiscard]] sigslot::tasklet<GatheredData> gather(std::shared_ptr<sentry::span>) const;
-            [[nodiscard]] sigslot::tasklet<void> gather_host(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string, uint16_t, DNS::ConnectInfo::Method) const;
-            [[nodiscard]] sigslot::tasklet<void> gather_tlsa(std::shared_ptr<sentry::span>, Resolver &, GatheredData &, std::string, uint16_t) const;
+            [[nodiscard]] covent::task<GatheredData> gather() const;
+            [[nodiscard]] covent::task<void> gather_host(Resolver &, GatheredData &, const covent::dns::rr::SRV &, ConnectInfo::Method) const;
+            [[nodiscard]] covent::task<void> gather_tlsa(Resolver &, GatheredData &, std::string, uint16_t) const;
 
         private:
             std::unique_ptr<TLSContext> m_tls_context;
@@ -273,14 +279,15 @@ namespace Metre {
             bool m_auth_host = false;
             bool m_dnssec_required = false;
             TLS_PREFERENCE m_tls_preference = TLS_PREFERENCE::PREFER_ANY;
-            unsigned m_stanza_timeout = 20;
-            unsigned m_connect_timeout = 10;
+            long m_stanza_timeout = 20;
+            long m_connect_timeout = 10;
             std::optional<std::string> m_auth_secret;
             // DNS Overrides:
-            std::map<std::string, std::unique_ptr<DNS::Address>, std::less<>> m_host_arecs;
-            std::unique_ptr<DNS::Srv> m_srvrec;
-            std::unique_ptr<DNS::Svcb> m_svcbrec;
-            std::map<std::string, std::unique_ptr<DNS::Tlsa>, std::less<>> m_tlsarecs;
+            std::map<std::string, std::unique_ptr<covent::dns::answers::Address>, std::less<>> m_host_arecs;
+            std::unique_ptr<covent::dns::answers::SRV> m_srvrec;
+            std::unique_ptr<covent::dns::answers::SRV> m_srvtlsrec;
+            std::unique_ptr<covent::dns::answers::SVCB> m_svcbrec;
+            std::map<std::string, std::unique_ptr<covent::dns::answers::TLSA>, std::less<>> m_tlsarecs;
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;
             Domain const *m_parent = nullptr;
@@ -330,10 +337,6 @@ namespace Metre {
         }
 
         [[nodiscard]] std::string dialback_key(std::string const &id, std::string const &local_domain, std::string const &remote_domain) const;
-
-        [[nodiscard]] auto ub_ctx() const {
-            return m_ub_ctx;
-        }
 
         [[nodiscard]] bool fetch_pkix_status() const {
             return m_fetch_crls;
@@ -419,7 +422,6 @@ namespace Metre {
         std::string m_boot;
         std::string m_database;
         std::map<std::string, std::unique_ptr<Domain>, std::less<>> m_domains;
-        struct ub_ctx *m_ub_ctx = nullptr;
         std::list<Listener> m_listeners;
         std::shared_ptr<spdlog::logger> m_root_logger;
         std::shared_ptr<spdlog::logger> m_logger;

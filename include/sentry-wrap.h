@@ -10,8 +10,9 @@
 
 #ifdef METRE_SENTRY
 #include "sentry.h"
-#include "sigslot.h"
-#include "sigslot/tasklet.h"
+
+#include <optional>
+#include <memory>
 
 #endif
 
@@ -44,7 +45,7 @@ namespace sentry {
     class span;
     class transaction;
 
-class span : public sigslot::tracker {
+class span {
     sentry_span_t *  m_span = nullptr;
     transaction & m_trans;
 
@@ -58,12 +59,12 @@ public:
     }
     std::shared_ptr<span> start_child(std::string const & op_name, std::string const & desc);
 
-    void terminate() override;
-    void exception(std::exception_ptr const &) override;
-    ~span() override;
+    void terminate();
+    void exception(std::exception_ptr const &);
+    ~span();
 };
 
-class transaction : public sigslot::tracker {
+class transaction {
     sentry_transaction_t * m_trans;
     sentry_transaction_context_t * m_trans_ctx;
 
@@ -74,9 +75,9 @@ public:
     void name(std::string const &);
     std::shared_ptr<span> start_child(std::string const & op_name, std::string const & desc);
 
-    void terminate() override;
-    void exception(std::exception_ptr const &) override;
-    ~transaction() override;
+    void terminate();
+    void exception(std::exception_ptr const &);
+    ~transaction();
 };
 #endif
 }

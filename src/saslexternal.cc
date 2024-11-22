@@ -28,7 +28,7 @@ SOFTWARE.
 #include "stanza.h"
 #include "xmppexcept.h"
 #include "router.h"
-#include "netsession.h"
+#include <covent/covent.h>
 #include "config.h"
 #include <memory>
 #include "base64.h"
@@ -49,14 +49,14 @@ namespace {
         public:
             Description() : Feature::Description<SaslExternal>(sasl_ns, Type::FEAT_AUTH) {};
 
-            sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span> span, optional_ptr<xml_node<>> node, XMLStream &stream) override {
+            covent::task<bool> offer(optional_ptr<xml_node<>> node, XMLStream &stream) override {
                 if (stream.remote_domain().empty()) co_return false;
                 if (stream.s2s_auth_pair(stream.local_domain(), stream.remote_domain(), SESSION_DIRECTION::INBOUND) ==
                     XMLStream::AUTH_STATE::AUTHORIZED)
                     co_return false;
                 std::shared_ptr<Route> &route = RouteTable::routeTable(stream.local_domain()).route(
                         stream.remote_domain());
-                if (co_await *stream.start_task("SASL EXTERNAL offer tls_auth_ok", stream.tls_auth_ok(span->start_child("tls", stream.remote_domain()), *route))) {
+                if (co_await stream.tls_auth_ok(*route)) {
                     auto feature = node->append_element({sasl_ns, "mechanisms"});
                     feature->append_element("mechanism", "EXTERNAL");
                 }
@@ -64,19 +64,18 @@ namespace {
             }
         };
 
-        sigslot::tasklet<bool> auth(std::shared_ptr<sentry::span> span, optional_ptr<rapidxml::xml_node<>> node) {
+        covent::task<bool> auth(optional_ptr<rapidxml::xml_node<>> node) {
             if (m_stream.remote_domain().empty()) co_return true;
             auto mechattr = node->first_attribute("mechanism");
             if (!mechattr || mechattr->value().empty()) throw std::runtime_error("No mechanism attribute");
             if (mechattr->value() != "EXTERNAL") {
                 throw std::runtime_error("No such mechanism");
             }
-            auto task = m_stream.start_task("SASL auth->response", response(span->start_child("sasl.response", m_stream.remote_domain()), node));
-            co_await *task;
+            co_await response(node);
             co_return true;
         }
 
-        sigslot::tasklet<bool> response(std::shared_ptr<sentry::span> span, optional_ptr<rapidxml::xml_node<>> node) {
+        covent::task<bool> response(optional_ptr<rapidxml::xml_node<>> node) {
             std::string authzid;
             if (!node->value().empty()) {
                 authzid = node->value();
@@ -101,13 +100,13 @@ namespace {
             }
             std::shared_ptr<Route> &route = RouteTable::routeTable(m_stream.local_domain()).route(
                     m_stream.remote_domain());
-            if (co_await *m_stream.start_task("SASL EXTERNAL response tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", m_stream.remote_domain()), *route))) {
+            if (co_await m_stream.tls_auth_ok(*route)) {
                 xml_document<> d;
                 d.append_element({sasl_ns, "success"});
                 m_stream.send(d);
                 m_stream.s2s_auth_pair(m_stream.local_domain(), authzid, SESSION_DIRECTION::INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
                 m_stream.set_auth_ready();
-                m_stream.restart();
+                co_await m_stream.restart();
                 co_return
                 true;
             }
@@ -122,29 +121,27 @@ namespace {
             m_stream.send(d);
         }
 
-        void success(optional_ptr<rapidxml::xml_node<>> node) {
+        covent::task<void> success(optional_ptr<rapidxml::xml_node<>> node) {
             // Good-oh.
             m_stream.s2s_auth_pair(m_stream.local_domain(), m_stream.remote_domain(), SESSION_DIRECTION::OUTBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
-            m_stream.restart();
+            co_await m_stream.restart();
         }
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> trans, optional_ptr<rapidxml::xml_node<>> node) override {
+        covent::task<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             using enum SESSION_DIRECTION;
             METRE_LOG(Metre::Log::DEBUG, "Handle SASL External");
             std::string name{node->name()};
-            if ((node->name() == "auth" && m_stream.direction() == INBOUND)) {
-                auto task = m_stream.start_task("SASL auth", auth(trans->start_child("sasl.auth", m_stream.remote_domain()), node));
-                co_await *task;
+            if (node->name() == "auth" && m_stream.direction() == INBOUND) {
+                co_await auth(node);
                 co_return true;
             } else if (node->name() == "response" && m_stream.direction() == INBOUND) {
-                auto task = m_stream.start_task("SASL response", response(trans->start_child("sasl.response", m_stream.remote_domain()), node));
-                co_await *task;
+                co_await response(node);
                 co_return true;
             } else if (node->name() == "challenge" && m_stream.direction() == OUTBOUND) {
                 challenge(node);
                 co_return true;
             } else if (node->name() == "success" && m_stream.direction() == OUTBOUND) {
-                success(node);
+                co_await success(node);
                 co_return true;
             } else if (node->name() == "failure" && m_stream.direction() == OUTBOUND) {
                 m_stream.logger().warn("EXTERNAL was offered but not accepted.");

@@ -26,7 +26,7 @@ namespace {
             });
         }
 
-        sigslot::tasklet<void> items(Iq const &iq) {
+        covent::task<void> items(Iq const &iq) {
             auto &query = iq.query();
             auto node = query.first_attribute("node");
             if (node) {
@@ -49,7 +49,7 @@ namespace {
             co_return;
         }
 
-        sigslot::tasklet<void> info(Iq const &iq) {
+        covent::task<void> info(Iq const &iq) {
             auto &query = iq.query();
             auto node = query.first_attribute("node");
             if (node) {

@@ -46,15 +46,14 @@ SOFTWARE.
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #endif
-#include <dns.h>
+#include <covent/dns.h>
 #include <router.h>
-#include <unbound.h>
 #include <sstream>
 #include <base64.h>
 
 #include "log.h"
-#include "sockaddr-cast.h"
-#include <http.h>
+#include <covent/sockaddr-cast.h>
+#include <covent/gather.h>
 #include <iomanip>
 #include <filter.h>
 #include <cstring>
@@ -206,35 +205,37 @@ namespace {
                 auto port = tlsa["port"].as<unsigned short>(5269);
                 auto certusagea = tlsa["certusage"];
                 if (!certusagea) throw std::runtime_error("Missing certusage in TLSA DNS override");
-                DNS::TlsaRR::CertUsage certUsage;
+                using enum covent::dns::rr::TLSA::CertUsage;
+                covent::dns::rr::TLSA::CertUsage certUsage;
                 if (auto certusages = certusagea.as<std::string>(); certusages == "CAConstraint") {
-                    certUsage = DNS::TlsaRR::CertUsage::CAConstraint;
+                    certUsage = CAConstraint;
                 } else if (certusages == "CertConstraint") {
-                    certUsage = DNS::TlsaRR::CertUsage::CertConstraint;
+                    certUsage = CertConstraint;
                 } else if (certusages == "TrustAnchorAssertion") {
-                    certUsage = DNS::TlsaRR::CertUsage::TrustAnchorAssertion;
+                    certUsage = TrustAnchorAssertion;
                 } else if (certusages == "DomainCert") {
-                    certUsage = DNS::TlsaRR::CertUsage::DomainCert;
+                    certUsage = DomainCert;
                 } else {
                     throw std::runtime_error("Unknown certusage in TLSA DNS override");
                 }
                 auto matchtypes = tlsa["matchtype"].as<std::string>("Full");
-                DNS::TlsaRR::MatchType matchType = DNS::TlsaRR::MatchType::Full;
+                using enum covent::dns::rr::TLSA::MatchType;
+                covent::dns::rr::TLSA::MatchType matchType = Full;
                 if (matchtypes == "Full") {
-                    matchType = DNS::TlsaRR::MatchType::Full;
+                    matchType = Full;
                 } else if (matchtypes == "Sha256") {
-                    matchType = DNS::TlsaRR::MatchType::Sha256;
+                    matchType = Sha256;
                 } else if (matchtypes == "Sha512") {
-                    matchType = DNS::TlsaRR::MatchType::Sha512;
+                    matchType = Sha512;
                 } else {
                     throw std::runtime_error("Unknown matchtype in TLSA DNS override");
                 }
                 auto sel = tlsa["selector"].as<std::string>("FullCert");
-                DNS::TlsaRR::Selector selector = DNS::TlsaRR::Selector::FullCert;
+                covent::dns::rr::TLSA::Selector selector = covent::dns::rr::TLSA::Selector::FullCert;
                 if (sel == "FullCert") {
-                    selector = DNS::TlsaRR::Selector::FullCert;
+                    selector = covent::dns::rr::TLSA::Selector::FullCert;
                 } else if (sel == "SubjectPublicKeyInfo") {
-                    selector = DNS::TlsaRR::Selector::SubjectPublicKeyInfo;
+                    selector = covent::dns::rr::TLSA::Selector::SubjectPublicKeyInfo;
                 } else {
                     throw std::runtime_error("Unknown selector in TLSA DNS override");
                 }
@@ -275,11 +276,11 @@ Config::Domain::Domain(Config::Domain const &any, std::string domain)
           m_parent(&any),
           m_logger(Config::config().logger("domain <{}>", m_domain)) {}
 
-sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::span> span, FILTER_DIRECTION dir, Stanza &s) const {
+covent::task<FILTER_RESULT> Config::Domain::filter(FILTER_DIRECTION dir, Stanza &s) const {
     using enum FILTER_RESULT;
-    if (m_parent) co_return co_await m_parent->filter(span->start_child("filter", "parent"), dir, s);
+    if (m_parent) co_return co_await m_parent->filter(dir, s);
     for (auto &filter : m_filters) {
-        auto filter_result = co_await filter->apply(span->start_child("filter", filter->name()), dir, s);
+        auto filter_result = co_await filter->apply(dir, s);
         if (filter_result == DROP) co_return DROP;
     }
     co_return PASS;
@@ -290,13 +291,13 @@ sigslot::tasklet<FILTER_RESULT> Config::Domain::filter(std::shared_ptr<sentry::s
 Config::Domain::~Domain() = default;
 
 void Config::Domain::host(std::string const &ihostname, uint32_t inaddr) {
-    auto address = std::make_unique<DNS::Address>();
-    std::string hostname = DNS::Utils::toASCII(ihostname);
+    auto address = std::make_unique<covent::dns::answers::Address>();
+    std::string hostname = covent::dns::utils::toASCII(ihostname);
     if (hostname[hostname.length() - 1] != '.') hostname += '.';
     address->dnssec = true;
-    address->hostname = hostname;
+    address->domain = hostname;
     auto& a = address->addr.emplace_back();
-    auto *sin = sockaddr_cast<AF_INET>(&a);
+    auto *sin = covent::sockaddr_cast<AF_INET>(&a);
     sin->sin_family = AF_INET;
     sin->sin_addr.s_addr = inaddr;
     m_host_arecs[hostname] = std::move(address);
@@ -328,12 +329,6 @@ Config::Config(std::string const &filename, bool lite) : m_dialback_secret(rando
     m_root_logger = spdlog::stderr_color_st(lite ? "boot" : "console");
     spdlog::set_level(spdlog::level::trace);
     load(filename, lite);
-    if (!lite) {
-        m_ub_ctx = ub_ctx_create();
-        if (!m_ub_ctx) {
-            throw std::runtime_error("DNS context creation failure.");
-        }
-    }
 }
 
 Config::~Config() {
@@ -475,12 +470,12 @@ Config::Listener::Listener(std::string const &ldomain, std::string const &rdomai
                            SESSION_TYPE asess)
         : session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
     std::memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
-    if (1 == inet_pton(AF_INET6, address.c_str(), &(sockaddr_cast<AF_INET6>(&m_sockaddr)->sin6_addr))) {
-        auto *sa = sockaddr_cast<AF_INET6>(&m_sockaddr);
+    if (1 == inet_pton(AF_INET6, address.c_str(), &(covent::sockaddr_cast<AF_INET6>(&m_sockaddr)->sin6_addr))) {
+        auto *sa = covent::sockaddr_cast<AF_INET6>(&m_sockaddr);
         sa->sin6_family = AF_INET6;
         sa->sin6_port = htons(port);
-    } else if (1 == inet_pton(AF_INET, address.c_str(), &(sockaddr_cast<AF_INET>(&m_sockaddr)->sin_addr))) {
-        auto *sa = sockaddr_cast<AF_INET>(&m_sockaddr);
+    } else if (1 == inet_pton(AF_INET, address.c_str(), &(covent::sockaddr_cast<AF_INET>(&m_sockaddr)->sin_addr))) {
+        auto *sa = covent::sockaddr_cast<AF_INET>(&m_sockaddr);
         sa->sin_family = AF_INET;
         sa->sin_port = htons(port);
     } else {
@@ -536,15 +531,25 @@ namespace {
             config["auth"]["secret"] = *domain.auth_secret();
         }
         config["dns"]["dnssec_required"] = domain.dnssec_required();
-        if (domain.srv_override()) {
-            for (auto const &rr: domain.srv_override()->rrs) {
-                YAML::Node srv;
-                srv["host"] = rr.hostname;
-                srv["port"] = rr.port;
-                srv["priority"] = rr.priority;
-                srv["weight"] = rr.weight;
-                srv["tls"] = rr.tls;
-                config["dns"]["srv"].push_back(srv);
+        if (domain.has_srv_override()) {
+            auto [srv, srv_tls] = domain.srv_override();
+            for (auto const &rr: srv.rrs) {
+                YAML::Node s;
+                s["host"] = rr.hostname;
+                s["port"] = rr.port;
+                s["priority"] = rr.priority;
+                s["weight"] = rr.weight;
+                s["tls"] = false;
+                config["dns"]["srv"].push_back(s);
+            }
+            for (auto const &rr: srv_tls.rrs) {
+                YAML::Node s;
+                s["host"] = rr.hostname;
+                s["port"] = rr.port;
+                s["priority"] = rr.priority;
+                s["weight"] = rr.weight;
+                s["tls"] = true;
+                config["dns"]["srv"].push_back(s);
             }
         }
         for (auto const & [name, records]: domain.tlsa_overrides()) {
@@ -558,7 +563,7 @@ namespace {
                 tlsa["hostname"] = hostname;
                 tlsa["port"] = port;
                 switch (rr.matchType) {
-                    using enum DNS::TlsaRR::MatchType;
+                    using enum covent::dns::rr::TLSA::MatchType;
                     case Sha256:
                         tlsa["matchtype"] = "Sha256";
                         break;
@@ -570,7 +575,7 @@ namespace {
                         break;
                 }
                 switch (rr.selector) {
-                    using enum DNS::TlsaRR::Selector;
+                    using enum covent::dns::rr::TLSA::Selector;
                     case SubjectPublicKeyInfo:
                         tlsa["selector"] = "SubjectPublicKeyInfo";
                         break;
@@ -579,7 +584,7 @@ namespace {
                         break;
                 }
                 switch (rr.certUsage) {
-                    using enum DNS::TlsaRR::CertUsage;
+                    using enum covent::dns::rr::TLSA::CertUsage;
                     case CAConstraint:
                         tlsa["certusage"] = "CAConstraint";
                         break;
@@ -593,7 +598,7 @@ namespace {
                         tlsa["certusage"] = "DomainCert";
                         break;
                 }
-                if (rr.matchType == DNS::TlsaRR::MatchType::Full) {
+                if (rr.matchType == covent::dns::rr::TLSA::MatchType::Full) {
                     // Base64 data (it might have come from a file, but never mind).
                     tlsa["matchdata"] = base64_encode(rr.matchData);
                 } else {
@@ -617,7 +622,7 @@ namespace {
         }
         for (auto const &[hostname, address]: domain.address_overrides()) {
             YAML::Node host;
-            host["a"] = address_tostring(address->addr.data());
+            host["a"] = covent::address_tostring(address->addr.data());
             config["dns"]["host"].push_back(host);
         }
         if (domain.tls_enabled()) {
@@ -674,8 +679,8 @@ std::string Config::asString() const {
             listener["remote-domain"] = listen.remote_domain;
         }
         listener["name"] = listen.name;
-        listener["address"] = address_tostring(listen.sockaddr());
-        listener["port"] = address_toport(listen.sockaddr());
+        listener["address"] = covent::address_tostring(listen.sockaddr());
+        listener["port"] = covent::address_toport(listen.sockaddr());
         switch (listen.session_type) {
             using enum SESSION_TYPE;
             case S2S:
@@ -782,27 +787,22 @@ Config const &Config::config() {
     return *s_config;
 }
 
-void Config::dns_init() const {
-    // Libunbound initialization.
-    const_cast<Config *>(this)->m_ub_ctx = DNS::Utils::dns_init(m_dns_keys);
-}
-
 /*
  * DNS resolver functions.
  */
 
-void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS::TlsaRR::CertUsage certUsage,
-                          DNS::TlsaRR::Selector selector, DNS::TlsaRR::MatchType matchType, std::string const &value) {
+void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, covent::dns::rr::TLSA::CertUsage certUsage,
+                          covent::dns::rr::TLSA::Selector selector, covent::dns::rr::TLSA::MatchType matchType, std::string const &value) {
     std::ostringstream out;
     if (ahostname.empty()) throw std::runtime_error("Empty hostname in TLSA override");
     std::string hostname = ahostname;
     if (hostname[hostname.length() - 1] != '.') hostname += '.';
     out << "_" << port << "._tcp." << hostname;
-    std::string domain = DNS::Utils::toASCII(out.str());
+    std::string domain = covent::dns::utils::toASCII(out.str());
     auto tlsait = m_tlsarecs.find(domain);
-    DNS::Tlsa *tlsa;
+    covent::dns::answers::TLSA *tlsa;
     if (tlsait == m_tlsarecs.end()) {
-        auto tlsan = std::make_unique<DNS::Tlsa>();
+        auto tlsan = std::make_unique<covent::dns::answers::TLSA>();
         tlsan->dnssec = true;
         tlsan->domain = domain;
         tlsa = tlsan.get();
@@ -810,15 +810,15 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
     } else {
         tlsa = tlsait->second.get();
     }
-    DNS::TlsaRR rr;
+    covent::dns::rr::TLSA rr;
     rr.certUsage = certUsage;
     rr.matchType = matchType;
     rr.selector = selector;
     // Match data. Annoying.
     // If the match type was a hash, it'll be an inline hash.
     switch (matchType) {
-        case DNS::TlsaRR::MatchType::Sha256:
-        case DNS::TlsaRR::MatchType::Sha512: {
+        case covent::dns::rr::TLSA::MatchType::Sha256:
+        case covent::dns::rr::TLSA::MatchType::Sha512: {
             unsigned char byte = 0;
             bool flip = false;
             for (auto c : value) {
@@ -851,8 +851,8 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
                     read_ok = true;
                 }
                 // If full cert matching, convenient to supply a PEM file as well. Let's check:
-                if (rr.selector == DNS::TlsaRR::Selector::FullCert
-                    && rr.matchType == DNS::TlsaRR::MatchType::Full
+                if (rr.selector == covent::dns::rr::TLSA::Selector::FullCert
+                    && rr.matchType == covent::dns::rr::TLSA::MatchType::Full
                     && rr.matchData.starts_with("-----BEGIN")) {
                     // Tempting to replace this with a base64_decode call, mind.
                     std::string tmp = rr.matchData;
@@ -877,83 +877,91 @@ void Config::Domain::tlsa(std::string const &ahostname, unsigned short port, DNS
     tlsa->rrs.push_back(rr);
 }
 
-Config::Resolver::Resolver(Domain const &d) : m_resolver(d.domain(), d.dnssec_required(), d.tls_preference()), m_domain(d), m_logger(Config::config().logger("Resolver <{}>", m_domain.domain())) {}
+Config::Resolver::Resolver(Domain const &d) : m_resolver(d.dnssec_required(), false, Config::config().m_dns_keys), m_domain(d), m_logger(Config::config().logger("Resolver <{}>", m_domain.domain())) {}
 
 Config::Resolver::~Resolver() = default;
 
-
-void
-Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port, bool tls) {
+void Config::Domain::srv(std::string const &hostname, unsigned short priority, unsigned short weight, unsigned short port, bool tls) {
     if (!m_srvrec) {
-        m_srvrec = std::make_unique<DNS::Srv>();
-        std::string domain = DNS::Utils::toASCII(
-                "_xmpp-server._tcp." + m_domain + "."); // Confusing: We fake a non-tls SRV record with TLS set in RR.
+        m_srvrec = std::make_unique<covent::dns::answers::SRV>();
+        std::string domain = covent::dns::utils::toASCII(
+                "_xmpp-server._tcp." + m_domain + ".");
         m_srvrec->dnssec = true;
         m_srvrec->domain = domain;
     }
-    DNS::SrvRR rr;
+    if (!m_srvtlsrec) {
+        m_srvtlsrec = std::make_unique<covent::dns::answers::SRV>();
+        std::string domain = covent::dns::utils::toASCII(
+                "_xmpps-server._tcp." + m_domain + ".");
+        m_srvtlsrec->dnssec = true;
+        m_srvtlsrec->domain = domain;
+    }
+    covent::dns::rr::SRV rr;
     rr.priority = priority;
     rr.weight = weight;
     rr.port = port;
-    rr.hostname = DNS::Utils::toASCII(hostname);
+    rr.hostname = covent::dns::utils::toASCII(hostname);
     if (rr.hostname[rr.hostname.length() - 1] != '.') rr.hostname += '.';
-    rr.tls = tls;
-    m_srvrec->rrs.push_back(rr);
+    if (tls) {
+        m_srvtlsrec->rrs.push_back(rr);
+    } else {
+        m_srvrec->rrs.push_back(rr);
+    }
 }
 
-sigslot::tasklet<void> Config::Domain::gather_host(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string host, uint16_t port, DNS::ConnectInfo::Method method) const {
-    auto addr_recs = co_await r.address_lookup(host);
+covent::task<void> Config::Domain::gather_host(Config::Resolver & r, GatheredData & g, const covent::dns::rr::SRV & rr, ConnectInfo::Method method) const {
+    auto addr_recs = co_await r.address_lookup(rr.hostname);
     if (!addr_recs.error.empty()) co_return; // Interesting case: a DNSSEC-signed SVCB/SRV record pointing to a non-existent host still adds that host to the X.509-acceptable names.
     if (!addr_recs.dnssec && m_dnssec_required) co_return;
     for (auto const & arr : addr_recs.addr) {
-        DNS::ConnectInfo conn_info;
+        ConnectInfo conn_info;
         conn_info.method = method;
-        conn_info.port = port;
+        conn_info.port = rr.port;
         conn_info.sockaddr = arr;
-        conn_info.hostname = host;
+        conn_info.hostname = rr.hostname;
         if (conn_info.sockaddr.ss_family == AF_INET) {
-            span->containing_transaction().tag("gather.ipv4", "yes");
-            sockaddr_cast<AF_INET>(&conn_info.sockaddr)->sin_port = port;
+//            span->containing_transaction().tag("gather.ipv4", "yes");
+            covent::sockaddr_cast<AF_INET>(&conn_info.sockaddr)->sin_port = rr.port;
         } else if (conn_info.sockaddr.ss_family == AF_INET6) {
-            span->containing_transaction().tag("gather.ipv6", "yes");
-            sockaddr_cast<AF_INET6>(&conn_info.sockaddr)->sin6_port = port;
+//            span->containing_transaction().tag("gather.ipv6", "yes");
+            covent::sockaddr_cast<AF_INET6>(&conn_info.sockaddr)->sin6_port = rr.port;
         }
         g.gathered_connect.push_back(conn_info);
     }
 }
 
-sigslot::tasklet<void> Config::Domain::gather_tlsa(std::shared_ptr<sentry::span> span, Resolver & r, GatheredData & g, std::string host, uint16_t port) const {
+covent::task<void> Config::Domain::gather_tlsa(Config::Resolver & r, GatheredData & g, std::string host, uint16_t port) const {
     auto recs = co_await r.tlsa_lookup(port, host);
     if (!recs.error.empty()) co_return;
     if (!recs.dnssec) co_return;
-    span->containing_transaction().tag("gather.tlsa", "yes");
+//    span->containing_transaction().tag("gather.tlsa", "yes");
     for (auto const & tlsa_rr : recs.rrs) {
         g.gathered_tlsa.push_back(tlsa_rr);
     }
 }
 
-sigslot::tasklet<Config::Domain::GatheredData> Config::Domain::gather(std::shared_ptr<sentry::span> span) const {
+covent::task<Config::Domain::GatheredData> Config::Domain::gather() const {
     m_logger.info("Gathering discovery data for {}", m_domain);
-    auto r = resolver();
+    Resolver r(*this);
     std::string domain = m_domain;
     GatheredData g;
-    span->containing_transaction().tag("gather.domain", domain);
-    span->containing_transaction().tag("gather.svcb", "no");
-    span->containing_transaction().tag("gather.srv", "no");
-    span->containing_transaction().tag("gather.dnssec", "no");
-    span->containing_transaction().tag("gather.ipv4", "no");
-    span->containing_transaction().tag("gather.ipv6", "no");
-    span->containing_transaction().tag("gather.tlsa", "no");
-    span->containing_transaction().tag("gather.tls.direct", "no");
-    span->containing_transaction().tag("gather.tls.starttls", "no");
+//    span->containing_transaction().tag("gather.domain", domain);
+//    span->containing_transaction().tag("gather.svcb", "no");
+//    span->containing_transaction().tag("gather.srv", "no");
+//    span->containing_transaction().tag("gather.dnssec", "no");
+//    span->containing_transaction().tag("gather.ipv4", "no");
+//    span->containing_transaction().tag("gather.ipv6", "no");
+//    span->containing_transaction().tag("gather.tlsa", "no");
+//    span->containing_transaction().tag("gather.tls.direct", "no");
+//    span->containing_transaction().tag("gather.tls.starttls", "no");
     bool dnssec = true;
 aname_restart:
     m_logger.debug("ANAME restart");
     g.gathered_connect.clear();
-    auto svcb = co_await r->svcb_lookup(domain);
+    auto svcb = co_await r.svcb_lookup(domain);
     if (svcb.error.empty() && !svcb.rrs.empty()) {
         dnssec = dnssec && svcb.dnssec;
-        span->containing_transaction().tag("gather.svcb", "yes");
+//        span->containing_transaction().tag("gather.svcb", "yes");
         // SVCB pathway
         for (auto const & rr : svcb.rrs) {
             if (svcb.dnssec) {
@@ -966,48 +974,76 @@ aname_restart:
                 goto aname_restart;
             }
             uint16_t  default_port = 443; // Anticipation of WebSocket/WebTransport/BOSH.
-            auto method = DNS::ConnectInfo::Method::StartTLS;
+            auto method = ConnectInfo::Method::StartTLS;
             if (rr.alpn.empty()) {
-                method = DNS::ConnectInfo::Method::StartTLS;
-                span->containing_transaction().tag("gather.tls.starttls", "yes");
+                method = ConnectInfo::Method::StartTLS;
+//                span->containing_transaction().tag("gather.tls.starttls", "yes");
                 default_port = 5269;
             } else if (rr.alpn.contains("xmpp-server")) {
-                method = DNS::ConnectInfo::Method::DirectTLS;
-                span->containing_transaction().tag("gather.tls.direct", "yes");
+                method = ConnectInfo::Method::DirectTLS;
+//                span->containing_transaction().tag("gather.tls.direct", "yes");
                 default_port = 5270;
             }
-            co_await gather_host(span->start_child("gather.host", rr.hostname), *r, g, rr.hostname, rr.port ? rr.port : default_port, method);
-            if (dnssec) co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port ? rr.port : default_port);
+            covent::dns::rr::SRV srv_rr;
+            srv_rr.hostname = rr.hostname;
+            srv_rr.port =  rr.port ? rr.port : default_port;
+            co_await gather_host(r, g, srv_rr, method);
+            if (dnssec) co_await gather_tlsa(r, g, srv_rr.hostname, srv_rr.port);
         }
     } else {
         // SRV path
-        auto srv = co_await r->srv_lookup(domain); // Interesting case: An SVCB looking resulting in the ANAME case might follow to an SRV lookup.
-        if (srv.error.empty() && !srv.rrs.empty()) {
+        auto [srv, srv_tls] = co_await r.srv_lookup(domain); // Interesting case: An SVCB looking resulting in the ANAME case might follow to an SRV lookup.
+        bool has_srv = (srv.error.empty() && !srv.rrs.empty());
+        bool has_srv_tls = (srv.error.empty() && !srv.rrs.empty());
+        if (has_srv) {
             dnssec = dnssec && srv.dnssec;
-            span->containing_transaction().tag("gather.srv", "yes");
-            for (auto const & rr : srv.rrs) {
+//            span->containing_transaction().tag("gather.srv", "yes");
+            for (auto const &rr: srv.rrs) {
                 if (srv.dnssec) {
                     g.gathered_hosts.insert(rr.hostname);
                 }
-                if (rr.tls) {
-                    span->containing_transaction().tag("gather.tls.direct", "yes");
-                } else {
-                    span->containing_transaction().tag("gather.tls.starttls", "yes");
-                }
-                co_await gather_host(span->start_child("gather.host", rr.hostname), *r, g, rr.hostname, rr.port, (rr.tls ? DNS::ConnectInfo::Method::DirectTLS : DNS::ConnectInfo::Method::StartTLS));
-                if (dnssec) co_await gather_tlsa(span->start_child("gather.tlsa", rr.hostname), *r, g, rr.hostname, rr.port);
+//                if (rr.tls) {
+//                    span->containing_transaction().tag("gather.tls.direct", "yes");
+//                } else {
+//                    span->containing_transaction().tag("gather.tls.starttls", "yes");
+//                }
+                co_await gather_host(r, g, rr, ConnectInfo::Method::StartTLS);
+                if (dnssec) co_await gather_tlsa(r, g, rr.hostname, rr.port);
             }
-        } else {
-            co_await gather_host(span->start_child("gather.host", domain), *r, g, domain, 5269, DNS::ConnectInfo::Method::StartTLS);
-            if (dnssec) co_await gather_tlsa(span->start_child("gather.tlsa", domain), *r, g, domain, 5269);
         }
+        if (has_srv_tls) {
+            dnssec = dnssec && srv.dnssec;
+//            span->containing_transaction().tag("gather.srv", "yes");
+            for (auto const &rr: srv_tls.rrs) {
+                if (srv_tls.dnssec) {
+                    g.gathered_hosts.insert(rr.hostname);
+                }
+//                if (rr.tls) {
+//                    span->containing_transaction().tag("gather.tls.direct", "yes");
+//                } else {
+//                    span->containing_transaction().tag("gather.tls.starttls", "yes");
+//                }
+                co_await gather_host(r, g, rr, ConnectInfo::Method::DirectTLS);
+                if (dnssec) co_await gather_tlsa(r, g, rr.hostname, rr.port);
+            }
+        }
+        if (!has_srv && !has_srv_tls) {
+            covent::dns::rr::SRV rr;
+            rr.hostname = domain;
+            rr.port = 5269;
+            rr.priority = 1;
+            rr.weight = 1;
+            co_await gather_host(r, g, rr, ConnectInfo::Method::StartTLS);
+            if (dnssec) co_await gather_tlsa(r, g, domain, 5269);
+        }
+        // TODO : Do SRV sorting here.
     }
-    span->containing_transaction().tag("gather.dnssec", dnssec ? "yes" : "no");
+//    span->containing_transaction().tag("gather.dnssec", dnssec ? "yes" : "no");
     co_return g;
 }
 
-sigslot::tasklet<DNS::Address> Config::Resolver::address_lookup(std::string const &ihostname) {
-    std::string hostname = DNS::Utils::toASCII(ihostname);
+covent::task<covent::dns::answers::Address> Config::Resolver::address_lookup(std::string const &ihostname) {
+    std::string hostname = covent::dns::utils::toASCII(ihostname);
     logger().info("A/AAAA lookup for {}", hostname);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
         if (!domain_override->address_overrides().empty()) {
@@ -1019,34 +1055,51 @@ sigslot::tasklet<DNS::Address> Config::Resolver::address_lookup(std::string cons
             }
         }
     }
-    co_return co_await m_resolver.AddressLookup(ihostname);
+    auto [av4, av6] = co_await covent::gather(
+         m_resolver.address_v4(ihostname),
+         m_resolver.address_v6(ihostname)
+    );
+    if (!av6.error.empty()) {
+        co_return av4;
+    }
+    if (!av4.error.empty()) {
+        co_return av6;
+    }
+    for (const auto & rr : av6.addr) {
+        av4.addr.push_back(rr);
+    }
+    co_return av4;
 }
 
-sigslot::tasklet<DNS::Srv> Config::Resolver::srv_lookup(std::string const &base_domain) {
-    std::string domain = DNS::Utils::toASCII("_xmpp-server._tcp." + base_domain + ".");
-    std::string domains = DNS::Utils::toASCII("_xmpps-server._tcp." + base_domain + ".");
+covent::task<std::tuple<covent::dns::answers::SRV,covent::dns::answers::SRV>> Config::Resolver::srv_lookup(std::string const &base_domain) {
+    std::string domain = covent::dns::utils::toASCII("_xmpp-server._tcp." + base_domain + ".");
+    std::string domains = covent::dns::utils::toASCII("_xmpps-server._tcp." + base_domain + ".");
     m_logger.debug("SRV lookup: domain=[{}]", base_domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
-        if (domain_override->srv_override()) {
+        if (domain_override->has_srv_override()) {
             logger().debug("Found domain_override at {}", domain_override->domain());
-            co_return *domain_override->srv_override();
+            co_return domain_override->srv_override();
         }
     }
     if (base_domain.empty()) {
-        DNS::Srv r;
+        covent::dns::answers::SRV r;
         r.error = "Empty Domain - DNS aborted";
-        co_return r;
+        co_return {r,r};
     } else if (m_domain.transport_type() == SESSION_TYPE::X2X) {
-        DNS::Srv r;
+        covent::dns::answers::SRV r;
         r.error = "X2X - DNS aborted";
-        co_return r;
+        co_return {r,r};
     } else {
-        co_return co_await m_resolver.SrvLookup(base_domain);
+        auto [srv, srv_tls] = co_await covent::gather(
+            m_resolver.srv("_xmpp-server", base_domain),
+            m_resolver.srv("_xmpps-server", base_domain)
+        );
+        co_return {srv, srv_tls};
     }
 }
 
-sigslot::tasklet<DNS::Svcb> Config::Resolver::svcb_lookup(std::string const &base_domain) {
-    std::string domain = DNS::Utils::toASCII("_xmpp-server." + base_domain + ".");
+covent::task<covent::dns::answers::SVCB> Config::Resolver::svcb_lookup(std::string const &base_domain) {
+    std::string domain = covent::dns::utils::toASCII("_xmpp-server." + base_domain + ".");
     m_logger.debug("SVCB lookup: domain=[{}]", base_domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
         if (domain_override->svcb_override()) {
@@ -1055,22 +1108,22 @@ sigslot::tasklet<DNS::Svcb> Config::Resolver::svcb_lookup(std::string const &bas
         }
     }
     if (base_domain.empty()) {
-        DNS::Svcb r;
+        covent::dns::answers::SVCB r;
         r.error = "Empty Domain - DNS aborted";
         co_return r;
     } else if (m_domain.transport_type() == SESSION_TYPE::X2X) {
-        DNS::Svcb r;
+        covent::dns::answers::SVCB r;
         r.error = "X2X - DNS aborted";
         co_return r;
     } else {
-        co_return co_await m_resolver.SvcbLookup(base_domain);
+        co_return co_await m_resolver.svcb("xmpp-server", base_domain);
     }
 }
 
-sigslot::tasklet<DNS::Tlsa> Config::Resolver::tlsa_lookup(unsigned short port, std::string const &base_domain) {
+covent::task<covent::dns::answers::TLSA> Config::Resolver::tlsa_lookup(unsigned short port, std::string const &base_domain) {
     std::ostringstream out;
     out << "_" << port << "._tcp." << base_domain;
-    std::string domain = DNS::Utils::toASCII(out.str());
+    std::string domain = covent::dns::utils::toASCII(out.str());
     logger().info("TLSA lookup for domain=[{}]", domain);
     for (Domain const *domain_override = &m_domain; domain_override; domain_override = domain_override->parent()) {
         if (!domain_override->tlsa_overrides().empty()) {
@@ -1083,10 +1136,10 @@ sigslot::tasklet<DNS::Tlsa> Config::Resolver::tlsa_lookup(unsigned short port, s
         }
     }
     if (m_domain.transport_type() == SESSION_TYPE::X2X) {
-        DNS::Tlsa r;
+        covent::dns::answers::TLSA r;
         r.error = "X2X - DNS aborted";
         co_return r;
     } else {
-        co_return co_await m_resolver.TlsaLookup(port, base_domain);
+        co_return co_await m_resolver.tlsa(port, base_domain);
     }
 }

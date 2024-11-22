@@ -27,7 +27,7 @@ SOFTWARE.
 #include "stanza.h"
 #include "xmppexcept.h"
 #include "router.h"
-#include "netsession.h"
+#include <covent/covent.h>
 #include "config.h"
 #include "log.h"
 #include "pkix.h"
@@ -36,7 +36,6 @@ SOFTWARE.
 #include <event2/bufferevent_ssl.h>
 #include <openssl/decoder.h>
 #include <evdns.h>
-#include <http.h>
 
 using namespace Metre;
 using namespace rapidxml;
@@ -52,7 +51,7 @@ namespace {
         public:
             Description() : Feature::Description<StartTls>(tls_ns, Type::FEAT_SECURE) {};
 
-            sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>> node, XMLStream &s) override {
+            covent::task<bool> offer(optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (s.secured()) co_return false;
                 if (!Config::config().domain(s.local_domain()).tls_enabled()) co_return false;
                 auto feature = node->append_element({tls_ns, "starttls"});
@@ -63,7 +62,7 @@ namespace {
             }
         };
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
+        covent::task<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle StartTLS");
             if ((node->name() == "starttls" && m_stream.direction() == SESSION_DIRECTION::INBOUND) ||
                 (node->name() == "proceed" && m_stream.direction() == SESSION_DIRECTION::OUTBOUND)) {
@@ -120,12 +119,12 @@ namespace Metre {
      * @param route
      * @return true if TLS verified correctly.
      */
-    sigslot::tasklet<bool> verify_tls(std::shared_ptr<sentry::span> span, XMLStream &stream, Route const &route) {
-        SSL *ssl = bufferevent_openssl_get_ssl(stream.session().bufferevent());
+    covent::task<bool> verify_tls(XMLStream &stream, Route const &route) {
+        SSL *ssl = stream.ssl();
         auto & domain = Config::config().domain(route.domain());
         if (!ssl) co_return false; // No TLS.
         auto & validator = domain.pkix_validator();
-        auto result = co_await validator.verify_tls(span->start_child("PKIXValidator::verify_tls", route.domain()), ssl, domain.domain());
+        auto result = co_await validator.verify_tls(ssl, domain.domain());
         if (result) {
             stream.logger().info("verify_tls: DANE verification succeeded");
         }
@@ -137,9 +136,9 @@ namespace Metre {
         auto & domain = Config::config().domain(stream.local_domain());
         stream.logger().debug("Trying to start TLS as {}", domain.domain());
         if (!domain.tls_enabled()) return false;
-        SSL *ssl = domain.tls_context().instantiate(stream.direction() == SESSION_DIRECTION::OUTBOUND, stream.remote_domain());
-        bufferevent_ssl_state st = BUFFEREVENT_SSL_ACCEPTING;
-        if (stream.direction() == SESSION_DIRECTION::INBOUND) {
+        bool connecting = stream.direction() == SESSION_DIRECTION::OUTBOUND;
+        SSL *ssl = domain.tls_context().instantiate(connecting, stream.remote_domain());
+        if (!connecting) {
             if (send_proceed) {
                 xml_document<> d;
                 auto n = d.allocate_node(node_element, "proceed");
@@ -147,15 +146,9 @@ namespace Metre {
                 d.append_node(n);
                 stream.send(d);
             }
-            stream.restart();
-        } else { //m_stream.direction() == OUTBOUND
-            st = BUFFEREVENT_SSL_CONNECTING;
+            stream.clear_stream();
         }
-        struct bufferevent *bev = stream.session().bufferevent();
-        struct bufferevent *bev_ssl = bufferevent_openssl_filter_new(bufferevent_get_base(bev), bev, ssl, st,
-                                                                     BEV_OPT_CLOSE_ON_FREE);
-        stream.session().bufferevent(bev_ssl); // Might set it to NULL - this is OK!
-        if (!bev_ssl) throw pkix_error("Cannot create OpenSSL filter");
+        stream.ssl(ssl, connecting);
         stream.set_secured();
         return true;
     }

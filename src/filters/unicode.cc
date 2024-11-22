@@ -117,7 +117,7 @@ namespace {
             config->append_node(b);
         }
 
-        virtual sigslot::tasklet<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
+        virtual covent::task<FILTER_RESULT> apply(FILTER_DIRECTION dir, Stanza &s) override {
             if (dir == FILTER_DIRECTION::FROM) {
                 co_return PASS;
             }

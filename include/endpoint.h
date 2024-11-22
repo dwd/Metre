@@ -6,12 +6,13 @@
 #define METRE_ENDPOINT_H
 
 #include <random>
-#include "sigslot.h"
-#include <sigslot/tasklet.h>
+#include <sigslot/sigslot.h>
 #include "jid.h"
 #include "stanza.h"
 #include "capability.h"
 #include "node.h"
+#include <covent/covent.h>
+#include <covent/coroutine.h>
 
 namespace Metre {
     class Capability;
@@ -26,13 +27,13 @@ namespace Metre {
             return m_jid;
         }
 
-        virtual sigslot::tasklet<void> process(Presence & presence);
+        virtual covent::task<void> process(Presence & presence);
 
-        virtual sigslot::tasklet<void> process(Message & message);
+        virtual covent::task<void> process(Message & message);
 
-        virtual sigslot::tasklet<void> process(Iq & iq);
+        virtual covent::task<void> process(Iq & iq);
 
-        void process(std::unique_ptr<Stanza> && stanza);
+        covent::task<void> process(std::unique_ptr<Stanza> stanza);
 
         std::string random_identifier();
 
@@ -48,11 +49,11 @@ namespace Metre {
         }
 
         void add_handler(std::string const &xmlns, std::string const &local,
-                         std::function<sigslot::tasklet<void>(Iq const &)> &&fn);
+                         std::function<covent::task<void>(Iq const &)> &&fn);
 
         ~Endpoint() override;
 
-        sigslot::tasklet<Node *> node(std::string const &name, bool create = false);
+        covent::task<Node *> node(std::string const &name, bool create = false);
 
         std::map<std::string, std::unique_ptr<Node>, std::less<>> const &nodes() const {
             return m_nodes;
@@ -64,12 +65,6 @@ namespace Metre {
         sigslot::signal<Stanza &, Jid const &, Jid const &> sent_stanza;
 #endif
     protected:
-        struct process_task {
-            std::unique_ptr<Stanza> stanza;
-            sigslot::tasklet<void> task;
-        };
-        void task_complete(process_task *);
-
         Jid m_jid;
         static const size_t id_len = 16;
         static const char characters[];
@@ -79,9 +74,8 @@ namespace Metre {
 
 
     private:
-        std::list<std::unique_ptr<process_task>> m_tasks;
         std::set<std::unique_ptr<Capability>> m_capabilities;
-        std::map<std::pair<std::string, std::string>, std::function<sigslot::tasklet<void>(Iq const &)>> m_handlers;
+        std::map<std::pair<std::string, std::string>, std::function<covent::task<void>(Iq const &)>> m_handlers;
         std::map<std::string, std::function<void(Stanza const &)>, std::less<>> m_stanza_callbacks;
     };
 }

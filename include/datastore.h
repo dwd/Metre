@@ -8,7 +8,7 @@
 #include <string>
 #include <event2/event.h>
 #include <functional>
-#include "sigslot.h"
+#include <sigslot/sigslot.h>
 #include <map>
 #include <optional>
 

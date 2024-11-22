@@ -30,8 +30,6 @@ SOFTWARE.
 #include "jid.h"
 #include "stanza.h"
 #include "core.h"
-#include "sigslot.h"
-#include "sigslot/tasklet.h"
 #include "sentry-wrap.h"
 
 #include <string>
@@ -39,16 +37,15 @@ SOFTWARE.
 #include <queue>
 #include <map>
 #include <spdlog/logger.h>
+#include <sigslot/sigslot.h>
 
 namespace Metre {
-    class NetSession;
-
     class Route : public sigslot::has_slots {
     private:
-        std::weak_ptr<NetSession> m_to;
-        std::optional<sigslot::tasklet<bool>> m_to_task;
-        std::weak_ptr<NetSession> m_vrfy;
-        std::optional<sigslot::tasklet<bool>> m_verify_task;
+        std::weak_ptr<XMLStream> m_to;
+        std::optional<covent::task<bool>> m_to_task;
+        std::weak_ptr<XMLStream> m_vrfy;
+        std::optional<covent::task<bool>> m_verify_task;
         std::list<std::unique_ptr<Stanza>> m_stanzas;
         std::list<std::unique_ptr<DB::Verify>> m_dialback;
         Jid const m_local;
@@ -73,21 +70,21 @@ namespace Metre {
             return m_local;
         }
 
-        sigslot::tasklet<bool> init_session_vrfy(std::shared_ptr<sentry::span>, bool multiplex);
+        covent::task<bool> init_session_vrfy(bool multiplex);
 
-        sigslot::tasklet<bool> init_session_to(std::shared_ptr<sentry::transaction>);
+        covent::task<bool> init_session_to();
 
-        void outbound(NetSession *ns);
+        void outbound(XMLStream & ns);
 
         void transmit(std::unique_ptr<Stanza> &&);
 
         void transmit(std::unique_ptr<DB::Verify> &&);
 
         // Slots
-        void SessionClosed(NetSession &);
+        void SessionClosed(XMLStream &);
 
         // Risky : Only used internally and by components.
-        void set_to(std::shared_ptr<NetSession> & to);
+        void set_to(std::shared_ptr<XMLStream> & to);
 
     protected:
         void bounce_stanzas(Stanza::Error);
@@ -98,7 +95,7 @@ namespace Metre {
 
         void queue(std::unique_ptr<DB::Verify> &&);
 
-        void set_vrfy(std::shared_ptr<NetSession> & vrfy);
+        void set_vrfy(std::shared_ptr<XMLStream> & vrfy);
     };
 
     class RouteTable {

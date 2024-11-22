@@ -29,7 +29,7 @@ SOFTWARE.
 #include "jid.h"
 #include "xmppexcept.h"
 #include "rapidxml.hpp"
-#include "sigslot.h"
+#include <sigslot/sigslot.h>
 
 #include <memory>
 

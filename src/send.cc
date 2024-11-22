@@ -9,10 +9,10 @@
 using namespace Metre;
 
 namespace {
-    std::map<std::string,sigslot::signal<Iq const &>> s_iq_waiting;
+    std::map<std::string,sigslot::signal<Iq const *>> s_iq_waiting;
     const std::string s_id_prefix = "::metre::handle::";
 
-    sigslot::signal<Iq const &> & send_low(std::unique_ptr<Iq> && iq) {
+    sigslot::signal<Iq const *> & send_low(std::unique_ptr<Iq> && iq) {
         auto handler_id = iq->id();
         if (!handler_id.has_value()) {
             throw std::logic_error("Must have id to send an IQ from Metre");
@@ -38,17 +38,17 @@ std::string Metre::Send::make_id() {
 void Metre::Send::handle(Iq const & iq) {
     auto it = s_iq_waiting.find(iq.id().value());
     if (it != s_iq_waiting.end()) {
-        (*it).second(iq);
+        (*it).second(&iq);
         s_iq_waiting.erase(it);
     }
 }
 
-sigslot::tasklet<Iq const *> Metre::Send::send(std::shared_ptr<sentry::span> span, std::unique_ptr<Iq> iq) {
-    auto const & ret = co_await send_low(std::move(iq));
-    co_return &ret;
+covent::task<Iq const *> Metre::Send::send(std::shared_ptr<sentry::span> span, std::unique_ptr<Iq> iq) {
+    auto const * ret = co_await send_low(std::move(iq));
+    co_return ret;
 }
 
-sigslot::tasklet<Iq const *> Metre::Send::ping(std::shared_ptr<sentry::span> span, Jid const & from, Jid const & to) {
+covent::task<Iq const *> Metre::Send::ping(std::shared_ptr<sentry::span> span, Jid const & from, Jid const & to) {
     auto iq = std::make_unique<Iq>(from, to, Iq::Type::GET, make_id());
     iq->node()->append_element({"urn:xmpp:ping", "ping"});
     return send(std::move(span), std::move(iq));

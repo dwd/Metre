@@ -18,7 +18,7 @@ namespace {
         };
 
         Version(BaseDescription const &descr, Endpoint &jid) : Capability(descr, jid) {
-            jid.add_handler("jabber:iq:version", "query", [this](Iq const & iq) -> sigslot::tasklet<void> {
+            jid.add_handler("jabber:iq:version", "query", [this](Iq const & iq) -> covent::task<void> {
                 auto response = std::make_unique<Iq>(iq.to(), iq.from(), Iq::Type::RESULT, iq.id());
 
                 auto query = response->node()->append_element({"jabber:iq:version", "query"});

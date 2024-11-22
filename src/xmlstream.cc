@@ -23,13 +23,12 @@ SOFTWARE.
 
 ***/
 
-#include <http.h>
 #include <xmlstream.h>
 
 #include "rapidxml.hpp"
 #include "xmlstream.h"
 #include "xmppexcept.h"
-#include "netsession.h"
+#include <covent/covent.h>
 #include "feature.h"
 #include "filter.h"
 #include "router.h"
@@ -37,6 +36,7 @@ SOFTWARE.
 #include "log.h"
 #include "pkix.h"
 #include "fmt-enum.h"
+#include "rapidxml_print.hpp"
 
 #ifdef VALGRIND
 #include <valgrind/memcheck.h>
@@ -46,8 +46,8 @@ SOFTWARE.
 
 using namespace Metre;
 
-XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
-        : has_slots(), m_session(n), m_dir(dir), m_type(t), m_logger(Config::config().logger("XmlStream serial=[{}] {} type=[{}]", m_session->serial(), dir, t)) {
+XMLStream::XMLStream(SESSION_DIRECTION dir, SESSION_TYPE t)
+        :  has_slots(), Session(covent::Loop::main_loop()), m_dir(dir), m_type(t), m_logger(Config::config().logger("XmlStream serial=[{}] {} type=[{}]", id(), dir, t)) {
     using enum SESSION_TYPE;
     if (t == X2X) {
         m_type = S2S;
@@ -56,10 +56,10 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t)
     }
 }
 
-XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::string const &stream_local,
+XMLStream::XMLStream(SESSION_DIRECTION dir, SESSION_TYPE t, std::string const &stream_local,
                      std::string const &stream_remote)
-        : has_slots(), m_session(n), m_dir(dir), m_type(t), m_stream_local(stream_local),
-          m_stream_remote(stream_remote), m_logger(Config::config().logger("XmlStream serial=[{}] {} type=[{}]", m_session->serial(), dir, t)) {
+        : has_slots(), Session(covent::Loop::main_loop()), m_dir(dir), m_type(t), m_stream_local(stream_local),
+          m_stream_remote(stream_remote), m_logger(Config::config().logger("XmlStream serial=[{}] {} type=[{}]", id(), dir, t)) {
     using enum SESSION_TYPE;
     if (t == X2X) {
         m_type = S2S;
@@ -68,39 +68,29 @@ XMLStream::XMLStream(NetSession *n, SESSION_DIRECTION dir, SESSION_TYPE t, std::
     }
 }
 
-void XMLStream::thaw() {
-    if (m_in_flight <= 0) return;
-    --m_in_flight;
-    if (m_in_flight > 0) return;
-    logger().debug("thaw");
-    m_session->read();
-    logger().debug("thaw done");
-}
-
-size_t XMLStream::process(unsigned char *p, size_t len) {
+covent::task<bool> XMLStream::process(std::string_view const & data_in) {
     using namespace rapidxml;
-    if (len == 0) return 0;
-    if (frozen()) {
-        logger().debug("Data arrived when frozen");
-        return 0;
-    }
-    (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(p, len);
+    auto buf = data_in;
+    if (buf.empty()) co_return false;
+    (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(data.data(), data.size());
     size_t spaces = 0;
-    for (const unsigned char *sp{p}; len != 0; ++sp, --len, ++spaces) {
+    for (const auto *sp{buf.data()}; !buf.empty(); ++spaces) {
         switch (*sp) {
             default:
                 break;
             case ' ':
             case '\r':
             case '\n':
+                buf.remove_prefix(1);
                 continue;
         }
         break;
     }
-    if (spaces) m_session->used(spaces);
-    if (len == 0) return spaces;
-    std::string_view buf{reinterpret_cast<char *>(p + spaces), len};
-    logger().debug("Got [{}]: {}", len, buf);
+    if (buf.empty()) {
+        if (spaces) used(spaces);
+        co_return true;
+    }
+    logger().debug("Got [{}]: {}", buf.size(), buf);
     try {
         try {
             if (m_stream_buf.empty()) {
@@ -115,13 +105,14 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                     auto test = m_stream.first_node();
                     if (test && !test->name().empty()) {
                         m_stream_buf.assign(buf.data(), end.ptr());
-                        m_session->used(end.ptr() - buf.data());
+                        used(spaces + (end.ptr() - buf.data()));
                         buf.remove_prefix(end.ptr() - buf.data());
                         m_stream.parse<parse_open_only>(m_stream_buf);
-                        stream_open();
+                        co_await stream_open();
                     } else {
                         m_stream_buf.clear();
                     }
+                    co_return true;
                 } catch (rapidxml::eof_error &) {
                     throw;
                 } catch (rapidxml::parse_error &) {
@@ -133,45 +124,44 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
                         } else {
                             m_logger.info("TLS negotiation underway");
                             m_first_read = false;
-                            return 0;
+                            co_return true;
                         }
                     } else {
                         m_logger.error("Not first read or already TLS; giving up");
                         throw;
                     }
                 }
-            }
-            while (!buf.empty()) {
+            } else if(!buf.empty()) {
                 auto end = m_stanza.parse<parse_fastest | parse_parse_one>(buf, &m_stream);
                 m_first_read = false;
                 auto element = m_stanza.first_node();
-                if (!element || element->name().empty()) return len - buf.length();
+                if (!element || element->name().empty()) co_return false;
                 bool tls_nego = element->xmlns() == "urn:ietf:params:xml:ns:xmpp-tls";
                 // For TLS negotiation elements, we need to special-case to avoid
                 // the data still being in the buffer when the TLS handshake occurs.
                 if (tls_nego) {
                     // Clone it then discard the buffer.
                     element = m_stanza.clone_node(element, true);
-                    m_session->used(end.ptr() - buf.data());
+                    used(spaces + (end.ptr() - buf.data()));
                     buf.remove_prefix(end.ptr() - buf.data());
                 }
-                handle(element);
+                co_await handle(element);
                 if (!tls_nego) {
-                    m_session->used(end.ptr() - buf.data());
+                    used(spaces + (end.ptr() - buf.data()));
                     buf.remove_prefix(end.ptr() - buf.data());
                 }
                 m_stanza.clear();
-                if (frozen()) return spaces + len - buf.length();
+                co_return true;
             }
         } catch (Metre::base::xmpp_exception &) {
             throw;
         } catch (rapidxml::eof_error &) {
-            return spaces + len - buf.length();
+            co_return true;
         } catch (rapidxml::parse_error &e) {
             if (buf == "</stream:stream>") {
-                m_session->send("</stream:stream>");
+                write("</stream:stream>");
                 m_closed = true;
-                m_session->used(buf.size());
+                used(buf.size());
                 buf.remove_prefix(buf.size());
             } else {
                 throw Metre::not_well_formed(e.what());
@@ -182,7 +172,7 @@ size_t XMLStream::process(unsigned char *p, size_t len) {
     } catch (Metre::base::xmpp_exception &e) {
         handle_exception(e);
     }
-    return spaces + len - buf.length();
+    co_return true;
 }
 
 void XMLStream::handle_exception(Metre::base::xmpp_exception const & e) {
@@ -201,8 +191,8 @@ void XMLStream::handle_exception(Metre::base::xmpp_exception const & e) {
 void XMLStream::close(rapidxml::optional_ptr<rapidxml::xml_node<>> error) {
     if (m_closed) return;
     if (m_opened) {
-        if (error) m_session->send(error.value());
-        m_session->send("</stream:stream>");
+        if (error) send(error.value());
+        write("</stream:stream>");
     } else {
         rapidxml::xml_document<> d;
         auto node = d.allocate_node(rapidxml::node_element, "stream:stream");
@@ -213,8 +203,8 @@ void XMLStream::close(rapidxml::optional_ptr<rapidxml::xml_node<>> error) {
             node->append_node(d.clone_node(error));
         }
         d.append_node(node);
-        m_session->send("<?xml version='1.0'?>");
-        m_session->send(d);
+        write("<?xml version='1.0'?>");
+        send(d);
     }
     m_closed = true;
     auth_state_changed(*this);
@@ -291,7 +281,7 @@ void XMLStream::check_domain_pair(std::string const &from_domain, std::string co
     }
 }
 
-void XMLStream::stream_open() {
+covent::task<void> XMLStream::stream_open() {
     /**
      * We may be able to change our minds on what stream type this is, here,
      * by looking at the default namespace.
@@ -354,13 +344,13 @@ void XMLStream::stream_open() {
         m_stream_local = domainname;
         if (from.empty()) {
             // TODO: A bit cut'n'pastey here.
-            start_task("Empty from inbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), with_ver));
+            co_await send_stream_open(with_ver);
         } else {
             m_stream_remote = from;
             if (m_stream_remote == m_stream_local) {
                 throw std::runtime_error("That's me, you fool");
             }
-            start_task("With from, inbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), with_ver));
+            co_await send_stream_open(with_ver);
         }
     } else if (m_dir == SESSION_DIRECTION::OUTBOUND) {
         if (m_type == SESSION_TYPE::S2S) {
@@ -370,23 +360,23 @@ void XMLStream::stream_open() {
                     Router::unregister_stream_id(m_stream_id);
                 }
                 m_stream_id = id_att->value();
-                Router::register_stream_id(m_stream_id, *m_session);
+                Router::register_stream_id(m_stream_id, *this);
             }
         }
-        return;
+        co_return;
     }
 }
 
-sigslot::tasklet<bool> XMLStream::send_stream_open(std::shared_ptr<sentry::transaction> trans, bool with_version) {
+covent::task<bool> XMLStream::send_stream_open(bool with_version) {
     if (m_x2x_mode) {
         if (m_secured) {
             auto route = RouteTable::routeTable(m_stream_local).route(m_stream_remote);
-            if (!co_await tls_auth_ok(trans->start_child("tls", m_stream_remote), *route)) {
+            if (!co_await tls_auth_ok(*route)) {
                 throw host_unknown("Cannot authenticate host");
             }
         }
         std::string stream_buf = fmt::format("<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='{}' to='{}' from='{}'>", content_namespace(), m_stream_local, m_stream_remote);
-        process(reinterpret_cast<unsigned char *>(stream_buf.data()), stream_buf.size());
+        co_await process(stream_buf);
         set_auth_ready();
     } else {
         /*
@@ -414,31 +404,34 @@ sigslot::tasklet<bool> XMLStream::send_stream_open(std::shared_ptr<sentry::trans
         } else {
             open += "'>";
         }
-        m_session->send(open);
+        write(open);
         if (with_version && m_dir == SESSION_DIRECTION::INBOUND) {
             rapidxml::xml_document<> doc;
             auto features = doc.allocate_node(rapidxml::node_element, "stream:features");
             doc.append_node(features);
             for (auto const & f : Feature::features(m_type)) {
-                co_await *start_task("Feature offer", f->offer(trans->start_child("feature.offer", f->xmlns()), features, *this));
+                co_await f->offer(features, *this);
             }
-            m_session->send(doc);
+            send(doc);
         }
     }
     m_opened = true;
     co_return true;
 }
 
-void XMLStream::send(rapidxml::xml_document<> &d) {
-    m_session->send(d);
+void XMLStream::send(rapidxml::xml_node<> &d) {
+    std::string tmp;
+    rapidxml::print(std::back_inserter(tmp), d, rapidxml::print_no_indenting);
+    m_logger.debug("Send: {}", tmp);
+    write(tmp);
 }
 
 void XMLStream::send(std::unique_ptr<Stanza> s) {
-    m_session->send(*s->node());
+    send(*s->node());
     s->sent(*s, true);
 }
 
-void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
+covent::task<void> XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
     m_logger.trace("handle element={} xmlns={}", element->name(), element->xmlns());
     if (element->xmlns() == "http://etherx.jabber.org/streams") {
         if (element->name() == "features") {
@@ -484,7 +477,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                     } else if (s2s_auth_pair(local_domain(), remote_domain(), SESSION_DIRECTION::OUTBOUND) == AUTH_STATE::AUTHORIZED) {
                         set_auth_ready();
                     }
-                    return;
+                    co_return;
                 }
                 try_feature:
                 auto f = Feature::feature(feature_xmlns, *this);
@@ -492,7 +485,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
                 bool escape = f->negotiate(feature_offer);
                 m_features.try_emplace(feature_xmlns, std::move(f));
                 m_logger.debug("Feature negotiated, stream restart is [{}]", escape);
-                if (escape) return; // We've done a stream restart or something.
+                if (escape) co_return; // We've done a stream restart or something.
             }
         } else if (element->name() == "error") {
             const std::string err_ns = "urn:ietf:params:xml:ns:xmpp-streams";
@@ -504,8 +497,8 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
             } else {
                 m_logger.log(level,"Received {} over stream", err_type->name());
             }
-            m_session->close();
-            return;
+            close();
+            co_return;
         } else {
             throw Metre::unsupported_stanza_type("Unknown stream element");
         }
@@ -527,12 +520,7 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
             clark_name += element->xmlns();
             clark_name += "}";
             clark_name += element->name();
-            auto task = start_task("XMLStream handle element", feat->handle(std::make_shared<sentry::transaction>("element", clark_name), element));
-            if (task->running()) {
-                return;
-            } else {
-                handled = task->get();
-            }
+            co_await feat->handle(element);
         }
         m_logger.debug("Handled: [{}]", handled);
         if (!handled) {
@@ -541,11 +529,14 @@ void XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>> element) {
     }
 }
 
-void XMLStream::restart() {
-    do_restart();
+covent::task<void> XMLStream::restart() {
+    clear_stream();
+    if (m_dir == SESSION_DIRECTION::OUTBOUND) {
+        co_await send_stream_open(true);
+    }
 }
 
-void XMLStream::do_restart() {
+void XMLStream::clear_stream() {
     if (!m_stream_id.empty()) {
         Router::unregister_stream_id(m_stream_id);
         m_stream_id.clear();
@@ -554,10 +545,6 @@ void XMLStream::do_restart() {
     m_stream.clear();
     m_stanza.clear();
     m_stream_buf.clear();
-    if (m_dir == SESSION_DIRECTION::OUTBOUND) {
-        start_task("Restart outbound send_stream_open", send_stream_open(std::make_shared<sentry::transaction>("element", "{http://etherx.jabber.org/streams}stream"), true));
-        thaw();
-    }
 }
 
 void XMLStream::generate_stream_id() {
@@ -565,7 +552,7 @@ void XMLStream::generate_stream_id() {
         Router::unregister_stream_id(m_stream_id);
     }
     m_stream_id = Config::config().random_identifier();
-    Router::register_stream_id(m_stream_id, *m_session);
+    Router::register_stream_id(m_stream_id, *this);
 }
 
 XMLStream::AUTH_STATE
@@ -612,7 +599,7 @@ XMLStream::AUTH_STATE XMLStream::s2s_auth_pair(std::string const &local, std::st
         if (state == XMLStream::AUTH_STATE::AUTHORIZED) {
             logger().info("Authorized {} session local: {} remote: {}", (dir == INBOUND ? "INBOUND" : "OUTBOUND"),
                           local, remote);
-            if (m_bidi && dir == INBOUND) RouteTable::routeTable(local).route(remote)->outbound(m_session);
+            if (m_bidi && dir == INBOUND) RouteTable::routeTable(local).route(remote)->outbound(*this);
             auth_state_changed.emit(*this);
         }
     }
@@ -625,46 +612,17 @@ bool XMLStream::bidi(bool b) {
         for (auto const & [domains, state] : m_auth_pairs_rx) {
             if (state == XMLStream::AUTH_STATE::AUTHORIZED) {
                 auto const & [local, remote] = domains;
-                RouteTable::routeTable(local).route(remote)->outbound(m_session);
+                RouteTable::routeTable(local).route(remote)->outbound(*this);
             }
         }
     }
     return m_bidi;
 }
 
-sigslot::tasklet<bool> XMLStream::tls_auth_ok(std::shared_ptr<sentry::span> span, Route &route) {
+covent::task<bool> XMLStream::tls_auth_ok(Route &route) {
     if (!m_secured) co_return false;
-    auto task = start_task("tls_auth_ok call verify_tls", verify_tls(span->start_child("tls", "verify"), *this, route));
-    auto ret = co_await *task;
+    auto ret = co_await verify_tls(*this, route);
     co_return ret;
-}
-
-void XMLStream::task_completed() {
-    Router::defer([this]() {
-        m_tasks.remove_if([this](auto & task) {
-            if(!task->running()) {
-                in_context([task]() {
-                    task->get();
-                });
-                return true;
-            }
-            return false;
-        });
-    });
-    thaw();
-}
-
-std::shared_ptr<sigslot::tasklet<bool>> XMLStream::start_task(std::string const & s, sigslot::tasklet<bool> &&otask) {
-    auto task = std::make_shared<sigslot::tasklet<bool>>(std::move(otask));
-    task->set_name(s);
-    task->start();
-    if (task->running()) {
-        freeze();
-        task->complete().connect(this, &XMLStream::task_completed);
-        m_tasks.emplace_back(task);
-        logger().debug("Task [{}] paused, currently [{}] running.", s, m_tasks.size());
-    }
-    return task;
 }
 
 bool XMLStream::multiplex(bool target) const {

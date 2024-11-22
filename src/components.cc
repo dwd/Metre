@@ -24,7 +24,7 @@ SOFTWARE.
 ***/
 
 #include "feature.h"
-#include "netsession.h"
+#include <covent/covent.h>
 #include "stanza.h"
 #include "router.h"
 #include "log.h"
@@ -85,7 +85,7 @@ namespace {
             return false;
         }
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> span, optional_ptr<rapidxml::xml_node<>> node) override {
+        covent::task<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle component");
 
             std::unique_ptr<Stanza> s;
@@ -102,8 +102,8 @@ namespace {
 
                 std::string const & domain = m_stream.local_domain();
                 m_stream.user(domain);
-                METRE_LOG(Metre::Log::DEBUG, "Component registering session domain: domain=[" << domain << "] session=[" << m_stream.session().serial() << "]");
-                Router::register_session_domain(domain, m_stream.session());
+                METRE_LOG(Metre::Log::DEBUG, "Component registering session domain: domain=[" << domain << "] session=[" << m_stream.id() << "]");
+                Router::register_session_domain(domain, m_stream);
                 auto session_ptr = Router::session_by_domain(m_stream.local_domain());
                 RouteTable::routeTable(domain).route(domain)->set_to(session_ptr);
                 {
@@ -124,18 +124,18 @@ namespace {
                         throw not_authorized();
                     }
                     m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
-                    if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(FILTER_DIRECTION::FROM, *s)) {
                         m_stream.logger().info("Stanza discarded by FROM filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
-                    if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(FILTER_DIRECTION::TO, *s)) {
                         m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applied all stanza filters");
                     if (Config::config().domain(to.domain()).transport_type() == SESSION_TYPE::INTERNAL) {
-                        Endpoint::endpoint(to).process(std::move(s));
+                        co_await Endpoint::endpoint(to).process(std::move(s));
                     } else {
                         METRE_LOG(Metre::Log::DEBUG, "Component creating route: from=[" << from.domain() << "] to=[" << to.domain() << "]");
                         std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);

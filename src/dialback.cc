@@ -27,7 +27,6 @@ SOFTWARE.
 #include "stanza.h"
 #include "xmppexcept.h"
 #include "router.h"
-#include "netsession.h"
 #include <memory>
 #include "config.h"
 
@@ -48,7 +47,7 @@ namespace {
         public:
             Description() : Feature::Description<NewDialback>(db_feat_ns, Type::FEAT_AUTH_FALLBACK) {};
 
-            sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>> node, XMLStream &s) override {
+            covent::task<bool> offer(optional_ptr<xml_node<>> node, XMLStream &s) override {
                 if (!s.secured() && (Config::config().domain(s.local_domain()).require_tls() ||
                                      Config::config().domain(s.remote_domain()).require_tls())) {
                     co_return false;
@@ -73,7 +72,7 @@ namespace {
             return false;
         }
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, optional_ptr<rapidxml::xml_node<>>) override {
+        covent::task<bool> handle(optional_ptr<rapidxml::xml_node<>>) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             throw Metre::unsupported_stanza_type("Wrong namespace for dialback.");
         }
@@ -91,7 +90,7 @@ namespace {
         /**
          * Inbound handling.
          */
-        sigslot::tasklet<bool> result(std::shared_ptr<sentry::span> span, DB::Result &result) {
+        covent::task<bool> result(DB::Result &result) {
             /*
              * This is a request to authenticate, using the current key.
              */
@@ -113,7 +112,7 @@ namespace {
             auto const &route = RouteTable::routeTable(result.to()).route(result.from());
             result.freeze();
             // Shortcuts here.
-            if (co_await *m_stream.start_task("Dialback calling tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", result.from().domain()), *route))) {
+            if (co_await m_stream.tls_auth_ok(*route)) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(route->domain_jid(), route->local_jid(), DB::Type::VALID);
                 m_stream.send(std::move(d));
                 m_stream.s2s_auth_pair(route->local(), route->domain(), SESSION_DIRECTION::INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
@@ -156,14 +155,14 @@ namespace {
         }
 
         void verify(DB::Verify const &v) {
-            std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
+            auto session = Router::session_by_stream_id(*v.id());
             DB::Type validity = DB::Type::INVALID;
             m_stream.logger().debug("Handling db:verify");
             if (session) {
-                m_stream.logger().debug("Verify [NS{}] session found.", session->serial());
-                if (session->xml_stream().s2s_auth_pair(v.to().domain(), v.from().domain(), SESSION_DIRECTION::OUTBOUND) >=
+                m_stream.logger().debug("Verify [NS{}] session found.", session->id());
+                if (session->s2s_auth_pair(v.to().domain(), v.from().domain(), SESSION_DIRECTION::OUTBOUND) >=
                     XMLStream::AUTH_STATE::REQUESTED) {
-                    m_stream.logger().debug("Verify [NS{}] Auth State is correct.", session->serial());
+                    m_stream.logger().debug("Verify [NS{}] Auth State is correct.", session->id());
                     std::string expected = Config::config().dialback_key(*v.id(), v.to().domain(), v.from().domain());
                     if (v.key() == expected) validity = DB::Type::VALID;
                 }
@@ -176,13 +175,12 @@ namespace {
             using enum SESSION_DIRECTION;
             if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
-            std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
+            auto session = Router::session_by_stream_id(*v.id());
             if (!session) return; // Silently ignore this.
-            XMLStream &stream = session->xml_stream();
-            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
+            if (session->s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), DB::Type::VALID);
-                stream.send(std::move(d));
-                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
+                session->send(std::move(d));
+                session->s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::AUTHORIZED);
             }
         }
 
@@ -190,24 +188,23 @@ namespace {
             using enum SESSION_DIRECTION;
             if (m_stream.direction() != OUTBOUND)
                 throw Metre::unsupported_stanza_type("db:verify response on inbound stream");
-            std::shared_ptr<NetSession> session = Router::session_by_stream_id(*v.id());
+            auto session = Router::session_by_stream_id(*v.id());
             if (!session) return; // Silently ignore this.
-            XMLStream &stream = session->xml_stream();
-            if (stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
+            if (session->s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 std::unique_ptr<Stanza> d = std::make_unique<DB::Result>(v.from(), v.to(), Stanza::Error::forbidden);
-                stream.send(std::move(d));
-                stream.s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::NONE);
+                session->send(std::move(d));
+                session->s2s_auth_pair(v.to().domain(), v.from().domain(), INBOUND, XMLStream::AUTH_STATE::NONE);
             }
         }
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> span, optional_ptr<rapidxml::xml_node<>> node) override {
+        covent::task<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle Dialback");
             if (node->name() == "result") {
                 auto p = std::make_unique<DB::Result>(node);
-                span->tag("from", p->from().domain());
-                span->tag("to", p->to().domain());
-                span->tag("mine", "no");
-                span->tag("type", p->type_str().has_value() ? p->type_str().value() : "(null)");
+//                span->tag("from", p->from().domain());
+//                span->tag("to", p->to().domain());
+//                span->tag("mine", "no");
+//                span->tag("type", p->type_str().has_value() ? p->type_str().value() : "(null)");
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {
                         result_valid(*p);
@@ -219,15 +216,14 @@ namespace {
                         throw Metre::unsupported_stanza_type("Unknown type attribute to db:result");
                     }
                 } else {
-                    auto task = m_stream.start_task("Dialback calling result", result(span->start_child("dialback", "result"), *p));
-                    co_return co_await *task;
+                    co_return co_await result(*p);
                 }
             } else if (node->name() == "verify") {
                 auto p = std::make_unique<DB::Verify>(node);
-                span->tag("from", p->from().domain());
-                span->tag("to", p->to().domain());
-                span->tag("mine", "no");
-                span->tag("type", p->type_str().has_value() ? p->type_str().value() : "(null)");
+//                span->tag("from", p->from().domain());
+//                span->tag("to", p->to().domain());
+//                span->tag("mine", "no");
+//                span->tag("type", p->type_str().has_value() ? p->type_str().value() : "(null)");
                 if (p->type_str()) {
                     if (*p->type_str() == "valid") {
                         verify_valid(*p);

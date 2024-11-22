@@ -24,10 +24,8 @@ SOFTWARE.
 ***/
 
 #include "jid.h"
-#if defined(HAVE_ICU2) || defined(HAVE_ICU)
 #include <unicode/usprep.h>
 #include <unicode/ucnv.h>
-#endif
 #include <memory>
 #include <algorithm>
 #include "log.h"
@@ -36,7 +34,6 @@ SOFTWARE.
 using namespace Metre;
 
 namespace {
-#if defined(HAVE_ICU2) || defined(HAVE_ICU)
     UStringPrepProfile *nameprep() {
         static UStringPrepProfile *p = 0;
         if (!p) {
@@ -78,23 +75,6 @@ namespace {
         ret.resize(data - ret.data());
         return ret;
     }
-#else
-
-    void *nameprep() {
-        return nullptr;
-    }
-
-    std::string stringprep(void *, std::string const &input) {
-        if (std::find_if(input.begin(), input.end(), [](const char c) { return c & (1 << 7); }) == input.end()) {
-            std::string ret = input;
-            std::transform(ret.begin(), ret.end(), ret.begin(),
-                           [](const char c) { return static_cast<char>(tolower(c)); });
-            return ret;
-        }
-        throw std::runtime_error("IDNA encountered without unicode support");
-    }
-
-#endif
 }
 
 void Jid::parse(std::string_view const &s) {

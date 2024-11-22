@@ -16,7 +16,7 @@ namespace {
             add_capability("version");
         };
 
-        sigslot::tasklet<void> process(Iq & iq) override {
+        covent::task<void> process(Iq & iq) override {
             if (iq.to().full() != m_jid.domain()) {
                 throw stanza_service_unavailable();
             }

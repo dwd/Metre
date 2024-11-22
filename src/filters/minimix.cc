@@ -26,7 +26,7 @@ namespace {
 
         Minimix(BaseDescription &b, Config::Domain &, YAML::Node const &) : Filter(b) {}
 
-        sigslot::tasklet<FILTER_RESULT> apply(std::shared_ptr<sentry::span>, Metre::FILTER_DIRECTION dir, Metre::Stanza & s) override {
+        covent::task<FILTER_RESULT> apply(Metre::FILTER_DIRECTION dir, Metre::Stanza & s) override {
             if (dir == Metre::FILTER_DIRECTION::FROM) {
                 // Does this look like a MUC Join?
                 if (s.name() == Presence::name) {

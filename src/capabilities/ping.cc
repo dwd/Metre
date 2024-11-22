@@ -18,7 +18,7 @@ namespace {
         };
 
         Ping(BaseDescription const &descr, Endpoint &jid) : Capability(descr, jid) {
-            jid.add_handler("urn:xmpp:ping", "ping", [this](Iq const & iq) -> sigslot::tasklet<void> {
+            jid.add_handler("urn:xmpp:ping", "ping", [this](Iq const & iq) -> covent::task<void> {
                 auto pong = std::make_unique<Iq>(iq.to(), iq.from(), Iq::Type::RESULT, iq.id());
                 m_endpoint.send(std::move(pong));
                 co_return;

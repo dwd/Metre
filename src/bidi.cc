@@ -46,7 +46,7 @@ namespace {
         public:
             Description() : Feature::Description<Bidi>(bidi_feat_ns, Type::FEAT_PREAUTH) {};
 
-            sigslot::tasklet<bool> offer(std::shared_ptr<sentry::span>, optional_ptr<xml_node<>>node, XMLStream &s) override {
+            covent::task<bool> offer(optional_ptr<xml_node<>>node, XMLStream &s) override {
                 if (s.bidi()) co_return false;
                 node->append_element({bidi_feat_ns, "bidi"});
                 co_return
@@ -54,7 +54,7 @@ namespace {
             }
         };
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, optional_ptr<rapidxml::xml_node<>> node) override {
+        covent::task<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle BIDI");
             // We don't really handle it here, since we picked a different Namespace.
             // That was silly of us.
@@ -83,7 +83,7 @@ namespace {
             Description() : Feature::Description<BidiInbound>(bidi_ns, Type::FEAT_PREAUTH) {};
         };
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction>, optional_ptr<rapidxml::xml_node<>> node) override {
+        covent::task<bool> handle(optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle BIDI Inbound");
             m_stream.bidi(true);
             co_return true;

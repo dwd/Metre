@@ -57,23 +57,23 @@ namespace {
             return true;
         }
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::transaction> span, rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
+        covent::task<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle JabberServer");
             std::unique_ptr<Stanza> s;
             if (node->name() == "message") {
                 s = std::make_unique<Message>(node);
             } else if (node->name() == "iq") {
                 auto iq = std::make_unique<Iq>(node);
-                auto query = iq->node()->first_node();
-                if (query) {
-                    span->tag("query.xmlns", query->xmlns());
-                    span->tag("query.name", query->name());
-                }
+//                auto query = iq->node()->first_node();
+//                if (query) {
+//                    span->tag("query.xmlns", query->xmlns());
+//                    span->tag("query.name", query->name());
+//                }
                 if (!handle_iq(*iq)) {
-                    span->tag("from", iq->from().domain());
-                    span->tag("to", iq->to().domain());
-                    span->tag("mine", "yes");
-                    span->tag("type", iq->type_str().has_value() ? iq->type_str().value() : "(null)");
+//                    span->tag("from", iq->from().domain());
+//                    span->tag("to", iq->to().domain());
+//                    span->tag("mine", "yes");
+//                    span->tag("type", iq->type_str().has_value() ? iq->type_str().value() : "(null)");
                     co_return true;
                 }
                 s = std::move(iq);
@@ -82,16 +82,15 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type(std::string(node->name()));
             }
-            span->tag("from", s->from().domain());
-            span->tag("to", s->to().domain());
-            span->tag("mine", "no");
-            span->tag("type", s->type_str().has_value() ? s->type_str().value() : "(null)");
-            auto task = m_stream.start_task("jabber::server handle(Stanza)", handle(span->start_child("stanza", "handle"), s));
-            co_await *task;
+//            span->tag("from", s->from().domain());
+//            span->tag("to", s->to().domain());
+//            span->tag("mine", "no");
+//            span->tag("type", s->type_str().has_value() ? s->type_str().value() : "(null)");
+            co_await handle(s);
             co_return true;
         }
 
-        sigslot::tasklet<bool> handle(std::shared_ptr<sentry::span> span, std::unique_ptr<Stanza> &s) {
+        covent::task<bool> handle(std::unique_ptr<Stanza> &s) {
             try {
                 try {
                     Jid const &to = s->to();
@@ -102,8 +101,7 @@ namespace {
                             if (m_stream.secured()) {
                                 s->freeze();
                                 auto r = RouteTable::routeTable(to.domain()).route(from.domain());
-                                auto task = m_stream.start_task("jabber::server tls_auth_ok", m_stream.tls_auth_ok(span->start_child("tls", from.domain()), *r));
-                                bool result = co_await *task;
+                                bool result = co_await m_stream.tls_auth_ok(*r);
                                 if (result) {
                                     m_stream.s2s_auth_pair(s->to().domain(), s->from().domain(), SESSION_DIRECTION::INBOUND,
                                                            XMLStream::AUTH_STATE::AUTHORIZED);
@@ -116,18 +114,18 @@ namespace {
                         }
                     }
                     m_stream.logger().info("Applying stanza filters from [{}]", from.domain());
-                    if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(span->start_child("filter", "FROM"), FILTER_DIRECTION::FROM, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(from.domain()).filter(FILTER_DIRECTION::FROM, *s)) {
                         m_stream.logger().info("Stanza discarded by FROM filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applying stanza filters to [{}]", to.domain());
-                    if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(span->start_child("filter", "TO"), FILTER_DIRECTION::TO, *s)) {
+                    if (FILTER_RESULT::DROP == co_await Config::config().domain(to.domain()).filter(FILTER_DIRECTION::TO, *s)) {
                         m_stream.logger().info("Stanza discarded by TO filters");
                         co_return true;
                     }
                     m_stream.logger().info("Applied all stanza filters");
                     if (Config::config().domain(to.domain()).transport_type() == SESSION_TYPE::INTERNAL) {
-                        Endpoint::endpoint(to).process(std::move(s));
+                        co_await Endpoint::endpoint(to).process(std::move(s));
                     } else {
                         std::shared_ptr<Route> route = RouteTable::routeTable(from).route(to);
                         route->transmit(std::move(s));

@@ -2,7 +2,7 @@
 // Created by dwd on 25/05/17.
 //
 
-#include "sigslot.h"
+#include <sigslot/sigslot.h>
 #include "endpoint.h"
 #include "gtest/gtest.h"
 #include <iostream>
@@ -13,40 +13,6 @@ using namespace Metre;
 namespace {
     rapidxml::xml_document<> doc;
 
-}
-
-namespace Metre {
-    namespace Router {
-        std::list<std::function<void()>> pending;
-
-        void defer(std::function<void()> &&fn) {
-            std::cout << "Deferring call" << std::endl;
-            pending.emplace_back(fn);
-        }
-
-        void run_pending() {
-            while (!pending.empty()) {
-                std::list<std::function<void()>> tmp(std::move(pending));
-                for (auto &fn : tmp) {
-                    fn();
-                }
-            }
-        }
-    }
-}
-
-namespace sigslot {
-    void resume(std::coroutine_handle<> coro) {
-        std::cout << "Deferring resumption for " << coro.address() << std::endl;
-        Metre::Router::defer([=]() {
-            std::coroutine_handle<> c = coro;
-            std::cout << "Resuming (deferred) " << c.address() << std::endl;
-            c.resume();
-            std::cout << "Resumption (deferred completed) " << c.address() << std::endl;
-        });
-    }
-    void register_coro(std::coroutine_handle<>) {}
-    void deregister_coro(std::coroutine_handle<>) {}
 }
 
 class EndpointTest : public ::testing::Test, public sigslot::has_slots {
@@ -158,47 +124,57 @@ public:
 };
 
 TEST_F(EndpointTest, Ping) {
+    covent::Loop loop;
     // Send a ping. Should get one back.
     std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='5678' type='get'><ping xmlns='urn:xmpp:ping'/></iq>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_ping_response);
-    endpoint->process(parse_stanza<Iq>(iq_xml));
-    Router::run_pending();
+    auto task = endpoint->process(parse_stanza<Iq>(iq_xml));
+    task.start();
+    while(!task.done()) loop.run_until_complete();
+//    Router::run_pending();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response!";
     stanza_seen = false;
 }
 
 TEST_F(EndpointTest, DiscoInfo) {
+    covent::Loop loop;
     // Send a disco#info query. Should get response with features.
     std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='1234' type='get'><query xmlns='http://jabber.org/protocol/disco#info'/></iq>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_discoinfo_response);
-    endpoint->process(parse_stanza<Iq>(iq_xml));
-    Router::run_pending();
+    auto task = endpoint->process(parse_stanza<Iq>(iq_xml));
+    task.start();
+    while(!task.done()) loop.run_until_complete();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response!";
     stanza_seen = false;
 }
 
 TEST_F(EndpointTest, DiscoItems) {
+    covent::Loop loop;
     // Send a disco#items query. Should get response with no items.
     std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='12345' type='get'><query xmlns='http://jabber.org/protocol/disco#items'/></iq>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this),
                                   [this](Stanza &stanza, Jid const &from, Jid const &to) {
                                       check_discoitems_response(stanza, from, to, false);
                                   });
-    endpoint->process(parse_stanza<Iq>(iq_xml));
-    Router::run_pending();
+    auto task = endpoint->process(parse_stanza<Iq>(iq_xml));
+    task.start();
+    while(!task.done()) loop.run_until_complete();
+//    Router::run_pending();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response!";
     stanza_seen = false;
 }
 
 TEST_F(EndpointTest, Publish) {
+    covent::Loop loop;
     // Send a pubsub publish query. Should get empty response, maybe.
     std::string iq_xml = "<iq from='dwd@dave.cridland.net/90210' to='domain.example' id='5678' type='get'><pubsub xmlns='http://jabber.org/protocol/pubsub'><publish node='pubsub_node'><item id='item_id_here'><payload xmlns='https://surevine.com/protocol/test'/></item></publish></pubsub></iq>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_ping_response);
-    endpoint->process(parse_stanza<Iq>(iq_xml));
-    Router::run_pending();
+    auto task = endpoint->process(parse_stanza<Iq>(iq_xml));
+    task.start();
+    while(!task.done()) loop.run_until_complete();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No response to publish!";
     stanza_seen = false;
@@ -208,18 +184,21 @@ TEST_F(EndpointTest, Publish) {
                                   [this](Stanza &stanza, Jid const &from, Jid const &to) {
                                       check_discoitems_response(stanza, from, to, true);
                                   });
-    endpoint->process(parse_stanza<Iq>(iq2_xml));
-    Router::run_pending();
+    auto task2 = endpoint->process(parse_stanza<Iq>(iq2_xml));
+    task2.start();
+    while(!task2.done()) loop.run_until_complete();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response to disco#items!";
     stanza_seen = false;
 }
 
 TEST_F(EndpointTest, MessageFail) {
+    covent::Loop loop;
     std::string msg_xml = "<message from='dwd@dave.cridland.net/90210' to='domain.example' type='chat' id='qwerty'><body>Testing</body></message>";
     endpoint->sent_stanza.connect(dynamic_cast<EndpointTest *>(this), &EndpointTest::check_msg_bounce);
-    endpoint->process(parse_stanza<Message>(msg_xml));
-    Router::run_pending();
+    auto task = endpoint->process(parse_stanza<Message>(msg_xml));
+    task.start();
+    while(!task.done()) loop.run_until_complete();
     endpoint->sent_stanza.disconnect(this);
     ASSERT_TRUE(stanza_seen) << "No stanza response to message!";
     stanza_seen = false;

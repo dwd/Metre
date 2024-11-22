@@ -19,51 +19,41 @@ std::string Endpoint::random_identifier() {
     return id;
 }
 
-void Endpoint::process(std::unique_ptr<Stanza> && stanza_ptr) {
+covent::task<void> Endpoint::process(std::unique_ptr<Stanza> stanza_ptr) {
     if (stanza_ptr->id()) {
         auto it = m_stanza_callbacks.find(*stanza_ptr->id());
         if (it != m_stanza_callbacks.end()) {
             (*it).second(*stanza_ptr);
-            return;
+            co_return;
         }
     }
-    auto task = std::make_unique<process_task>();
     try {
-        task->stanza = std::move(stanza_ptr);
-        if (task->stanza->name() == Message::name) {
-            task->task = process(dynamic_cast<Message &>(*(task->stanza)));
-        } else if (task->stanza->name() == Presence::name) {
-            task->task = process(dynamic_cast<Presence &>(*(task->stanza)));
-        } else if (task->stanza->name() == Iq::name) {
-            task->task = process(dynamic_cast<Iq &>(*(task->stanza)));
+        if (stanza_ptr->name() == Message::name) {
+            co_await process(dynamic_cast<Message &>(*stanza_ptr));
+        } else if (stanza_ptr->name() == Presence::name) {
+            co_await process(dynamic_cast<Presence &>(*stanza_ptr));
+        } else if (stanza_ptr->name() == Iq::name) {
+            co_await process(dynamic_cast<Iq &>(*stanza_ptr));
         } else {
             throw unsupported_stanza_type();
         }
-        task->task.start();
-        if (task->task.running()) {
-            task->task.complete().connect(this, [this, t = task.get()]() {
-                task_complete(t);
-            });
-            m_tasks.emplace_back(std::move(task));
-        } else {
-            task_complete(task.get());
-        }
     } catch (Metre::base::stanza_exception const &stanza_error) {
-        send(task->stanza->create_bounce(stanza_error));
+        send(stanza_ptr->create_bounce(stanza_error));
     }
 }
 
-sigslot::tasklet<void> Endpoint::process(Presence & presence) {
+covent::task<void> Endpoint::process(Presence & presence) {
     throw stanza_service_unavailable();
     co_return;
 }
 
-sigslot::tasklet<void> Endpoint::process(Message & message) {
+covent::task<void> Endpoint::process(Message & message) {
+    co_await covent::own_promise<covent::task<void>::promise_type>();
     throw stanza_service_unavailable();
     co_return;
 }
 
-sigslot::tasklet<void> Endpoint::process(Iq & iq) {
+covent::task<void> Endpoint::process(Iq & iq) {
     switch (iq.type()) {
         using enum Iq::Type;
         case GET:
@@ -89,7 +79,7 @@ sigslot::tasklet<void> Endpoint::process(Iq & iq) {
 Endpoint::~Endpoint() = default;
 
 void Endpoint::add_handler(std::string const &xmlns, std::string const &local,
-                           std::function<sigslot::tasklet<void>(Iq const &)> &&fn) {
+                           std::function<covent::task<void>(Iq const &)> &&fn) {
     m_handlers.emplace(std::make_pair(xmlns, local), std::move(fn));
 }
 
@@ -113,7 +103,7 @@ void Endpoint::send(std::unique_ptr<Stanza> &&stanza, std::function<void(Stanza 
     send(std::move(stanza));
 }
 
-sigslot::tasklet<Node *> Endpoint::node(std::string const &name, bool create) {
+covent::task<Node *> Endpoint::node(std::string const &name, bool create) {
     auto it = m_nodes.find(name);
     if (it == m_nodes.end()) {
         if (create) {
@@ -136,20 +126,4 @@ Endpoint &Endpoint::endpoint(Jid const &jid) {
         return *s_endpoints[jid.domain()];
     }
     return *((*i).second);
-}
-
-void Endpoint::task_complete(Endpoint::process_task * task) {
-    try {
-        try {
-            task->task.get();
-        } catch (Metre::base::stanza_exception &) {
-            throw;
-        } catch (std::runtime_error &e) {
-            throw Metre::stanza_undefined_condition(e.what());
-        }
-    } catch (Metre::base::stanza_exception const &stanza_error) {
-        std::unique_ptr<Stanza> st = task->stanza->create_bounce(stanza_error);
-        send(std::move(st));
-    }
-    m_tasks.remove_if([task](auto & t) { return task == t.get(); });
 }
