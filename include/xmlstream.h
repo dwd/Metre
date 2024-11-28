@@ -43,7 +43,7 @@ namespace Metre {
 
     class Stanza;
 
-    class XMLStream : public sigslot::has_slots, public covent::Session {
+    class XMLStream : public covent::Session {
     public:
         enum class AUTH_STATE {
             NONE, REQUESTED, AUTHORIZED
@@ -80,6 +80,7 @@ namespace Metre {
 
     public:
         XMLStream(SESSION_DIRECTION dir, SESSION_TYPE type);
+        XMLStream(covent::Loop &, evutil_socket_t, covent::Listener<XMLStream> &);
 
         XMLStream(SESSION_DIRECTION dir, SESSION_TYPE type, std::string const &stream_from,
                   std::string const &stream_to);
@@ -89,11 +90,16 @@ namespace Metre {
 
         sigslot::signal<XMLStream &> on_closed;
 
+        void closed() override {
+            on_closed.emit(*this);
+            covent::Session::closed();
+        }
+
         spdlog::logger &logger() {
             return m_logger;
         }
 
-        covent::task<bool> process(std::string_view const & data_in) override;
+        covent::task<std::size_t> process(std::string_view data) override;
 
         void handle_exception(Metre::base::xmpp_exception const &e);
 
@@ -117,7 +123,7 @@ namespace Metre {
 
         bool bidi(bool b);
 
-        bool closed() const {
+        bool is_closed() const {
             return m_closed;
         }
         bool multiplex(bool target) const;
@@ -130,7 +136,7 @@ namespace Metre {
             return m_dialback;
         }
 
-        void close(rapidxml::optional_ptr<rapidxml::xml_node<>> error = {});
+        void close_stream(rapidxml::optional_ptr<rapidxml::xml_node<>> error = {});
 
         std::optional<std::string> const &user() const {
             return m_user;

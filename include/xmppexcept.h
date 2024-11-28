@@ -118,6 +118,8 @@ namespace Metre {
     METRE_STANZA_EXCEPT(bad_format, "Request rejected due to missing parameter etc", "modify", "bad-format");
 
     METRE_STANZA_EXCEPT(policy_violation, "Request rejected due to policy violation", "cancel", "policy-violation");
+
+    METRE_STANZA_EXCEPT(not_authorized, "Not authorized", "cancel", "not-authorized");
 }
 
 #endif

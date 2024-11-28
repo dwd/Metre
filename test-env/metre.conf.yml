@@ -25,15 +25,15 @@ remote:
       x509:
         chain: test-env/public_key.pem
         pkey: test-env/private_key.pem
-    dns:
-      srv:
-        - host: dave.cridland.net
-          port: 5222
-      tlsa:
-        - hostname: "dave.cridland.net"
-          port: 5222
-          certusage: DomainCert
-          matchdata: test-env/public_key.pem
+#    dns:
+#      srv:
+#        - host: dave.cridland.net
+#          port: 5222
+#      tlsa:
+#        - hostname: "dave.cridland.net"
+#          port: 5222
+#          certusage: DomainCert
+#          matchdata: test-env/public_key.pem
 
 local:
   cassidy.cridland.io:

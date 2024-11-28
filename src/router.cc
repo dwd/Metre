@@ -73,7 +73,7 @@ covent::task<bool> Route::init_session_vrfy(bool multiplex) {
                 continue;
             }
             if (!session->auth_ready()) {
-                if (session->closed()) continue;
+                if (session->is_closed()) continue;
                 m_logger.trace("Awaiting auth ready on verify session serial=[{}]", session->id());
                 (void) co_await session->auth_state_changed;
                 if (!session->auth_ready()) {
@@ -105,7 +105,7 @@ covent::task<bool> Route::init_session_vrfy(bool multiplex) {
             Metre::Router::register_session_address(rr.hostname, rr.port, *session);
             m_logger.trace("Awaiting auth ready on verify session: serial=[{}]", session->id());
             while (!session->auth_ready()) {
-                if (session->closed()) {
+                if (session->is_closed()) {
                     break;
                 }
                 (void) co_await session->auth_state_changed;
@@ -169,7 +169,7 @@ restart:
     switch (session->s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND)) {
         default: // NONE
             while (!session->auth_ready()) {
-                if (session->closed()) goto restart;
+                if (session->is_closed()) goto restart;
                 m_logger.trace("Awaiting authentication ready: domain=[{}]");
                 (void) co_await session->auth_state_changed;
             }
@@ -195,7 +195,7 @@ restart:
             m_logger.trace("Awaiting authentication: domain=[{}]");
             while (session->s2s_auth_pair(m_local.domain(), m_domain.domain(), SESSION_DIRECTION::OUTBOUND) == XMLStream::AUTH_STATE::REQUESTED) {
                 m_logger.debug("Authenticating with verify session");
-                if (session->closed()) {
+                if (session->is_closed()) {
                     if (multiplex) {
                         multiplex = false;
                         goto restart;
@@ -255,7 +255,7 @@ void Route::outbound(XMLStream & ns) {
     auto to = m_to.lock();
     if (to && (to->id() == ns.id())) return;
     if (to) {
-        to->close(); // Kill with fire.
+        to->close_stream(); // Kill with fire.
     }
     auto p = Router::session_by_serial(ns.id());
     set_to(p);
@@ -294,7 +294,7 @@ void Route::bounce_dialback(bool timeout) {
     m_logger.warn("Timeout of verify sessions: timeout=[{}]", timeout);
     auto verify = m_vrfy.lock();
     if (verify) {
-        verify->close();
+        verify->close_stream();
         m_vrfy.reset();
     }
 }
@@ -313,7 +313,7 @@ void Route::bounce_stanzas(Stanza::Error e) {
     m_stanzas.clear();
     auto to = m_to.lock();
     if (to) {
-        to->close();
+        to->close_stream();
         m_to.reset();
     }
 }

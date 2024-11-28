@@ -248,7 +248,7 @@ covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
     X509_STORE_CTX_init(st, store, cert, chain);
     X509_verify_cert(st);
     STACK_OF(X509) *verified = X509_STORE_CTX_get1_chain(st);
-    std::map<std::string,covent::task<std::tuple<std::string,int,X509_CRL *>>, std::less<>> all_crls;
+    std::set<std::string, std::less<>> all_crls;
     for (int certnum = 0; certnum != sk_X509_num(verified); ++certnum) {
         auto current_cert = sk_X509_value(verified, certnum);
         std::unique_ptr<STACK_OF(DIST_POINT), std::function<void(STACK_OF(DIST_POINT) *)>> crldp_ptr{
@@ -268,10 +268,8 @@ covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
                                                static_cast<std::size_t>(uri->length)};
                             m_log.info("verify_tls: Fetching CRL - {}", uristr);
                             if (!all_crls.contains(uristr)) {
-                                auto task = covent::pkix::CrlCache::crl(uristr);
-                                task.start();
-                                all_crls[uristr] = std::move(task);
-                                // We don't await here, just get them going in parallel.
+                                all_crls.insert(uristr);
+                                // TODO : Start fetching.
                             }
                         }
                     }
@@ -282,8 +280,8 @@ covent::task<void> PKIXValidator::fetch_crls(const SSL *ssl, X509 *cert) {
     // Now we wait for them all. Order doesn't matter - we'll get new copies
     // in the rare case we happen to cross an expiry boundary, but that's
     // no biggie.
-    for (auto & [uri,task] : all_crls) {
-        auto [uristr, code, crl] = co_await task;
+    for (auto & uri : all_crls) {
+        auto [uristr, code, crl] = co_await covent::pkix::CrlCache::crl(uri);
         m_log.info("verify_tls: Fetched CRL - {}, with code {}", uri, code);
         if (!X509_STORE_add_crl(store, crl)) {
             // Erm. Whoops? Probably doesn't matter.

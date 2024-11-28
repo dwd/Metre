@@ -1,0 +1,13 @@
+# This file is managed by Conan, contents will be overwritten.
+# To keep your changes, remove these comment lines, but the plugin won't be able to modify your requirements
+
+requirements:
+  - "libunwind/1.8.1"
+  - "yaml-cpp/0.8.0"
+  - "icu/76.1"
+  - "spdlog/1.14.1"
+  - "fmt/10.2.1"
+  - "covent/0.1.3@dwd/metre"
+  - "sigslot/1.0.1@dwd/metre"
+  - "libevent/2.1.12"
+  - "openssl/[>=3.3.0 <4]"

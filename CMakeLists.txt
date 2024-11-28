@@ -80,10 +80,12 @@ find_package(OpenSSL)
 find_package(yaml-cpp)
 find_package(fmt)
 find_package(SigSlot)
+find_package(spdlog)
+find_package(libunwind)
 
 if (METRE_SENTRY)
     set(SENTRY_BACKEND inproc)
-    add_subdirectory(deps/sentry-native EXCLUDE_FROM_ALL)
+    find_package(sentry)
     set(METRE_SENTRY_SOURCES src/sentry-wrap.cc)
 else(METRE_SENTRY)
     set(METRE_SENTRY_SOURCES )
@@ -188,7 +190,9 @@ target_link_libraries(metre PRIVATE
     ICU::i18n
     fmt::fmt
     covent::covent
-        sigslot::sigslot
+    sigslot::sigslot
+    spdlog::spdlog
+    libunwind::unwind
 )
 if(METRE_SENTRY)
     target_link_libraries(metre PRIVATE sentry)
@@ -198,9 +202,6 @@ endif(METRE_SENTRY)
 # target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
 if (UNIX)
-    target_link_libraries(metre PRIVATE
-            -lunwind
-    )
 else()
     target_link_libraries(metre PRIVATE
         ws2_32
@@ -254,6 +255,7 @@ target_link_libraries(metre-test PRIVATE
         covent::covent
         sigslot::sigslot
         GTest::gtest
+        spdlog::spdlog
 )
 if(METRE_SENTRY)
     target_link_libraries(metre-test PRIVATE sentry)

@@ -68,7 +68,12 @@ namespace {
                 (node->name() == "proceed" && m_stream.direction() == SESSION_DIRECTION::OUTBOUND)) {
                 if (!m_stream.remote_domain().empty()) {
                     m_stream.logger().debug("Negotiating TLS");
+                    // We're about to do a stream restart and lose our own object...
+                    auto stream = Metre::Router::session_by_serial(m_stream.id());
                     start_tls(m_stream, true);
+                    if (stream->direction() == SESSION_DIRECTION::OUTBOUND) {
+                        co_await stream->restart();
+                    }
                     co_return true;
                 } else if (m_stream.type() == SESSION_TYPE::COMP) {
                     start_tls(m_stream, true);
@@ -139,6 +144,7 @@ namespace Metre {
         bool connecting = stream.direction() == SESSION_DIRECTION::OUTBOUND;
         SSL *ssl = domain.tls_context().instantiate(connecting, stream.remote_domain());
         if (!connecting) {
+            stream.logger().debug("SSL is connecting, send proceed {} and clear stream", send_proceed);
             if (send_proceed) {
                 xml_document<> d;
                 auto n = d.allocate_node(node_element, "proceed");

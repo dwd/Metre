@@ -342,7 +342,7 @@ namespace Metre {
             return m_fetch_crls;
         }
 
-        class Listener {
+    class Listener : public covent::Listener<XMLStream> {
         public:
             SESSION_TYPE session_type;
             TLS_MODE tls_mode;
@@ -350,13 +350,7 @@ namespace Metre {
             std::string const local_domain;
             std::string const remote_domain;
             std::set<std::string, std::less<>> allowed_domains;
-        private:
-            struct sockaddr_storage m_sockaddr;
         public:
-            [[nodiscard]] const struct sockaddr *sockaddr() const {
-                return reinterpret_cast<const struct sockaddr *>(&m_sockaddr);
-            }
-
             Listener(std::string const &local_domain, std::string const &remote_domain, std::string const &name,
                      std::string const &address, unsigned short port, TLS_MODE tls, SESSION_TYPE sess);
         };

@@ -130,6 +130,7 @@ namespace {
             unw_set_reg(&cursor, UNW_REG_IP, (uint64_t)(size_t)ips[len - i - 1]);
             if (unw_get_proc_name(&cursor, buffer.data(), buffer.size(), &offset) == 0) {
                 auto name = demangle(buffer.data());
+                std::cerr << "Sentry Frame: " << name <<std::endl;
                 sentry_value_set_by_key(frame, "function", sentry_value_new_string(name));
                 if (name == sigaction || name == cxa_throw) {
                     strip = i;
@@ -203,6 +204,7 @@ namespace {
             unw_get_proc_name(&cursor, buffer.data(), buffer.size(), &offset);
             std::cerr << "ip = " << std::ios::hex << ip << ", sp = " << sp << ", " << demangle(buffer.data()) << "+" << offset << std::ios::dec << std::endl;
         }
+        std::cerr << ">> Process ends" << std::endl;
         std::abort();
     }
 

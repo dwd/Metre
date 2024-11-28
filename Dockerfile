@@ -1,25 +1,31 @@
-FROM ubuntu:latest AS cpp-build
+FROM ubuntu:24.04 AS cpp-build
 
-RUN set -eux; \
-   apt-get update; \
+RUN apt-get update; \
    DEBIAN_FRONTEND=noninteractive apt-get install --quiet --yes --no-install-recommends \
        build-essential \
        cmake \
-       libevent-dev \
-       libexpat-dev \
-       libicu-dev \
-       libspdlog-dev \
-       libssl-dev \
-       libunbound-dev \
-       libunwind-dev \
        ninja-build \
        pkg-config \
-       libcurl4-openssl-dev \
-   ; \
-   apt-get clean; \
-   rm -rf /var/lib/apt/lists/* ;
+       python3 \
+       python3-pip \
+       flex yacc libexpat-dev
 
+RUN pip install conan --break-system-packages
+
+RUN conan profile detect
+RUN echo "[settings]" >$(conan profile path default)
+RUN echo "arch=x86_64" >>$(conan profile path default)
+RUN echo "build_type=Release" >>$(conan profile path default)
+RUN echo "compiler=gcc" >>$(conan profile path default)
+RUN echo "compiler.cppstd=gnu23" >>$(conan profile path default)
+RUN echo "compiler.libcxx=libstdc++11" >>$(conan profile path default)
+RUN echo "compiler.version=13" >>$(conan profile path default)
+RUN echo "os=Linux" >>$(conan profile path default)
+
+RUN conan remote remove conancenter
+RUN conan remote add jekyll http://jekyll.cridland.io:9300/ --insecure
 WORKDIR /app/
+RUN touch seven
 
 COPY deps src/deps
 
@@ -30,13 +36,21 @@ COPY tests src/tests
 COPY CMakeLists.txt src/
 COPY LICENSE src/
 COPY metre.conf.yml src/
+COPY conanfile.py src/
+COPY conan_provider.cmake src/
+COPY conandata.yml src/
+COPY conan.lock src/
+
+WORKDIR /app/src
+
+RUN conan install . --build=missing -s build_type=RelWithDebInfo --deployer=runtime_deploy --deployer-folder=/app/lib --lockfile=conan.lock
 
 WORKDIR /app/build
 
 RUN cmake \
+        -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="conan_provider.cmake" \
         -DCMAKE_INSTALL_PREFIX=/app/install \
-        -DCMAKE_BUILD_TYPE=Debug \
-        -DVENDORED_DEPS=OFF \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DMETRE_BUILD_TESTS=OFF \
         -DMETRE_SENTRY=ON \
         -GNinja \
@@ -44,13 +58,18 @@ RUN cmake \
 RUN cmake --build . --target metre
 RUN cmake --build . --target install
 
+RUN /app/build/metre -d aidsa || true
+
 RUN set -eux; \
     mkdir -p /app/deps/; \
-    ldd /app/install/bin/metre | awk '$1~/^\//{print $1}$3~/^\//{print $3}' \
+    LD_LIBRARY_PATH=/app/deps/usr/lib ldd /app/install/bin/metre | awk '$1~/^\//{print $1}$3~/^\//{print $3}' \
         | xargs -I{} cp --parents {} '/app/deps/'
 
+RUN set -eux; \
+    mkdir -p /app/deps/; \
+    ldd /app/install/bin/metre
 
-
+RUN find /app/deps/ -type f
 
 FROM scratch
 

@@ -50,6 +50,7 @@ SOFTWARE.
 #include <router.h>
 #include <sstream>
 #include <base64.h>
+#include <xmlstream.h>
 
 #include "log.h"
 #include <covent/sockaddr-cast.h>
@@ -463,24 +464,15 @@ void Config::load(std::string const &filename, bool lite) {
         m_listeners.emplace_back("", "", "S2S", "::", 5269, TLS_MODE::STARTTLS, SESSION_TYPE::S2S);
         m_listeners.emplace_back("", "", "XEP-0368", "::", 5270, TLS_MODE::IMMEDIATE, SESSION_TYPE::S2S);
     }
+    for (auto & listener : m_listeners) {
+        covent::Loop::thread_loop().listen(listener);
+    }
 }
 
 Config::Listener::Listener(std::string const &ldomain, std::string const &rdomain, std::string const &aname,
                            std::string const &address, unsigned short port, TLS_MODE atls,
                            SESSION_TYPE asess)
-        : session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
-    std::memset(&m_sockaddr, 0, sizeof(m_sockaddr)); // Clear, to avoid valgrind complaints later.
-    if (1 == inet_pton(AF_INET6, address.c_str(), &(covent::sockaddr_cast<AF_INET6>(&m_sockaddr)->sin6_addr))) {
-        auto *sa = covent::sockaddr_cast<AF_INET6>(&m_sockaddr);
-        sa->sin6_family = AF_INET6;
-        sa->sin6_port = htons(port);
-    } else if (1 == inet_pton(AF_INET, address.c_str(), &(covent::sockaddr_cast<AF_INET>(&m_sockaddr)->sin_addr))) {
-        auto *sa = covent::sockaddr_cast<AF_INET>(&m_sockaddr);
-        sa->sin_family = AF_INET;
-        sa->sin_port = htons(port);
-    } else {
-        throw std::runtime_error("Couldn't understand address syntax " + std::string(address));
-    }
+        : covent::Listener<XMLStream>(covent::Loop::thread_loop(), address, port), session_type(asess), tls_mode(atls), name(aname), local_domain(ldomain), remote_domain(rdomain) {
     if (asess == SESSION_TYPE::X2X
         && (local_domain.empty() || remote_domain.empty())) {
         throw std::runtime_error("Missing local or remote domains");
@@ -921,10 +913,10 @@ covent::task<void> Config::Domain::gather_host(Config::Resolver & r, GatheredDat
         conn_info.hostname = rr.hostname;
         if (conn_info.sockaddr.ss_family == AF_INET) {
 //            span->containing_transaction().tag("gather.ipv4", "yes");
-            covent::sockaddr_cast<AF_INET>(&conn_info.sockaddr)->sin_port = rr.port;
+            covent::sockaddr_cast<AF_INET>(&conn_info.sockaddr)->sin_port = htons(rr.port);
         } else if (conn_info.sockaddr.ss_family == AF_INET6) {
 //            span->containing_transaction().tag("gather.ipv6", "yes");
-            covent::sockaddr_cast<AF_INET6>(&conn_info.sockaddr)->sin6_port = rr.port;
+            covent::sockaddr_cast<AF_INET6>(&conn_info.sockaddr)->sin6_port = htons(rr.port);
         }
         g.gathered_connect.push_back(conn_info);
     }
@@ -1091,8 +1083,8 @@ covent::task<std::tuple<covent::dns::answers::SRV,covent::dns::answers::SRV>> Co
         co_return {r,r};
     } else {
         auto [srv, srv_tls] = co_await covent::gather(
-            m_resolver.srv("_xmpp-server", base_domain),
-            m_resolver.srv("_xmpps-server", base_domain)
+            m_resolver.srv("xmpp-server", base_domain),
+            m_resolver.srv("xmpps-server", base_domain)
         );
         co_return {srv, srv_tls};
     }

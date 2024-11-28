@@ -47,7 +47,7 @@ SOFTWARE.
 using namespace Metre;
 
 XMLStream::XMLStream(SESSION_DIRECTION dir, SESSION_TYPE t)
-        :  has_slots(), Session(covent::Loop::main_loop()), m_dir(dir), m_type(t), m_logger(Config::config().logger("XmlStream serial=[{}] {} type=[{}]", id(), dir, t)) {
+        :  Session(covent::Loop::thread_loop()), m_dir(dir), m_type(t), m_logger(Config::config().logger("XmlStream serial=[{}] {} type=[{}]", id(), dir, t)) {
     using enum SESSION_TYPE;
     if (t == X2X) {
         m_type = S2S;
@@ -58,7 +58,7 @@ XMLStream::XMLStream(SESSION_DIRECTION dir, SESSION_TYPE t)
 
 XMLStream::XMLStream(SESSION_DIRECTION dir, SESSION_TYPE t, std::string const &stream_local,
                      std::string const &stream_remote)
-        : has_slots(), Session(covent::Loop::main_loop()), m_dir(dir), m_type(t), m_stream_local(stream_local),
+        : Session(covent::Loop::thread_loop()), m_dir(dir), m_type(t), m_stream_local(stream_local),
           m_stream_remote(stream_remote), m_logger(Config::config().logger("XmlStream serial=[{}] {} type=[{}]", id(), dir, t)) {
     using enum SESSION_TYPE;
     if (t == X2X) {
@@ -68,13 +68,27 @@ XMLStream::XMLStream(SESSION_DIRECTION dir, SESSION_TYPE t, std::string const &s
     }
 }
 
-covent::task<bool> XMLStream::process(std::string_view const & data_in) {
+XMLStream::XMLStream(covent::Loop & loop, evutil_socket_t sock, covent::Listener<XMLStream> & listener)
+    : Session(loop, sock, listener), m_dir(SESSION_DIRECTION::INBOUND), m_type(SESSION_TYPE::S2S), m_logger(Config::config().logger("XmlStream serial=[{}] INBOUND type=[S2S]", id())) {
+    auto & l = dynamic_cast<Config::Listener &>(listener);
+    using enum SESSION_TYPE;
+    if (l.session_type == X2X) {
+        m_type = S2S;
+        m_x2x_mode = true;
+        m_bidi = true;
+    }
+    m_stream_remote = l.remote_domain;
+    m_stream_local = l.local_domain;
+}
+
+covent::task<std::size_t> XMLStream::process(std::string_view buf) {
+    // Keep a shared_ptr to this around to stop it getting deleted.
+    auto owned = loop().session(id());
     using namespace rapidxml;
-    auto buf = data_in;
-    if (buf.empty()) co_return false;
+    if (buf.empty()) co_return 0;
     (void) VALGRIND_MAKE_MEM_DEFINED_IF_ADDRESSABLE(data.data(), data.size());
-    size_t spaces = 0;
-    for (const auto *sp{buf.data()}; !buf.empty(); ++spaces) {
+    size_t used = 0;
+    for (const auto *sp{buf.data()}; !buf.empty(); ++used) {
         switch (*sp) {
             default:
                 break;
@@ -87,8 +101,7 @@ covent::task<bool> XMLStream::process(std::string_view const & data_in) {
         break;
     }
     if (buf.empty()) {
-        if (spaces) used(spaces);
-        co_return true;
+        co_return used;
     }
     logger().debug("Got [{}]: {}", buf.size(), buf);
     try {
@@ -105,15 +118,17 @@ covent::task<bool> XMLStream::process(std::string_view const & data_in) {
                     auto test = m_stream.first_node();
                     if (test && !test->name().empty()) {
                         m_stream_buf.assign(buf.data(), end.ptr());
-                        used(spaces + (end.ptr() - buf.data()));
-                        buf.remove_prefix(end.ptr() - buf.data());
+                        m_logger.info("Captured {}", m_stream_buf);
+                        used += m_stream_buf.length();
                         m_stream.parse<parse_open_only>(m_stream_buf);
                         co_await stream_open();
                     } else {
                         m_stream_buf.clear();
                     }
-                    co_return true;
+                    m_logger.debug("Returning with {} used", used);
+                    co_return used;
                 } catch (rapidxml::eof_error &) {
+                    m_logger.info("EOF error during stream open (unusual, not fatal)");
                     throw;
                 } catch (rapidxml::parse_error &) {
                     m_logger.info("Parse error; could be TLS handshake");
@@ -124,7 +139,7 @@ covent::task<bool> XMLStream::process(std::string_view const & data_in) {
                         } else {
                             m_logger.info("TLS negotiation underway");
                             m_first_read = false;
-                            co_return true;
+                            co_return used;
                         }
                     } else {
                         m_logger.error("Not first read or already TLS; giving up");
@@ -140,29 +155,32 @@ covent::task<bool> XMLStream::process(std::string_view const & data_in) {
                 // For TLS negotiation elements, we need to special-case to avoid
                 // the data still being in the buffer when the TLS handshake occurs.
                 if (tls_nego) {
+                    m_logger.debug("TLS cleaning buffer");
                     // Clone it then discard the buffer.
                     element = m_stanza.clone_node(element, true);
-                    used(spaces + (end.ptr() - buf.data()));
-                    buf.remove_prefix(end.ptr() - buf.data());
+                    this->used(used + (end.ptr() - buf.data()));
+                    used = 0;
                 }
                 co_await handle(element);
                 if (!tls_nego) {
-                    used(spaces + (end.ptr() - buf.data()));
+                    used += (end.ptr() - buf.data());
                     buf.remove_prefix(end.ptr() - buf.data());
                 }
                 m_stanza.clear();
-                co_return true;
+                m_logger.debug("Used {} octets", used);
+                co_return used;
             }
         } catch (Metre::base::xmpp_exception &) {
             throw;
         } catch (rapidxml::eof_error &) {
-            co_return true;
+            co_return 0;
+        } catch (rapidxml::validation_error & e) {
+            throw Metre::bad_format(e.what());
         } catch (rapidxml::parse_error &e) {
             if (buf == "</stream:stream>") {
                 write("</stream:stream>");
                 m_closed = true;
-                used(buf.size());
-                buf.remove_prefix(buf.size());
+                used += buf.size();
             } else {
                 throw Metre::not_well_formed(e.what());
             }
@@ -171,8 +189,9 @@ covent::task<bool> XMLStream::process(std::string_view const & data_in) {
         }
     } catch (Metre::base::xmpp_exception &e) {
         handle_exception(e);
+        co_return 0; // Stop giving me the data, basically.
     }
-    co_return true;
+    co_return used;
 }
 
 void XMLStream::handle_exception(Metre::base::xmpp_exception const & e) {
@@ -180,19 +199,18 @@ void XMLStream::handle_exception(Metre::base::xmpp_exception const & e) {
     logger().error("Raising error: [{}]", e.what());
     xml_document<> d;
     auto error = d.append_element("stream:error");
-    auto specific = error->append_element({"urn:ietf:params:xml:ns:xmpp-streams", e.element_name()});
-    error->append_element({"urn:ietf:params:xml:ns:xmpp-streams", e.element_name()}, e.what());
+    auto specific = error->append_element({"urn:ietf:params:xml:ns:xmpp-streams", e.element_name()}, e.what());
     if (dynamic_cast<Metre::undefined_condition const *>(&e)) {
         specific->append_element({"http://cridland.im/xmlns/metre", "unhandled-exception"});
     }
-    close(error);
+    close_stream(error);
 }
 
-void XMLStream::close(rapidxml::optional_ptr<rapidxml::xml_node<>> error) {
+void XMLStream::close_stream(rapidxml::optional_ptr<rapidxml::xml_node<>> error) {
     if (m_closed) return;
     if (m_opened) {
         if (error) send(error.value());
-        write("</stream:stream>");
+       write("</stream:stream>");
     } else {
         rapidxml::xml_document<> d;
         auto node = d.allocate_node(rapidxml::node_element, "stream:stream");
@@ -208,6 +226,9 @@ void XMLStream::close(rapidxml::optional_ptr<rapidxml::xml_node<>> error) {
     }
     m_closed = true;
     auth_state_changed(*this);
+    loop().defer([this]() {
+        close();
+    });
 }
 
 void XMLStream::in_context(std::function<void()> const &fn, Stanza const &s) {
@@ -520,7 +541,7 @@ covent::task<void> XMLStream::handle(rapidxml::optional_ptr<rapidxml::xml_node<>
             clark_name += element->xmlns();
             clark_name += "}";
             clark_name += element->name();
-            co_await feat->handle(element);
+            handled = co_await feat->handle(element);
         }
         m_logger.debug("Handled: [{}]", handled);
         if (!handled) {
