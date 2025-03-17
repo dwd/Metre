@@ -29,7 +29,6 @@ SOFTWARE.
 #include "defs.h"
 #include "rapidxml.hpp"
 #include "xmlstream.h"
-#include "sentry-wrap.h"
 #include <list>
 #include <covent/coroutine.h>
 

@@ -30,7 +30,6 @@ SOFTWARE.
 #include "jid.h"
 #include "stanza.h"
 #include "core.h"
-#include "sentry-wrap.h"
 
 #include <string>
 #include <memory>
@@ -71,8 +70,10 @@ namespace Metre {
         }
 
         covent::task<bool> init_session_vrfy(bool multiplex);
+        covent::task<bool> init_session_vrfy_main();
 
         covent::task<bool> init_session_to();
+        covent::task<bool> init_session_to_main();
 
         void outbound(XMLStream & ns);
 

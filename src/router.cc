@@ -28,6 +28,7 @@ SOFTWARE.
 #include "router.h"
 #include <covent/covent.h>
 #include <covent/dns.h>
+#include <covent/gather.h>
 #include "xmlstream.h"
 #include "log.h"
 #include "config.h"
@@ -56,47 +57,51 @@ covent::task<bool> Route::init_session_vrfy(bool multiplex) {
         default:
             break;
     }
-    auto gathered = co_await Config::config().domain(m_domain.domain()).gather();
 
-    if (gathered.gathered_connect.empty()) {
-        m_logger.warn("DNS Lookup for [{}] failed", m_domain);
-        co_return false;
-    }
-    if (multiplex && Config::config().domain(m_domain.domain()).multiplex()) {
-//        auto span_ = span->start_child("multiplex", "scan for existing sessions");
-        for (auto &rr: gathered.gathered_connect) {
-            m_logger.trace("Should look for [{}:{}]", rr.hostname, rr.port);
-            auto session = Router::session_by_address(rr.hostname, rr.port);
-            if (!session) continue;
-            if (!session->multiplex(true)) {
-                m_logger.trace("Session serial=[{}] found, but will not multiplex", session->id());
-                continue;
-            }
-            if (!session->auth_ready()) {
-                if (session->is_closed()) continue;
-                m_logger.trace("Awaiting auth ready on verify session serial=[{}]", session->id());
-                (void) co_await session->auth_state_changed;
-                if (!session->auth_ready()) {
-                    m_logger.trace("Auth was not ready on verify session serial=[{}]", session->id());
-                    continue;
-                }
-//                span->containing_transaction().tag("multiplex", "target");
-                set_vrfy(session);
-                m_logger.trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
-                co_return true;
-            }
-        }
-    }
+    // Ignore multiplexing for now. Multiplexing is hard anyway, and often breaks other servers.
+//     auto gathered = co_await Config::config().domain(m_domain.domain()).gather();
+//
+//     if (gathered.gathered_connect.empty()) {
+//         m_logger.warn("DNS Lookup for [{}] failed", m_domain);
+//         co_return false;
+//     }
+//     if (multiplex && Config::config().domain(m_domain.domain()).multiplex()) {
+// //        auto span_ = span->start_child("multiplex", "scan for existing sessions");
+//         for (auto &rr: gathered.gathered_connect) {
+//             m_logger.trace("Should look for [{}:{}]", rr.hostname, rr.port);
+//             auto session = Router::session_by_address(rr.hostname, rr.port);
+//             if (!session) continue;
+//             if (!session->multiplex(true)) {
+//                 m_logger.trace("Session serial=[{}] found, but will not multiplex", session->id());
+//                 continue;
+//             }
+//             if (!session->auth_ready()) {
+//                 if (session->is_closed()) continue;
+//                 m_logger.trace("Awaiting auth ready on verify session serial=[{}]", session->id());
+//                 (void) co_await session->auth_state_changed;
+//                 if (!session->auth_ready()) {
+//                     m_logger.trace("Auth was not ready on verify session serial=[{}]", session->id());
+//                     continue;
+//                 }
+// //                span->containing_transaction().tag("multiplex", "target");
+//                 set_vrfy(session);
+//                 m_logger.trace("Reused existing outgoing verify session to [{}:{}]", rr.hostname, rr.port);
+//                 co_return true;
+//             }
+//         }
+//     }
 //    span->containing_transaction().tag("multiplex", "none");
-    for (auto &rr : gathered.gathered_connect) {
+    auto xmpp_lookup_generator = Config::config().xmpp_service().entry(m_domain.domain()).xmpp_lookup(m_domain.domain());
+    for (auto it = co_await xmpp_lookup_generator.begin(); it != xmpp_lookup_generator.end(); co_await ++it) {
 //        auto span_ = span->start_child("connect", "Connection");
+        auto rr = *it;
         try {
 //            auto s = span_->start_child("connect", rr.hostname);
             m_logger.trace("Connecting to address=[{}:{}]", rr.hostname, rr.port);
 //            span->containing_transaction().tag("tls_mode", rr.method == DNS::ConnectInfo::Method::DirectTLS ? "XEP-0368" : "starttls");
             auto session = std::dynamic_pointer_cast<XMLStream>(covent::Loop::main_loop().add(std::make_shared<XMLStream>(SESSION_DIRECTION::OUTBOUND, SESSION_TYPE::S2S, m_local.domain(), m_domain.domain())));
             co_await session->connect(&rr.sockaddr);
-            if (rr.method == Config::Domain::ConnectInfo::Method::DirectTLS) {
+            if (rr.method == covent::ConnectInfo::Method::DirectTLS) {
                 start_tls(*session, false);
             }
             co_await session->send_stream_open(Config::config().domain(m_domain.domain()).xmpp_ver());
@@ -126,7 +131,7 @@ covent::task<bool> Route::init_session_vrfy(bool multiplex) {
 }
 
 covent::task<bool> Route::init_session_to() {
-    bool multiplex = true;
+    bool multiplex = false; // TODO : Re-enable multiplexing at some point.
 //    trans->tag("to", m_domain.domain());
 //    trans->tag("from", m_local.domain());
 restart:
@@ -148,16 +153,10 @@ restart:
             m_logger.debug("Authenticating with verify session domain=[{}]", m_domain);
             if (!session) {
                 m_logger.debug("No verify session found");
-                if (!m_verify_task.has_value()) {
-                    m_logger.debug("No verify session task found, starting");
-                    m_verify_task.emplace(init_session_vrfy(multiplex));
-                    m_verify_task.value().start();
-                }
-                bool vrfy_success = co_await m_verify_task.value();
-                m_verify_task.reset();
-                if (!vrfy_success) {
+                // In an ideal world, we'd reuse an existing task if one were running, but that's hard currently.
+                if (!co_await init_session_vrfy(multiplex)) {
                     m_logger.debug("Verify task failed");
-//                    trans->exception({});
+                    //                    trans->exception({});
                     co_return false;
                 }
             }
@@ -280,7 +279,7 @@ void Route::transmit(std::unique_ptr<DB::Verify> &&v) {
     } else {
         queue(std::move(v));
         if (!m_verify_task.has_value()) {
-            m_verify_task.emplace(init_session_vrfy(true));
+            m_verify_task.emplace(init_session_vrfy_main());
             m_verify_task->on_completed(this, [this]() {covent::Loop::main_loop().defer([this]() {m_verify_task.reset();}, {0,5000});});
             m_verify_task->start();
         }
@@ -329,6 +328,23 @@ void Route::queue(std::unique_ptr<Stanza> &&s) {
     m_logger.debug("Queued stanza");
 }
 
+covent::task<bool> Route::init_session_to_main() {
+    try {
+        co_return co_await race(init_session_to(), Config::config().domain(m_domain.domain()).stanza_timeout());
+    }catch (covent::race_timeout &) {
+        co_return false;
+    }
+}
+
+covent::task<bool> Route::init_session_vrfy_main() {
+    try {
+        co_return co_await race(init_session_vrfy(true), Config::config().domain(m_domain.domain()).connect_timeout());
+    }catch (covent::race_timeout &) {
+        co_return false;
+    }
+}
+
+
 void Route::transmit(std::unique_ptr<Stanza> &&s) {
     m_logger.trace("Transmit stanza: name=[{}] from=[{}] to=[{}]", s->name(), s->from(), s->to());
     auto to = m_to.lock();
@@ -340,7 +356,7 @@ void Route::transmit(std::unique_ptr<Stanza> &&s) {
         queue(std::move(s));
         if (!m_to_task.has_value()) {
             m_logger.debug("No current task");
-            m_to_task.emplace(init_session_to());
+            m_to_task.emplace(init_session_to_main());
             m_to_task->on_completed(this, [this]() {covent::Loop::main_loop().defer([this]() {m_to_task.reset();});});
             m_to_task->start();
         }

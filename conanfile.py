@@ -13,6 +13,8 @@ class ConanApplication(ConanFile):
         "tests": True,
         "sentry": True,
     }
+    name = 'metre'
+    version = '3.0.0'
 
     def layout(self):
         cmake_layout(self)

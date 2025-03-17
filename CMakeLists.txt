@@ -75,21 +75,13 @@ if(USE_SPIFFING)
 endif(USE_SPIFFING)
 
 find_package(ICU)
-find_package(Covent)
+find_package(covent)
 find_package(OpenSSL)
 find_package(yaml-cpp)
 find_package(fmt)
 find_package(SigSlot)
 find_package(spdlog)
 find_package(libunwind)
-
-if (METRE_SENTRY)
-    set(SENTRY_BACKEND inproc)
-    find_package(sentry)
-    set(METRE_SENTRY_SOURCES src/sentry-wrap.cc)
-else(METRE_SENTRY)
-    set(METRE_SENTRY_SOURCES )
-endif(METRE_SENTRY)
 
 set(FILTER_SOURCES
     src/filters/disco-cache.cc
@@ -156,8 +148,6 @@ set(SOURCE_FILES
     src/stanza.cc
     src/starttls.cc
     src/xmlstream.cc
-        include/sentry-wrap.h
-        ${METRE_SENTRY_SOURCES}
         include/send.h
         src/send.cc
         src/send.cc

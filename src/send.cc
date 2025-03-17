@@ -43,13 +43,13 @@ void Metre::Send::handle(Iq const & iq) {
     }
 }
 
-covent::task<Iq const *> Metre::Send::send(std::shared_ptr<sentry::span> span, std::unique_ptr<Iq> iq) {
+covent::task<Iq const *> Metre::Send::send(std::unique_ptr<Iq> iq) {
     auto const * ret = co_await send_low(std::move(iq));
     co_return ret;
 }
 
-covent::task<Iq const *> Metre::Send::ping(std::shared_ptr<sentry::span> span, Jid const & from, Jid const & to) {
+covent::task<Iq const *> Metre::Send::ping(Jid const & from, Jid const & to) {
     auto iq = std::make_unique<Iq>(from, to, Iq::Type::GET, make_id());
     iq->node()->append_element({"urn:xmpp:ping", "ping"});
-    return send(std::move(span), std::move(iq));
+    return send(std::move(iq));
 }

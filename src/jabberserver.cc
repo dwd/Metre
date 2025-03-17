@@ -28,7 +28,6 @@ SOFTWARE.
 #include "xmppexcept.h"
 #include "router.h"
 #include "config.h"
-#include "sentry-wrap.h"
 #include "send.h"
 #include <memory>
 #include <endpoint.h>
@@ -59,21 +58,25 @@ namespace {
 
         covent::task<bool> handle(rapidxml::optional_ptr<rapidxml::xml_node<>> node) override {
             METRE_LOG(Metre::Log::DEBUG, "Handle JabberServer");
+            auto span = covent::sentry::transaction::start(fmt::format("stanza.{}", node->name()), std::string{node->name()});
             std::unique_ptr<Stanza> s;
             if (node->name() == "message") {
                 s = std::make_unique<Message>(node);
             } else if (node->name() == "iq") {
                 auto iq = std::make_unique<Iq>(node);
-//                auto query = iq->node()->first_node();
-//                if (query) {
-//                    span->tag("query.xmlns", query->xmlns());
-//                    span->tag("query.name", query->name());
-//                }
+                auto query = iq->node()->first_node();
+                if (query) {
+                    span->name(fmt::format("iq-{} {}", iq->type_str().value_or("<none>"), query->xmlns()));
+                    span->tag("query.xmlns", query->xmlns());
+                    span->tag("query.name", query->name());
+                } else {
+                    span->name(fmt::format("iq-{}", iq->type_str().value_or("<none>")));
+                }
                 if (!handle_iq(*iq)) {
-//                    span->tag("from", iq->from().domain());
-//                    span->tag("to", iq->to().domain());
-//                    span->tag("mine", "yes");
-//                    span->tag("type", iq->type_str().has_value() ? iq->type_str().value() : "(null)");
+                    span->tag("from", iq->from().domain());
+                    span->tag("to", iq->to().domain());
+                    span->tag("mine", "yes");
+                    span->tag("type", iq->type_str().has_value() ? iq->type_str().value() : "(null)");
                     co_return true;
                 }
                 s = std::move(iq);
@@ -82,10 +85,10 @@ namespace {
             } else {
                 throw Metre::unsupported_stanza_type(std::string(node->name()));
             }
-//            span->tag("from", s->from().domain());
-//            span->tag("to", s->to().domain());
-//            span->tag("mine", "no");
-//            span->tag("type", s->type_str().has_value() ? s->type_str().value() : "(null)");
+            span->tag("from", s->from().domain());
+            span->tag("to", s->to().domain());
+            span->tag("mine", "no");
+            span->tag("type", s->type_str().has_value() ? s->type_str().value() : "(null)");
             co_await handle(s);
             co_return true;
         }

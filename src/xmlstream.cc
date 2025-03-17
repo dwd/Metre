@@ -425,6 +425,7 @@ covent::task<bool> XMLStream::send_stream_open(bool with_version) {
         } else {
             open += "'>";
         }
+        m_logger.debug("Send: {}", open);
         write(open);
         if (with_version && m_dir == SESSION_DIRECTION::INBOUND) {
             rapidxml::xml_document<> doc;

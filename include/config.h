@@ -37,8 +37,8 @@ SOFTWARE.
 #include "defs.h"
 #include <covent/covent.h>
 #include <covent/dns.h>
+#include <covent/http.h>
 #include "spdlog/spdlog.h"
-#include "sentry-wrap.h"
 #include "pkix.h"
 #include "jwt.h"
 #include <sigslot/sigslot.h>
@@ -46,39 +46,16 @@ SOFTWARE.
 namespace Metre {
     class Config {
     public:
-        class Domain;
-
-        class Resolver {
-        public:
-            explicit Resolver(Domain const &);
-
-            ~Resolver();
-
-            /* DNS */
-            covent::task<std::tuple<covent::dns::answers::SRV,covent::dns::answers::SRV>> srv_lookup(std::string const &domain);
-
-            covent::task<covent::dns::answers::SVCB> svcb_lookup(std::string const &domain);
-
-            covent::task<covent::dns::answers::Address> address_lookup(std::string const &hostname);
-
-            covent::task<covent::dns::answers::TLSA> tlsa_lookup(short unsigned int port, std::string const &hostname);
-
-            spdlog::logger & logger() const {
-                return m_logger;
-            }
-
-        private:
-            covent::dns::Resolver m_resolver;
-            Domain const &m_domain;
-            mutable spdlog::logger m_logger;
-        };
-
         class Domain {
         public:
+            [[nodiscard]] auto & entry() const {
+                return m_entry;
+            }
+            [[nodiscard]] auto & entry() {
+                return m_entry;
+            }
             [[nodiscard]] bool tls_enabled() const {
-                if (m_tls_context && m_tls_context->enabled()) return true;
-                if (m_parent) return m_parent->tls_enabled();
-                return false;
+                return tls_context().enabled();
             }
 
             [[nodiscard]] std::string const &domain() const {
@@ -129,15 +106,6 @@ namespace Metre {
                 return m_connect_timeout = connect_timeout;
             }
 
-            [[nodiscard]] bool dnssec_required() const {
-                return m_dnssec_required;
-            }
-
-            bool dnssec_required(bool d) {
-                m_dnssec_required = d;
-                return d;
-            }
-
             [[nodiscard]] bool xmpp_ver() const {
                 return m_xmpp_ver;
             }
@@ -155,13 +123,6 @@ namespace Metre {
                 return m_auth_secret;
             }
 
-            void host(std::string const &hostname, uint32_t inaddr);
-
-            void srv(std::string const &, unsigned short, unsigned short, unsigned short, bool);
-
-            void tlsa(std::string const &hostname, unsigned short port, covent::dns::rr::TLSA::CertUsage certUsage,
-                      covent::dns::rr::TLSA::Selector selector, covent::dns::rr::TLSA::MatchType matchType, std::string const &value);
-
             Domain(std::string domain, SESSION_TYPE transport_type, bool xmpp_ver, bool forward, bool require_tls, bool block, bool multiplex,
                    bool auth_pkix, bool auth_dialback, bool auth_host, std::optional<std::string> &&m_auth_secret);
 
@@ -174,24 +135,17 @@ namespace Metre {
             ~Domain();
 
             covent::task<FILTER_RESULT> filter(FILTER_DIRECTION dir, Stanza &s) const;
-            [[nodiscard]] TLSContext & tls_context() const {
-                if (m_tls_context) return *m_tls_context;
-                if (m_parent) return m_parent->tls_context();
-                throw pkix_error("No TLS Context for domain");
-            }
-            TLSContext & tls_context(std::unique_ptr<TLSContext> && tls_context) {
-                m_tls_context = std::move(tls_context);
-                return *m_tls_context;
+
+            [[nodiscard]] covent::pkix::TLSContext & tls_context() const {
+                return m_entry.tls_context();
             }
 
-            [[nodiscard]] PKIXValidator & pkix_validator() const {
-                if (m_pkix_validator) return *m_pkix_validator;
-                if (m_parent) return m_parent->pkix_validator();
-                throw pkix_error("No PKIX Validator for domain");
+            [[nodiscard]] covent::pkix::PKIXValidator & pkix_validator() const {
+                return m_entry.validator();
             }
-            PKIXValidator & pkix_validator(std::unique_ptr<PKIXValidator> && pkix_validator) {
-                m_pkix_validator = std::move(pkix_validator);
-                return *m_pkix_validator;
+
+            [[nodiscard]] auto & resolver() const {
+                return m_entry.resolver();
             }
 
             std::list<std::unique_ptr<Filter>> &filters() {
@@ -219,54 +173,8 @@ namespace Metre {
                 return m_parent;
             }
 
-            [[nodiscard]] auto const &address_overrides() const {
-                return m_host_arecs;
-            }
-
-            [[nodiscard]] auto const &tlsa_overrides() const {
-                return m_tlsarecs;
-            }
-
-            [[nodiscard]] bool has_srv_override() const {
-                return m_srvrec || m_srvtlsrec;
-            }
-
-            [[nodiscard]] auto srv_override() const {
-                return std::make_tuple(*m_srvrec, *m_srvtlsrec);
-            }
-
-            [[nodiscard]] auto const &svcb_override() const {
-                return m_svcbrec;
-            }
-
-            class ConnectInfo {
-            public:
-                enum class  Method {
-                    StartTLS,
-                    DirectTLS,
-                    Websocket
-                };
-                Method method;
-                std::string hostname;
-                struct sockaddr_storage sockaddr;
-                uint16_t port;
-            };
-
-            class GatheredData {
-            public:
-                std::set<std::string, std::less<>> gathered_hosts; // verified possible hostnames.
-                std::list<ConnectInfo> gathered_connect; // Connection options, preference order.
-                std::list<covent::dns::rr::TLSA> gathered_tlsa; // Verified TLSA records as gathered.
-            };
-
-            // Do DNS discovery:
-            [[nodiscard]] covent::task<GatheredData> gather() const;
-            [[nodiscard]] covent::task<void> gather_host(Resolver &, GatheredData &, const covent::dns::rr::SRV &, ConnectInfo::Method) const;
-            [[nodiscard]] covent::task<void> gather_tlsa(Resolver &, GatheredData &, std::string, uint16_t) const;
-
         private:
-            std::unique_ptr<TLSContext> m_tls_context;
-            std::unique_ptr<PKIXValidator> m_pkix_validator;
+            covent::Service::Entry & m_entry;
             std::string m_domain;
             SESSION_TYPE m_type;
             bool m_xmpp_ver;
@@ -282,12 +190,6 @@ namespace Metre {
             long m_stanza_timeout = 20;
             long m_connect_timeout = 10;
             std::optional<std::string> m_auth_secret;
-            // DNS Overrides:
-            std::map<std::string, std::unique_ptr<covent::dns::answers::Address>, std::less<>> m_host_arecs;
-            std::unique_ptr<covent::dns::answers::SRV> m_srvrec;
-            std::unique_ptr<covent::dns::answers::SRV> m_srvtlsrec;
-            std::unique_ptr<covent::dns::answers::SVCB> m_svcbrec;
-            std::map<std::string, std::unique_ptr<covent::dns::answers::TLSA>, std::less<>> m_tlsarecs;
             std::list<std::unique_ptr<Filter>> m_filters;
             std::list<struct sockaddr_storage> m_auth_endpoint;
             Domain const *m_parent = nullptr;
@@ -342,22 +244,28 @@ namespace Metre {
             return m_fetch_crls;
         }
 
-    class Listener : public covent::Listener<XMLStream> {
-        public:
-            SESSION_TYPE session_type;
-            TLS_MODE tls_mode;
-            std::string const name;
-            std::string const local_domain;
-            std::string const remote_domain;
-            std::set<std::string, std::less<>> allowed_domains;
-        public:
-            Listener(std::string const &local_domain, std::string const &remote_domain, std::string const &name,
-                     std::string const &address, unsigned short port, TLS_MODE tls, SESSION_TYPE sess);
+        [[nodiscard]] auto const & dns_ta_file() const {
+            return m_dns_keys;
+        }
+
+        class Listener : public covent::Listener<XMLStream> {
+            public:
+                SESSION_TYPE session_type;
+                TLS_MODE tls_mode;
+                std::string const name;
+                std::string const local_domain;
+                std::string const remote_domain;
+                std::set<std::string, std::less<>> allowed_domains;
+            public:
+                Listener(std::string const &local_domain, std::string const &remote_domain, std::string const &name,
+                         std::string const &address, unsigned short port, TLS_MODE tls, SESSION_TYPE sess);
         };
 
         [[nodiscard]] std::list<Listener> const &listeners() const {
             return m_listeners;
         }
+
+        [[nodiscard]] covent::http::Server http_server();
 
         [[nodiscard]] spdlog::logger &logger() const {
             return *m_root_logger;
@@ -389,7 +297,7 @@ namespace Metre {
             return m_healthcheck_port;
         }
 
-        [[nodiscard]] TLSContext & healthcheck_tls() const {
+        [[nodiscard]] covent::pkix::TLSContext & healthcheck_tls() const {
             return *m_healthcheck_tls;
         }
 
@@ -400,6 +308,10 @@ namespace Metre {
         static bool run_healthcheck(unsigned short port, bool tls);
         auto const & healthcheck_auth() const {
             return m_healthcheck_verifier;
+        }
+
+        [[nodiscard]] auto & xmpp_service() const {
+            return *m_xmpp_service;
         }
 
     private:
@@ -422,10 +334,11 @@ namespace Metre {
         std::string m_log_level;
         std::string m_log_flush;
         std::string m_healthcheck_address;
-        std::unique_ptr<TLSContext> m_healthcheck_tls;
+        std::unique_ptr<covent::pkix::TLSContext> m_healthcheck_tls;
         unsigned short int m_healthcheck_port;
         std::set<std::pair<std::string, std::string>> m_healthchecks;
         std::unique_ptr<JWTVerifier> m_healthcheck_verifier;
+        std::unique_ptr<covent::Service> m_xmpp_service;
     };
 }
 
