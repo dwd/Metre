@@ -9,9 +9,14 @@ globals:
 remote:
   any:
     transport:
-          type: s2s
-          prefer: direct
-          sec: false
+      type: s2s
+      prefer: direct
+      sec: false
+    tls:
+      config:
+        identities:
+          - pkey: /home/dwd/test-env/private_key.pem
+            chain: /home/dwd/test-env/chain.pem
 
 local:
   cassidy.cridland.im:

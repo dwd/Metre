@@ -36,6 +36,7 @@ SOFTWARE.
 #include <libunwind.h>
 #include <cxxabi.h>
 #include <covent/covent.h>
+#include <covent/app.h>
 
 #ifdef METRE_SENTRY
 #include "sentry.h"
@@ -225,6 +226,7 @@ int main(int argc, char *argv[]) {
     sentry_options_set_traces_sample_rate(sentry_options, 1.0);
     sentry_init(sentry_options);
 #endif
+    covent::Application app{"Metre"};
     std::set_terminate(terminate_handler);
     signal(SIGPIPE, SIG_IGN);
     signal(SIGHUP, hup_handler);

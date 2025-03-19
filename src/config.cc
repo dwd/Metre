@@ -66,7 +66,7 @@ using namespace rapidxml;
 
 namespace {
     template<typename T>
-    void from_config(std::string const & domain, YAML::Node const & config);
+    void from_config(covent::Service::Entry & entry, YAML::Node const & config);
 
     template<typename T>
     [[nodiscard]] YAML::Node to_config(T const & obj) {
@@ -74,14 +74,12 @@ namespace {
     }
 
     template<>
-    void from_config<covent::pkix::PKIXValidator>(std::string const & domain, YAML::Node const & config) {
+    void from_config<covent::pkix::PKIXValidator>(covent::Service::Entry & entry, YAML::Node const & config) {
         auto crls = config["crls"].as<bool>(Config::config().fetch_pkix_status());
         if (crls && !Config::config().fetch_pkix_status()) {
             throw covent::pkix::pkix_config_error("Cannot check status without fetching status");
         }
         auto system_trust = config["system-trust"].as<bool>(true);
-        auto & service = Config::config().xmpp_service();
-        auto & entry = service.entry(domain);
         auto & result = entry.make_validator(crls, system_trust);
         for (auto const & ta : config["trust-anchors"]) {
             result.add_trust_anchor(ta.as<std::string>());
@@ -139,14 +137,15 @@ namespace {
     }
 
     template<>
-    void from_config<covent::pkix::TLSContext>(std::string const & domain, YAML::Node const & config) {
-        auto & service = Config::config().xmpp_service();
-        auto & entry = service.entry(domain);
+    void from_config<covent::pkix::TLSContext>(covent::Service::Entry & entry, YAML::Node const & config) {
         if (config) {
             auto enabled = config["enabled"].as<bool>(true);
-            auto & result = entry.make_tls_context(enabled, true, "");
+            Config::config().logger().info("TLSContext for '{}' is {}", entry.name(), enabled);
+            auto & result = entry.make_tls_context(enabled, true, entry.name());
+            Config::config().logger().info("TLSContext for '{}' is {}", entry.name(), result.enabled());
             result.dhparam(config["dhparam"].as<std::string>("auto"));
             result.cipherlist(config["cipherlist"].as<std::string>("HIGH:!3DES:!eNULL:!aNULL:@STRENGTH")); // Apparently 3DES qualifies for HIGH, but is 112 bits, which the IM Observatory marks down for.
+            Config::config().logger().info("Cipherlist set to {}", result.cipherlist());
             result.min_version(yaml_to_tls(config["min_version"], TLS1_2_VERSION));
             result.max_version(yaml_to_tls(config["max_version"], TLS1_3_VERSION));
             for (auto const &identity: config["identities"]) {
@@ -154,6 +153,8 @@ namespace {
                 auto pkey_file = identity["pkey"].as<std::string>();
                 // auto generate = identity["generate"].as<bool>(false);
                 result.add_identity(std::make_unique<covent::pkix::PKIXIdentity>(cert_chain_file, pkey_file));
+                Config::config().logger().debug("Debug");
+                Config::config().logger().info("Loaded certificate {}", cert_chain_file);
             }
         }
     }
@@ -242,11 +243,13 @@ namespace {
         dom->tls_preference(tls_preference);
         if (auto tls = domain["tls"]; tls) {
             if (tls["config"]) {
-                from_config<covent::pkix::TLSContext>(name, tls["config"]);
+                from_config<covent::pkix::TLSContext>(dom->entry(), tls["config"]);
             }
+            spdlog::info("Loaded identities, initialize");
             dom->tls_context().context(); // Force everything to get instantiated here.
+            spdlog::info("Loaded identities, done");
             if (tls["validation"]) {
-                from_config<covent::pkix::PKIXValidator>(name, tls["validation"]);
+                from_config<covent::pkix::PKIXValidator>(dom->entry(), tls["validation"]);
             }
         }
 
@@ -482,7 +485,9 @@ Config::Config(std::string const &filename, bool lite) : m_dialback_secret(rando
     }
     s_config = this;
     // Spin up a temporary error logger.
-    m_root_logger = spdlog::stderr_color_st(lite ? "boot" : "console");
+    // spdlog::set_default_logger(spdlog::stderr_color_st(lite ? "boot" : "console"));
+    m_root_logger = spdlog::default_logger();
+    if (!lite) m_xmpp_service = std::make_unique<covent::Service>();
     spdlog::set_level(spdlog::level::trace);
     load(filename, lite);
 }
@@ -870,10 +875,9 @@ void Config::log_init(bool systemd) {
     }
     // Initialize logging.
     if (!m_logfile.empty()) {
-        m_root_logger = spdlog::daily_logger_st("global", m_logfile);
-    } else {
-        m_root_logger = spdlog::stderr_logger_st("global");
+        spdlog::set_default_logger(spdlog::daily_logger_st("global", m_logfile));
     }
+    m_root_logger = spdlog::default_logger();
     m_root_logger->flush_on(spdlog::level::from_str(m_log_flush));
     m_root_logger->set_level(spdlog::level::from_str(m_log_level));
     m_logger = std::make_shared<spdlog::logger>(logger("config"));

@@ -7,7 +7,7 @@ requirements:
   - "icu/76.1"
   - "spdlog/1.14.1"
   - "fmt/10.2.1"
-  - "covent/0.1.16@dwd/metre"
+  - "covent/0.1.21@dwd/metre"
   - "sigslot/1.0.1@dwd/metre"
   - "libevent/2.1.12"
   - "openssl/[>=3.3.0 <4]"

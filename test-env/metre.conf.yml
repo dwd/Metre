@@ -13,18 +13,15 @@ remote:
           prefer: direct
           sec: false
     tls:
-      x509:
-        chain: test-env/public_key.pem
-        pkey: test-env/private_key.pem
+      config:
+        identities:
+          - chain: test-env/public_key.pem
+            pkey: test-env/private_key.pem
   dave.cridland.net:
     transport:
           type: s2s
           prefer: direct
           sec: false
-    tls:
-      x509:
-        chain: test-env/public_key.pem
-        pkey: test-env/private_key.pem
 #    dns:
 #      srv:
 #        - host: dave.cridland.net
@@ -39,8 +36,3 @@ local:
   cassidy.cridland.io:
     transport:
       type: internal
-    tls:
-      x509:
-        chain: test-env/chain.pem
-        pkey: test-env/private_key.pem
-

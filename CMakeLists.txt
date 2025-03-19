@@ -150,8 +150,6 @@ set(SOURCE_FILES
     src/xmlstream.cc
         include/send.h
         src/send.cc
-        src/send.cc
-        src/pkix.cc
         include/fmt-enum.h
         src/healthcheck.cc
         include/jwt.h

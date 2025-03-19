@@ -82,7 +82,7 @@ namespace {
                     xml_document<> doc;
                     doc.append_element({tls_ns, "failure"});
                     m_stream.send(doc);
-                    co_return false;
+                    co_return true;
                 }
             }
             co_return false;
@@ -139,8 +139,11 @@ namespace Metre {
     bool start_tls(XMLStream &stream, bool send_proceed) {
         stream.logger().debug("Trying to start TLS from {} to {}", stream.local_domain(), stream.remote_domain());
         auto & domain = Config::config().domain(stream.local_domain());
-        stream.logger().debug("Trying to start TLS as {}", domain.domain());
-        if (!domain.tls_enabled()) return false;
+        stream.logger().debug("Trying to start TLS as '{}'", domain.domain());
+        if (!domain.tls_enabled()) {
+            stream.logger().debug("No TLS enabled for '{}' (AKA '{}')", domain.domain(), domain.entry().name());
+            return false;
+        }
         bool connecting = stream.direction() == SESSION_DIRECTION::OUTBOUND;
         SSL *ssl = domain.tls_context().instantiate(connecting, stream.remote_domain());
         if (!connecting) {
@@ -154,6 +157,7 @@ namespace Metre {
             }
             stream.clear_stream();
         }
+
         stream.ssl(ssl, connecting);
         stream.set_secured();
         return true;
