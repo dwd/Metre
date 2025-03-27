@@ -150,7 +150,7 @@ covent::task<std::size_t> XMLStream::process(std::string_view buf) {
                 auto end = m_stanza.parse<parse_fastest | parse_parse_one>(buf, &m_stream);
                 m_first_read = false;
                 auto element = m_stanza.first_node();
-                if (!element || element->name().empty()) co_return false;
+                if (!element || element->name().empty()) co_return 0;
                 bool tls_nego = element->xmlns() == "urn:ietf:params:xml:ns:xmpp-tls";
                 // For TLS negotiation elements, we need to special-case to avoid
                 // the data still being in the buffer when the TLS handshake occurs.

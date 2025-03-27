@@ -22,15 +22,21 @@ remote:
           type: s2s
           prefer: direct
           sec: false
-#    dns:
-#      srv:
-#        - host: dave.cridland.net
-#          port: 5222
-#      tlsa:
-#        - hostname: "dave.cridland.net"
-#          port: 5222
-#          certusage: DomainCert
-#          matchdata: test-env/public_key.pem
+    dns:
+      host:
+        "*":
+          dnssec: true
+          a:
+            - 10.0.0.1
+            - "::1"
+      srv:
+        - host: dave.cridland.net
+          port: 5222
+      tlsa:
+        - hostname: "dave.cridland.net"
+          port: 5222
+          certusage: DomainCert
+          matchdata: test-env/public_key.pem
 
 local:
   cassidy.cridland.io:

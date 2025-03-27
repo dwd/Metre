@@ -253,42 +253,57 @@ namespace {
             }
         }
 
+        spdlog::info("Lookiing for DNS config");
         if (auto dnst = domain["dns"]; dnst) {
+            spdlog::info("Loading DNS config");
             if (auto dnssec = dnst["dnssec_required"]; dnssec) {
                 auto & ta_file = Config::config().dns_ta_file();
-                dom->entry().make_resolver(dnssec.as<bool>(), false, ta_file);
+                dom->entry().make_resolver(dnssec.as<bool>(false), false, ta_file);
+            } else {
+                dom->entry().make_resolver(false); // Make one anyway, since we have specific config (so probably overrides or something).
             }
             auto & resolver = dom->resolver();
-            for (auto hostt : dnst["host"]) {
-                covent::dns::answers::Address rr;
-                rr.dnssec = hostt["dnssec"].as<bool>(true);
-                auto af = AF_INET;
-                auto aa = hostt["a"];
-                if (aa) {
-                    if (!aa) throw std::runtime_error("Missing a in host DNS override");
-                    if (aa.as<std::string>().contains(':')) {
-                        af = AF_INET6;
+            if (auto dns_host = dnst["host"]) {
+                spdlog::info("Loading DNS host overrides");
+                for (auto const & item : dns_host) {
+                    covent::dns::answers::Address rr;
+                    rr.domain = item.first.as<std::string>();
+                    const auto & record = item.second;
+                    rr.dnssec = record["dnssec"].as<bool>(true);
+                    if (!record["a"]) {
+                        throw std::runtime_error("No a records for host override?");
                     }
+                    for (auto aa : record["a"]) {
+                        auto af = AF_INET;
+                        if (aa) {
+                            if (!aa) throw std::runtime_error("Missing a in host DNS override");
+                            if (aa.as<std::string>().contains(':')) {
+                                af = AF_INET6;
+                            }
+                        }
+                        struct sockaddr_storage saddr;
+                        saddr.ss_family = af;
+                        if (af == AF_INET) {
+                            auto * s4 = covent::sockaddr_cast<AF_INET>(&saddr);
+                            auto addr = aa.as<std::string>();
+                            if (!inet_pton(AF_INET, addr.c_str(), &s4->sin_addr)) {
+                                throw std::runtime_error("Unable to parse IPv4 address");
+                            }
+                        } else {
+                            auto * s6 = covent::sockaddr_cast<AF_INET6>(&saddr);
+                            auto addr = aa.as<std::string>();
+                            if (!inet_pton(AF_INET6, addr.c_str(), &s6->sin6_addr)) {
+                                throw std::runtime_error("Unable to parse IPv6 address");
+                            }
+                        }
+                        rr.addr.push_back(saddr);
+                    }
+                    resolver.inject(rr);
+                    spdlog::info("Loading host override {} : {} : {} : @{}", dom->domain(), dom->entry().name(), covent::address_tostring(&rr.addr[0]), static_cast<void *>(&resolver));
                 }
-                struct sockaddr_storage saddr;
-                saddr.ss_family = af;
-                if (af == AF_INET) {
-                    auto * s4 = covent::sockaddr_cast<AF_INET>(&saddr);
-                    auto addr = aa.as<std::string>();
-                    if (!inet_pton(AF_INET, addr.c_str(), &s4->sin_addr)) {
-                        throw std::runtime_error("Unable to parse IPv4 address");
-                    }
-                } else {
-                    auto * s6 = covent::sockaddr_cast<AF_INET6>(&saddr);
-                    auto addr = aa.as<std::string>();
-                    if (!inet_pton(AF_INET, addr.c_str(), &s6->sin6_addr)) {
-                        throw std::runtime_error("Unable to parse IPv6 address");
-                    }
-                }
-                rr.addr.push_back(saddr);
-                resolver.inject(rr);
             }
             for (auto srvt : dnst["srv"]) {
+                spdlog::info("Loading DNS srv override");
                 auto hosta = srvt["host"];
                 if (!hosta) throw std::runtime_error("Missing host in SRV DNS override");
                 auto host = hosta.as<std::string>();
@@ -302,7 +317,7 @@ namespace {
                 srv.rrs[0].port = port;
                 srv.rrs[0].priority = prio;
                 srv.rrs[0].weight = weight;
-                srv.rrs[0].service = tls ? "xmpps-service" : "xmpp-service";
+                srv.rrs[0].service = tls ? "xmpps-server" : "xmpp-server";
                 srv.dnssec = srvt["dnssec"].as<bool>(true);
                 resolver.inject(srv);
             }

@@ -91,7 +91,9 @@ covent::task<bool> Route::init_session_vrfy(bool multiplex) {
 //         }
 //     }
 //    span->containing_transaction().tag("multiplex", "none");
-    auto xmpp_lookup_generator = Config::config().xmpp_service().entry(m_domain.domain()).xmpp_lookup(m_domain.domain());
+    auto & dom = Config::config().domain(m_domain.domain());
+    m_logger.info("Looking for xmpp connect data from {} : {} : {} : @{}", m_domain, dom.domain(), dom.entry().name(), static_cast<void *>(&dom.entry().resolver()));
+    auto xmpp_lookup_generator = dom.entry().xmpp_lookup(m_domain.domain());
     for (auto it = co_await xmpp_lookup_generator.begin(); it != xmpp_lookup_generator.end(); co_await ++it) {
 //        auto span_ = span->start_child("connect", "Connection");
         auto rr = *it;
