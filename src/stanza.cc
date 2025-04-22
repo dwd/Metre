@@ -24,7 +24,7 @@ SOFTWARE.
 ***/
 
 #include "stanza.h"
-#include "rapidxml_iterators.hpp"
+#include <rapidxml.hpp>
 #include "log.h"
 
 using namespace Metre;

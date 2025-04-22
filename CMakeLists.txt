@@ -56,7 +56,6 @@ endif (UNIX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-add_definitions(-DSIGSLOT_COROUTINES)
 
 if(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -pedantic -O3 -g -fcoroutines")
@@ -65,9 +64,6 @@ else()
     add_definitions(-DMETRE_WINDOWS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /await")
 endif ()
-
-set(SIGSLOT_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/sigslot")
-set(RAPIDXML_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/rapidxml")
 
 set(BUILD_SHARED_LIBS OFF)
 if(USE_SPIFFING)
@@ -79,9 +75,10 @@ find_package(covent)
 find_package(OpenSSL)
 find_package(yaml-cpp)
 find_package(fmt)
-find_package(SigSlot)
+find_package(st-sigslot)
 find_package(spdlog)
 find_package(libunwind)
+find_package(flxml)
 
 set(FILTER_SOURCES
     src/filters/disco-cache.cc
@@ -167,7 +164,6 @@ add_executable(metre ${SOURCE_FILES})
 
 target_include_directories(metre PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    ${RAPIDXML_INCLUDE_DIRS}
 )
 
 target_link_libraries(metre PRIVATE
@@ -178,16 +174,15 @@ target_link_libraries(metre PRIVATE
     ICU::i18n
     fmt::fmt
     covent::covent
-    sigslot::sigslot
+    st-sigslot::st-sigslot
     spdlog::spdlog
     libunwind::unwind
+    flxml::flxml
 )
 if(METRE_SENTRY)
     target_link_libraries(metre PRIVATE sentry)
     target_compile_definitions(metre PRIVATE METRE_SENTRY=1)
 endif(METRE_SENTRY)
-
-# target_compile_definitions(metre PRIVATE -DSIGSLOT_RESUME_OVERRIDE)
 
 if (UNIX)
 else()
@@ -230,7 +225,6 @@ target_link_options(metre-test PRIVATE -g -O0 --coverage)
 target_include_directories(metre-test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${RAPIDXML_INCLUDE_DIRS}
 )
 
 target_link_libraries(metre-test PRIVATE
@@ -241,9 +235,10 @@ target_link_libraries(metre-test PRIVATE
         ICU::i18n
         fmt::fmt
         covent::covent
-        sigslot::sigslot
+        st-sigslot::st-sigslot
         GTest::gtest
         spdlog::spdlog
+        flxml::flxml
 )
 if(METRE_SENTRY)
     target_link_libraries(metre-test PRIVATE sentry)

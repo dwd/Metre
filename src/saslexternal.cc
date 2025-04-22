@@ -32,7 +32,7 @@ SOFTWARE.
 #include "config.h"
 #include <memory>
 #include "base64.h"
-#include "rapidxml_iterators.hpp"
+#include <rapidxml.hpp>
 
 using namespace Metre;
 using namespace rapidxml;
