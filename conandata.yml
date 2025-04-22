@@ -10,6 +10,6 @@ requirements:
   - "covent/0.1.25@dwd/metre"
   - "libevent/2.1.12"
   - "openssl/[>=3.3.0 <4]"
-  - "flxml/2.0.10"
+  - "flxml/2.1.1"
   - "st-sigslot/1.0.1"
 
