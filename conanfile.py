@@ -35,6 +35,6 @@ class ConanApplication(ConanFile):
         for requirement in requirements:
             self.requires(requirement)
         if self.options.sentry:
-            self.requires("sentry-native/0.7.11")
+            self.requires("sentry-native/0.7.15")
         if self.options.tests:
             self.requires("gtest/1.12.1")
