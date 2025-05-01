@@ -8,10 +8,6 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
-      - uses: actions/checkout@v4
-        with:
-          repository: getsentry/sentry-native
-          path: deps/sentry-native
       - name: Apt dance
         run: sudo apt-get update
       - name: Install dependencies
@@ -27,8 +23,17 @@ jobs:
           pip install gcovr==5.0 # 5.1 is not supported
       - name: SonarQube install
         uses: SonarSource/sonarcloud-github-c-cpp@v3
+      - name: Install Conan
+        run: pip install conan
+      - name: Configure Conan Profile
+        run: |
+          conan profile detect -e
+          conan remote add conan-nexus https://nexus.cridland.io/repository/dwd-conan --force
+          conan remote login conan-nexus ci --password ${{ secrets.NEXUS_PASSWORD }}
+      - name: Conan Deps (Debug)
+        run: conan install . -s build_type=Debug -s compiler.cppstd=gnu23  -b missing --version=${{ env.VERSION }}
       - name: Configure Sonar Build
-        run: mkdir sonar-build && cmake -S . -B sonar-build -DMETRE_SENTRY=ON
+        run: mkdir sonar-build && cmake -S . -B sonar-build -DMETRE_SENTRY=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES="conan_provider.cmake" -DCONAN_INSTALL_ARGS="--settings=compiler.cppstd=gnu23;--build=missing"
       - name: Build Wrapper
         run: build-wrapper-linux-x86-64 --out-dir sonar-out cmake --build sonar-build
       - name: CMake Tests
