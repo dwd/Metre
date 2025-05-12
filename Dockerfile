@@ -23,7 +23,8 @@ RUN echo "compiler.version=13" >>$(conan profile path default)
 RUN echo "os=Linux" >>$(conan profile path default)
 
 RUN conan remote remove conancenter
-RUN conan remote add jekyll http://jekyll.cridland.io:9300/ --insecure
+RUN conan remote add nexus https://nexus.cridland.io/repository/dwd-conan/
+RUN conan remote add nexus-proxy https://nexus.cridland.io/repository/conan-proxy/
 WORKDIR /app/
 RUN touch seven
 
@@ -39,11 +40,12 @@ COPY metre.conf.yml src/
 COPY conanfile.py src/
 COPY conan_provider.cmake src/
 COPY conandata.yml src/
-COPY conan.lock src/
+# COPY conan.lock src/
 
 WORKDIR /app/src
 
-RUN conan install . --build=missing -s build_type=RelWithDebInfo --deployer=runtime_deploy --deployer-folder=/app/lib --lockfile=conan.lock
+RUN conan install . --build=missing -s build_type=RelWithDebInfo --deployer=runtime_deploy --deployer-folder=/app/lib
+#--lockfile=conan.lock
 
 WORKDIR /app/build
 
@@ -56,18 +58,18 @@ RUN cmake \
         -GNinja \
         ../src
 RUN cmake --build . --target metre
-RUN cmake --build . --target install
 
 RUN /app/build/metre -d aidsa || true
 
-RUN set -eux; \
-    mkdir -p /app/deps/; \
-    LD_LIBRARY_PATH=/app/deps/usr/lib ldd /app/install/bin/metre | awk '$1~/^\//{print $1}$3~/^\//{print $3}' \
-        | xargs -I{} cp --parents {} '/app/deps/'
+RUN grep -ash ^export /app/build/conan/build/RelWithDebInfo/generators/conanrun*.sh >/app/build/export-envs.sh; cat /app/build/export-envs.sh
+
+COPY copy-deps.sh .
+RUN bash copy-deps.sh
 
 RUN set -eux; \
     mkdir -p /app/deps/; \
-    ldd /app/install/bin/metre
+    ldd /app/build/metre; \
+    ls -l /app/deps/
 
 RUN find /app/deps/ -type f
 
@@ -79,9 +81,13 @@ VOLUME /tmp
 
 COPY --from=cpp-build /etc/passwd /etc/shadow /etc/
 COPY --from=cpp-build /app/deps/ /
+COPY --from=cpp-build /app/ossl-modules /app/ossl-modules
+ENV OPENSSL_MODULES=/app/ossl-modules
+COPY --from=cpp-build /app/icu-data /app/icu-data
+ENV ICU_DATA=/app/icu-data
 
 WORKDIR /app
-COPY --from=cpp-build /app/install/bin/metre .
+COPY --from=cpp-build /app/build/metre /app/metre
 
 #For the healthcheck to work and be configurable, we pretty much have to stipulate where the config file is, so we rely on Metre picking up the environment variable.
 HEALTHCHECK CMD ["/app/metre", "-d", "healthcheck"]

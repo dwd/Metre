@@ -12,6 +12,7 @@ class ConanApplication(ConanFile):
     default_options = {
         "tests": True,
         "sentry": True,
+        "covent/*:shared": True,
     }
     name = 'metre'
     version = '3.0.0'
@@ -22,6 +23,9 @@ class ConanApplication(ConanFile):
     def configure(self):
         if self.options.sentry:
             self.options["sentry-native"].backend = "inproc"
+            self.options["sentry-native"].shared = True
+        for dep in 'yaml-cpp', 'icu', 'covent', 'libevent', 'openssl':
+            self.options[dep].shared = True
 
     def generate(self):
         tc = CMakeToolchain(self)

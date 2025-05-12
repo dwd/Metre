@@ -7,10 +7,9 @@ requirements:
   - "icu/76.1"
   - "spdlog/1.14.1"
   - "fmt/10.2.1"
-  - "covent/0.1.25@dwd/metre"
+  - "covent/0.1.29"
   - "libevent/2.1.12"
   - "openssl/[>=3.0.0 <4]"
   - "flxml/2.1.1"
-  - "st-sigslot/1.0.1"
-  - "sentry-native/0.7.15"
+  - "st-sigslot/1.2.0"
 
