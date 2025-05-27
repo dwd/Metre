@@ -242,7 +242,7 @@ int main(int argc, char *argv[]) {
     }
     config_lite->logger().info("Preparing to use boot method '{}'", bc->boot_method);
     if (bc->boot_method == "healthcheck") {
-        if (Metre::Config::run_healthcheck(config_lite->healthcheck_port(), config_lite->healthcheck_tls().enabled())) {
+        if (Metre::Config::run_healthcheck(config_lite->healthcheck_port(), config_lite->healthcheck_tls())) {
             exit(0);
         } else {
             exit(1);

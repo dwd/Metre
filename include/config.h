@@ -297,8 +297,12 @@ namespace Metre {
             return m_healthcheck_port;
         }
 
-        [[nodiscard]] covent::pkix::TLSContext & healthcheck_tls() const {
-            return *m_healthcheck_tls;
+        [[nodiscard]] bool healthcheck_tls() const {
+            return m_healthcheck_tls;
+        }
+
+        [[nodiscard]] auto & http_server() const {
+            return *m_http_server;
         }
 
         [[nodiscard]] auto const & healthchecks() const {
@@ -334,10 +338,11 @@ namespace Metre {
         std::string m_log_level;
         std::string m_log_flush;
         std::string m_healthcheck_address;
-        std::unique_ptr<covent::pkix::TLSContext> m_healthcheck_tls;
+        bool m_healthcheck_tls = false;
         unsigned short int m_healthcheck_port;
         std::set<std::pair<std::string, std::string>> m_healthchecks;
         std::unique_ptr<JWTVerifier> m_healthcheck_verifier;
+        std::unique_ptr<covent::http::Server> m_http_server;
         std::unique_ptr<covent::Service> m_xmpp_service;
     };
 }

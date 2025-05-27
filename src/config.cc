@@ -535,29 +535,39 @@ void Config::load(std::string const &filename, bool lite) {
         if (globals["healthcheck"]) {
             m_healthcheck_port = globals["healthcheck"]["port"].as<unsigned short>(m_healthcheck_port);
             m_healthcheck_address = globals["healthcheck"]["address"].as<std::string>(m_healthcheck_address);
-            // m_healthcheck_tls = std::make_unique<covent::pkix::TLSContext>(
-            //     globals["healthcheck"]["tls"]["enabled"].as<bool>(false),
-            //     false,
-            //     "healthcheck"
-            // );
+            m_healthcheck_tls = globals["healthcheck"]["tls"]["enabled"].as<bool>(false);
             logger().debug("Found healthcheck info, will bail if lite mode is on: {}", lite);
             if (lite) return;
             if (globals["healthcheck"]["jwt_pub_key"]) {
                 m_healthcheck_verifier = std::make_unique<JWTVerifier>(globals["healthcheck"]["jwt_pub_key"].as<std::string>());
             }
-            // m_healthcheck_tls->context();
             if (globals["healthcheck"]["checks"]) {
                 for (auto const & from : globals["healthcheck"]["checks"]) {
                     m_healthchecks.emplace(from.first.as<std::string>(), from.second.as<std::string>());
                 }
             }
-        } else {
-            // m_healthcheck_tls = std::make_unique<covent::pkix::TLSContext>(false, false, "healthcheck"); // Non-existent node to gain defaults
         }
         logger().debug("Completed globals, will bail if lite mode is on: {}", lite);
         if (lite) return;
+        logger().debug("Starting API service on port {}", m_healthcheck_port);
         // At this point, spin up the API
-        auto m_http_server = std::make_unique<covent::http::Server>(m_healthcheck_port, false);
+        m_http_server = std::make_unique<covent::http::Server>(m_healthcheck_port, m_healthcheck_tls);
+        if (m_healthcheck_tls) {
+            logger().debug("Setting up HTTPS certificates");
+            m_http_server->service().entry("").make_tls_context(true, false, "");
+            for (auto const & id : globals["healthcheck"]["tls"]["identities"]) {
+                m_http_server->service().entry("").tls_context().add_identity(std::make_unique<covent::pkix::PKIXIdentity>(
+                    id["chain"].as<std::string>(),
+                    id["pkey"].as<std::string>()
+                    )
+                );
+            }
+        }
+        m_http_server->add(std::make_unique<covent::http::Endpoint>("/"));
+        m_http_server->add(std::make_unique<covent::http::Endpoint>("/api/status", [](evhttp_request * req) -> covent::task<int> {
+            evhttp_send_reply(req, 200, "OK", nullptr);
+            co_return 200;
+        }));
         if (auto filters = root_node["filters"]; filters) {
             for (auto const & item : filters) {
                 auto filter_name = item.first.as<std::string>();

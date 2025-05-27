@@ -30,22 +30,23 @@ RUN touch seven
 
 COPY deps src/deps
 
-COPY cmake src/cmake
-COPY include src/include
-COPY src src/src
-COPY tests src/tests
 COPY CMakeLists.txt src/
-COPY LICENSE src/
-COPY metre.conf.yml src/
+COPY cmake src/cmake
 COPY conanfile.py src/
 COPY conan_provider.cmake src/
 COPY conandata.yml src/
-# COPY conan.lock src/
 
 WORKDIR /app/src
 
 RUN conan install . --build=missing -s build_type=RelWithDebInfo --deployer=runtime_deploy --deployer-folder=/app/lib
 #--lockfile=conan.lock
+
+COPY include ./include
+COPY src ./src
+COPY tests ./tests
+COPY LICENSE ./
+COPY metre.conf.yml ./
+# COPY conan.lock ./
 
 WORKDIR /app/build
 
